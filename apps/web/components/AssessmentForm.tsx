@@ -169,10 +169,19 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
               {(() => {
                 const picked = providers.find((p) => p.id === agentProviderId);
                 const chatOnly = picked ? picked.supports_host_tools === false : false;
+                if (!picked) return null;
+                if (picked.provider === "claude_code_cli") {
+                  return (
+                    <p className="mt-1.5 rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs text-sky-700">
+                      Claude Code는 CLI 내장 도구가 전부 차단된 상태로, 워크스페이스 도구만 <b>MCP 브리지</b>로
+                      제공됩니다 — 다른 공급자와 동일한 파일 조작 능력을 갖습니다.
+                    </p>
+                  );
+                }
                 return chatOnly ? (
                   <p className="mt-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
                     이 공급자는 도구 호출을 지원하지 않아 에이전트가 <b>대화 전용</b>으로 동작합니다 — 파일을
-                    직접 찾거나 만들 수 없습니다. 파일 조작이 필요하면 도구를 지원하는 공급자를 지정하세요.
+                    직접 찾거나 만들 수 없습니다.
                   </p>
                 ) : null;
               })()}

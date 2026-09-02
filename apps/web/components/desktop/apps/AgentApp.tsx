@@ -82,8 +82,7 @@ export function AgentApp({ readOnly = false, onActivity }: { readOnly?: boolean;
       setItems((it) => it.map((x) => (x.id === botId ? fn(x) : x)));
 
     await streamAgentChat(ws.attemptId, ws.scenarioId, content, {
-      onDelta: (text) =>
-        patch((x) => ({ ...x, content: x.content ? `${x.content}\n\n${text}` : text })),
+      onDelta: (text) => patch((x) => ({ ...x, content: x.content + text })),
       onTool: (name, detail) => {
         if (["write_file", "delete_file", "run_command"].includes(name)) touchedFiles = true;
         patch((x) => ({ ...x, steps: [...x.steps, { tool: name, detail }] }));

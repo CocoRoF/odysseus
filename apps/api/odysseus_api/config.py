@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     jwt_secret: str = "odysseus-dev-secret-change-me"
     jwt_expire_hours: int = 12
     internal_token: str = "odysseus-internal-change-me"
+    # MCP 브리지가 되돌아 호출하는 주소 (api 컨테이너 내부)
+    internal_api_base: str = "http://127.0.0.1:8000"
 
     seed_demo_data: bool = True
 

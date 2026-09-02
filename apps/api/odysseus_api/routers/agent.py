@@ -46,7 +46,7 @@ async def agent_usage(
         remaining=max(0, assessment.agent_max_turns - used),
         configured=bool(res and res.configured),
         model=res.model if res else None,
-        tools_available=bool(res and ai_provider.supports_host_tools(res)),
+        tools_available=bool(res and ai_provider.agent_tools_available(res)),
         provider_name=res.name if res else None,
     )
 
@@ -133,7 +133,7 @@ async def send_agent_message(
                 attempt_id=attempt_id,
                 scenario_id=scenario_id,
                 role="assistant",
-                content="\n\n".join(p for p in parts if p),
+                content="".join(parts),
                 model=res.model,
                 meta=meta,
             )

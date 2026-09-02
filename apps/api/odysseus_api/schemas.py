@@ -338,6 +338,15 @@ class ExecutionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class InternalAgentToolIn(BaseModel):
+    """MCP 브리지 → API 도구 실행 (Claude Code CLI 경로)."""
+
+    attempt_id: uuid.UUID
+    scenario_id: uuid.UUID
+    name: str = Field(min_length=1, max_length=60)
+    input: dict = Field(default_factory=dict)
+
+
 class InternalRunResultIn(BaseModel):
     status: Literal["done", "error"]
     exit_code: int | None = None

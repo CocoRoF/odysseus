@@ -268,6 +268,82 @@ async def execute_agent_tool(
         return f"거부됨 — {e.message}", str(tool_input.get("path", ""))[:60]
 
 
+def _tool_detail(name: str, tool_input: dict) -> str:
+    """UI/기록용 짧은 라벨."""
+    for key in ("path", "from_path", "query", "command"):
+        if tool_input.get(key):
+            return str(tool_input[key])[:60]
+    return ""
+
+
+async def _run_cli_agent_turn(
+    res: provider.ResolvedAi,
+    attempt_id: uuid.UUID,
+    scenario_id: uuid.UUID,
+    messages: list[dict],
+    steps: list[dict],
+):
+    """Claude Code CLI 경로 — 도구는 MCP 브리지로 CLI 안에서 실행된다.
+
+    CLI는 API 스타일 tools= 를 받지 못하므로 호스트 도구 루프를 돌리지 않는다.
+    대신 우리 워크스페이스 도구만 MCP로 노출하고(내장 도구는 전부 차단 유지),
+    CLI가 스스로 도구를 호출하며 낸 토큰/도구 이벤트를 그대로 중계한다.
+    """
+    client = provider.build_agent_client(
+        res,
+        attempt_id=str(attempt_id),
+        scenario_id=str(scenario_id),
+        tool_names=[t["name"] for t in AGENT_TOOLS],
+    )
+    got_text = False
+    # CLI 스트림은 같은 도구를 블록 시작(인자 비어 있음)과 완료(인자 채워짐) 두 번 알린다.
+    # 마지막 상태만 한 번 내보내기 위해 지연 방출한다.
+    pending: list[dict] = []
+
+    def _flush() -> list[dict]:
+        if not pending:
+            return []
+        item = pending.pop()
+        steps.append({"tool": item["name"], "detail": item["detail"]})
+        return [{"tool": {"name": item["name"], "detail": item["detail"]}}]
+
+    async for ev in client.create_message_stream(
+        model_config=provider._model_config(res),
+        messages=messages,
+        system=SYSTEM_PROMPT,
+        tools=None,
+        purpose="odysseus.agent.cli",
+    ):
+        etype = ev.get("type")
+        if etype == "text_delta" and ev.get("text"):
+            for out in _flush():
+                yield out
+            got_text = True
+            yield {"delta": ev["text"]}
+        elif etype == "tool_use":
+            raw = str(ev.get("name") or "")
+            name = raw.split("__")[-1] if raw.startswith("mcp__") else raw
+            detail = _tool_detail(name, ev.get("input") or {})
+            key = str(ev.get("id") or name)
+            if pending and pending[-1]["key"] == key:
+                # 같은 도구의 갱신 — 더 구체적인 detail로 덮어쓴다
+                if detail:
+                    pending[-1]["detail"] = detail
+            else:
+                for out in _flush():
+                    yield out
+                pending.append({"key": key, "name": name, "detail": detail})
+        elif etype == "message_complete":
+            for out in _flush():
+                yield out
+            response = ev.get("response")
+            text = (getattr(response, "text", "") or "") if response else ""
+            if text and not got_text:
+                yield {"delta": text}
+    for out in _flush():
+        yield out
+
+
 async def run_agent_turn(
     db: AsyncSession,
     res: provider.ResolvedAi,
@@ -279,8 +355,16 @@ async def run_agent_turn(
     """에이전트 1턴 — 이벤트 dict를 순서대로 yield.
 
     이벤트: {"delta": str} | {"tool": {"name", "detail"}} | {"steps": [...] } (마지막, 내부용)
+    delta는 **그대로 이어붙이면 되는 텍스트**다 (문단 구분은 서버가 넣는다).
     """
     steps: list[dict] = []
+
+    # Claude Code CLI — MCP 브리지로 같은 도구 집합을 사용
+    if res.provider == provider.CLAUDE_CODE_PROVIDER:
+        async for ev in _run_cli_agent_turn(res, attempt_id, scenario_id, messages, steps):
+            yield ev
+        yield {"steps": steps}
+        return
 
     if not provider.supports_host_tools(res):
         reply = await provider.complete_text(res, messages, system=CHAT_ONLY_SYSTEM_PROMPT)
@@ -289,6 +373,7 @@ async def run_agent_turn(
         return
 
     client = provider.build_client(res)
+    emitted_text = False
     for _ in range(settings.agent_max_tool_iterations):
         response = await client.create_message(
             model_config=provider._model_config(res),
@@ -301,7 +386,8 @@ async def run_agent_turn(
         tool_calls = response.tool_calls
 
         if text:
-            yield {"delta": text}
+            yield {"delta": (f"\n\n{text}" if emitted_text else text)}
+            emitted_text = True
 
         if not tool_calls:
             messages.append({"role": "assistant", "content": text or "(응답 없음)"})
@@ -322,6 +408,7 @@ async def run_agent_turn(
             result, detail = await execute_agent_tool(
                 db, attempt_id, scenario_id, user_id, b.tool_name, b.tool_input or {}
             )
+            detail = detail or _tool_detail(b.tool_name, b.tool_input or {})
             steps.append({"tool": b.tool_name, "detail": detail})
             yield {"tool": {"name": b.tool_name, "detail": detail}}
             results.append(

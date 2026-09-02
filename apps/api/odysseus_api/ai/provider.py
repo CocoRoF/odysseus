@@ -22,6 +22,7 @@ claude_code_cli는 서버에 설치된 ``claude`` CLI를 서브프로세스로 �
 """
 
 import os
+import sys
 import tempfile
 import uuid
 from dataclasses import dataclass, field
@@ -151,7 +152,17 @@ def provider_supports_host_tools(provider: str) -> bool:
 
 
 def supports_host_tools(res: "ResolvedAi") -> bool:
+    """API 스타일 tools= 를 붙일 수 있는가 (CLI는 불가 — MCP 경로를 쓴다)."""
     return provider_supports_host_tools(res.provider)
+
+
+def agent_tools_available(res: "ResolvedAi") -> bool:
+    """에이전트가 워크스페이스 도구를 쓸 수 있는가.
+
+    일반 공급자는 tools= 로, Claude Code CLI는 MCP 브리지로 — 결국 모든 공급자가
+    같은 도구 집합을 받는다.
+    """
+    return provider_supports_host_tools(res.provider) or res.provider == CLAUDE_CODE_PROVIDER
 
 
 # ── 해석된 실행 설정 ─────────────────────────────────────────────
@@ -267,12 +278,16 @@ _CLI_NATIVE_TOOL_BLOCKLIST = (
     "ScheduleWakeup",
 )
 
-_CLI_LOCKDOWN_ARGS = (
-    "--tools", "",              # 내장 도구 전체 비활성 (순수 LLM)
+#: CLI **내장** 능력을 끄는 잠금 인자 — MCP 사용 여부와 무관하게 항상 적용된다.
+#: (내장 도구 0개 · 스킬 0개 · 세션 파일 없음)
+_CLI_LOCKDOWN_BASE = (
+    "--tools", "",              # 내장 도구 전체 비활성
     "--disable-slash-commands",  # 스킬/커맨드 전부 차단
-    "--strict-mcp-config",       # --mcp-config 미지정 → MCP 서버 0개
     "--no-session-persistence",  # 서버에 세션 파일을 남기지 않는다
 )
+
+#: MCP 를 쓰지 않는 순수 채팅 경로 — MCP 서버도 0개임을 명시
+_CLI_LOCKDOWN_ARGS = _CLI_LOCKDOWN_BASE + ("--strict-mcp-config",)
 
 #: CLI는 모델 목록 명령이 없다 — 버전에 안전한 별칭을 정적 카탈로그로 제공.
 CLAUDE_CODE_STATIC_MODELS = [
@@ -289,14 +304,8 @@ _cli_client_cache: dict[tuple, Any] = {}
 _CLI_CACHE_MAX = 8
 
 
-def _build_claude_code_client(res: ResolvedAi):
-    cache_key = (res.api_key, res.base_url or "")
-    cached = _cli_client_cache.get(cache_key)
-    if cached is not None:
-        return cached
-
-    from geny_executor.llm_client.claude_code import ClaudeCodeCLIClient
-
+def _claude_code_kwargs(res: ResolvedAi, *, mcp_config: dict | None, allow_tools: tuple[str, ...]) -> dict:
+    """CLI 클라이언트 kwargs — 잠금 정책은 MCP 사용 여부와 무관하게 동일하다."""
     # 빈 전용 작업 디렉터리 — CLI가 API 프로세스의 cwd(코드 트리)를 보지 않게 한다.
     workspace = os.path.join(tempfile.gettempdir(), "odysseus-ai-cli")
     os.makedirs(workspace, exist_ok=True)
@@ -313,13 +322,18 @@ def _build_claude_code_client(res: ResolvedAi):
         "workspace_dir": workspace,
         "default_permission_mode": "default",
         "disallow_tools": _CLI_NATIVE_TOOL_BLOCKLIST,
-        "extra_args": _CLI_LOCKDOWN_ARGS,
+        # MCP 를 쓸 때는 번역기가 --strict-mcp-config 를 붙이므로 중복 방지
+        "extra_args": _CLI_LOCKDOWN_BASE if mcp_config else _CLI_LOCKDOWN_ARGS,
         "env_extras": env_extras,
         "timeout_s": 300.0,
         # odysseus는 클라이언트를 세션 단위로 소유하지 않으므로(호출 단위 사용,
         # aclose 미호출) hot-spare 프리웜을 끈다 — 켜면 고아 프로세스가 남는다.
         "prewarm_spawn": False,
     }
+    if mcp_config:
+        kwargs["mcp_config"] = mcp_config
+        # --print(비대화) 모드에서 권한 프롬프트로 멈추지 않도록 우리 서버 도구를 미리 허용
+        kwargs["allow_tools"] = allow_tools
     if res.api_key.startswith("sk-ant-oat"):
         # `claude setup-token` 장수 토큰 — 구독(OAuth) 채널. --bare 금지.
         env_extras["CLAUDE_CODE_OAUTH_TOKEN"] = res.api_key
@@ -327,11 +341,79 @@ def _build_claude_code_client(res: ResolvedAi):
     else:
         # API 키 채널 — --bare로 keychain/OAuth/CLAUDE.md 자동 탐색까지 차단.
         kwargs.update(api_key=res.api_key, auth_mode="api_key", bare_mode=True)
+    return kwargs
 
-    client = ClaudeCodeCLIClient(**kwargs)
+
+def _build_claude_code_client(res: ResolvedAi):
+    cache_key = (res.api_key, res.base_url or "")
+    cached = _cli_client_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from geny_executor.llm_client.claude_code import ClaudeCodeCLIClient
+
+    client = ClaudeCodeCLIClient(**_claude_code_kwargs(res, mcp_config=None, allow_tools=()))
     if len(_cli_client_cache) >= _CLI_CACHE_MAX:
         _cli_client_cache.pop(next(iter(_cli_client_cache)))
     _cli_client_cache[cache_key] = client
+    return client
+
+
+# ── 에이전트용 CLI 클라이언트 (MCP 도구 브리지) ──────────────────
+#
+# CLI는 API 스타일 tools= 를 받지 못한다. 그래서 CLI **내장** 도구는 그대로 전부
+# 차단한 채(--tools "" + disallowedTools + 스킬 차단), 우리 워크스페이스 도구만
+# stdio MCP 서버로 노출한다. --strict-mcp-config 로 이 서버가 CLI의 유일한 MCP
+# 표면이 되고, allow_tools 로 --print 모드의 권한 프롬프트를 피한다.
+
+MCP_SERVER_NAME = "odysseus"
+MCP_TOOL_PREFIX = f"mcp__{MCP_SERVER_NAME}__"
+
+
+def workspace_mcp_config(attempt_id: str, scenario_id: str) -> dict:
+    """CLI가 spawn 할 stdio MCP 서버 정의 (응시/시나리오 범위를 환경변수로 고정)."""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_workspace.py")
+    return {
+        "mcpServers": {
+            MCP_SERVER_NAME: {
+                "command": sys.executable or "python3",
+                "args": [script],
+                "env": {
+                    "ODYSSEUS_API_BASE": settings.internal_api_base,
+                    "ODYSSEUS_INTERNAL_TOKEN": settings.internal_token,
+                    "ODYSSEUS_ATTEMPT_ID": str(attempt_id),
+                    "ODYSSEUS_SCENARIO_ID": str(scenario_id),
+                    "PYTHONUNBUFFERED": "1",
+                },
+            }
+        }
+    }
+
+
+def build_agent_client(res: ResolvedAi, *, attempt_id: str, scenario_id: str, tool_names: list[str]):
+    """에이전트 턴용 클라이언트. CLI면 MCP 브리지를 붙인 **새** 인스턴스를 만든다.
+
+    (mcp_config가 응시/시나리오마다 달라 캐시를 쓸 수 없다 — 캐시된 인스턴스에
+    범위를 덮어쓰면 다른 응시의 워크스페이스로 새는 사고가 된다.)
+    """
+    if res.provider != CLAUDE_CODE_PROVIDER:
+        return build_client(res)
+
+    from geny_executor.llm_client.claude_code import ClaudeCodeCLIClient
+
+    allow = tuple([MCP_SERVER_NAME] and [f"{MCP_TOOL_PREFIX}{n}" for n in tool_names])
+    client = ClaudeCodeCLIClient(
+        **_claude_code_kwargs(
+            res,
+            mcp_config=workspace_mcp_config(attempt_id, scenario_id),
+            allow_tools=allow,
+        )
+    )
+    # --version 핸드셰이크는 캐시된 인스턴스가 이미 했으면 재사용 (턴당 Node 부팅 1회 절약)
+    cached = _cli_client_cache.get((res.api_key, res.base_url or ""))
+    version = getattr(cached, "_cli_version_value", None) if cached else None
+    if version:
+        client._cli_version_value = version
     return client
 
 

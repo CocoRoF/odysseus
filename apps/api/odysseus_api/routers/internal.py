@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import workspace as ws
 from ..config import settings
 from ..db import get_db
-from ..models import Event, Execution, utcnow
-from ..schemas import InternalRunResultIn
+from ..models import Attempt, Event, Execution, Scenario, utcnow
+from ..schemas import InternalAgentToolIn, InternalRunResultIn
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -17,6 +17,39 @@ router = APIRouter(prefix="/internal", tags=["internal"])
 def verify_internal(x_internal_token: str = Header(default="")):
     if x_internal_token != settings.internal_token:
         raise HTTPException(401, "invalid internal token")
+
+
+@router.get("/agent-tools", dependencies=[Depends(verify_internal)])
+async def agent_tools():
+    """에이전트 도구 정의 — MCP 브리지가 그대로 노출한다 (API tools= 와 동일 목록)."""
+    from ..ai.agent import AGENT_TOOLS
+
+    return {"tools": AGENT_TOOLS}
+
+
+@router.post("/agent-tool", dependencies=[Depends(verify_internal)])
+async def agent_tool(body: InternalAgentToolIn, db: AsyncSession = Depends(get_db)):
+    """MCP 브리지가 호출하는 도구 실행 표면.
+
+    다른 공급자가 ``tools=`` 로 받는 것과 **같은 구현**(execute_agent_tool)을 지나므로
+    공급자에 따라 동작이 갈리지 않는다. 범위(응시/시나리오)는 호출자가 아니라
+    브리지 기동 시 고정된 환경변수로 정해진다.
+    """
+    from ..ai.agent import execute_agent_tool
+
+    attempt = await db.get(Attempt, body.attempt_id)
+    if not attempt:
+        raise HTTPException(404, "attempt not found")
+    if attempt.status != "in_progress":
+        return {"result": "이미 종료된 시험이라 워크스페이스를 변경할 수 없습니다", "is_error": True}
+    if not await db.get(Scenario, body.scenario_id):
+        raise HTTPException(404, "scenario not found")
+
+    result, _detail = await execute_agent_tool(
+        db, attempt.id, body.scenario_id, attempt.user_id, body.name, body.input or {}
+    )
+    is_error = result.startswith("거부됨") or result.startswith("알 수 없는 도구")
+    return {"result": result, "is_error": is_error}
 
 
 @router.post("/executions/{execution_id}/running", dependencies=[Depends(verify_internal)])

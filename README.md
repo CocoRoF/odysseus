@@ -70,7 +70,8 @@ docker compose up -d --build
 | `postgres` / `redis` | 16-alpine / 7-alpine | 저장소 / 실행 큐 |
 
 - **워크스페이스** = DB가 단일 진실. IDE 저장·에이전트 도구·실행 결과 파일 반영이 한 곳에서 만나 전부 이벤트 로그로 남는다.
-- **LLM 공급자**: OpenAI / Anthropic / Gemini / vLLM / Ollama / LM Studio / OpenAI 호환 / **Claude Code CLI(순수 LLM 잠금)** — 관리자 설정에서 관리하고, 시험별로 NPC·에이전트 공급자를 따로 지정 가능.
+- **LLM 공급자**: OpenAI / Anthropic / Gemini / vLLM / Ollama / LM Studio / OpenAI 호환 / **Claude Code CLI** — 관리자 설정에서 관리하고, 시험별로 NPC·에이전트 공급자를 따로 지정 가능. Claude 구독 계정은 설정 화면의 **브라우저 로그인**(1년 토큰 자동 발급)으로 연결합니다.
+- **Claude Code 도구 브리지**: CLI 내장 도구·스킬·세션(Bash/Read/Write/WebSearch…)은 항상 전부 차단하고, 우리 워크스페이스 도구 8종만 **stdio MCP 서버**로 노출합니다. 덕분에 CLI도 다른 공급자와 **동일한 도구 집합**으로 파일을 찾고·만들고·실행합니다 (`--tools "" + --disallowedTools + --strict-mcp-config + --allowedTools mcp__odysseus__*`).
 
 ## 설정
 
@@ -92,7 +93,13 @@ cp .env.example .env   # 필요 시 수정 (없어도 기본값으로 기동)
 ```bash
 python3 tests/smoke/mock_llm.py &     # :18011 모의 LLM (NPC/에이전트/평가)
 # 게이트웨이: docker network inspect odysseus_default -f '{{(index .IPAM.Config 0).Gateway}}'
-python3 tests/smoke/test_core.py "http://<gateway>:18011/v1"
+python3 tests/smoke/test_core.py "http://<gateway>:18011/v1"      # 54
+
+# api 컨테이너 내부 (MCP 브리지 · CLI 잠금 · Claude 로그인 중계)
+docker cp tests/smoke/test_mcp_bridge.py odysseus-api-1:/tmp/
+docker exec -e PYTHONPATH=/app odysseus-api-1 python3 /tmp/test_mcp_bridge.py     # 12
+docker cp tests/smoke/test_cli_lockdown.py odysseus-api-1:/tmp/
+docker exec -e PYTHONPATH=/app odysseus-api-1 python3 /tmp/test_cli_lockdown.py   # 19
 ```
 
 ## License
