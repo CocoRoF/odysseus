@@ -14,6 +14,7 @@ import { useWindowManager, AppId } from "@/components/desktop/wm";
 import { Window, APP_META } from "@/components/desktop/Window";
 import { Taskbar } from "@/components/desktop/Taskbar";
 import { WorkspaceProvider } from "@/components/desktop/workspace";
+import { AgentSessionProvider } from "@/components/desktop/agentSession";
 import { MessengerApp } from "@/components/desktop/apps/MessengerApp";
 import { ViewerApp } from "@/components/desktop/apps/ViewerApp";
 import { IdeApp } from "@/components/desktop/apps/IdeApp";
@@ -263,6 +264,12 @@ export default function ExamDesktopPage() {
         openApp("viewer");
       }}
     >
+      <AgentSessionProvider
+        key={scenario.scenario_id}
+        attemptId={attemptId}
+        scenarioId={scenario.scenario_id}
+        enabled={scenario.agent_enabled}
+      >
       <div
         className="desktop-wallpaper relative h-screen w-screen overflow-hidden"
         onClick={() => setSelectedIcon(null)}
@@ -365,7 +372,7 @@ export default function ExamDesktopPage() {
           theme={APP_META.ide.theme}
           icon={<IconIde size={15} />}
         >
-          <IdeApp key={scenario.scenario_id} onActivity={() => undefined} />
+          <IdeApp key={scenario.scenario_id} />
         </Window>
         {scenario.agent_enabled && (
           <Window
@@ -375,7 +382,7 @@ export default function ExamDesktopPage() {
             accent={APP_META.agent.accent}
             icon={<IconAgent size={15} />}
           >
-            <AgentApp key={scenario.scenario_id} onActivity={() => undefined} />
+            <AgentApp />
           </Window>
         )}
         <Window
@@ -450,6 +457,7 @@ export default function ExamDesktopPage() {
           </div>
         )}
       </div>
+      </AgentSessionProvider>
     </WorkspaceProvider>
   );
 }

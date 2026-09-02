@@ -83,6 +83,7 @@ export function Window({
 
   return (
     <div
+      data-app={win.id}
       className={`window-in window-shadow absolute flex flex-col overflow-hidden rounded-xl border ${frameCls}`}
       style={style}
       onPointerDown={() => wm.focus(win.id)}

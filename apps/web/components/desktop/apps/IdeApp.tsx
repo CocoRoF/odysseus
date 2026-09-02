@@ -7,6 +7,7 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { Divider } from "@/components/Divider";
 import { useToast } from "@/components/toast";
 import {
+  IconAgent,
   IconChevronRight,
   IconClose,
   IconDelete,
@@ -20,6 +21,8 @@ import { copyText, selectedText } from "@/lib/clipboard";
 import { buildTree, isKeepPath, languageOf, TreeNode, useWorkspace } from "../workspace";
 import { FileGlyph, FolderGlyph } from "../fileicons";
 import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
+import { AgentChat } from "../AgentChat";
+import { useAgentSession } from "../agentSession";
 
 interface Tab {
   path: string;
@@ -140,7 +143,9 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
   const [activePath, setActivePath] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarView, setSidebarView] = useState<"explorer" | "agent">("explorer");
   const [sidebarW, setSidebarW] = useState(200);
+  const [agentW, setAgentW] = useState(380);
   const [termOpen, setTermOpen] = useState(true);
   const [termH, setTermH] = useState(190);
   const [cursor, setCursor] = useState({ ln: 1, col: 1 });
@@ -151,6 +156,8 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
   >(null);
   const [draftError, setDraftError] = useState("");
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+  // 에이전트는 데스크톱 창과 **같은 세션/같은 대화** — 위치만 다르다
+  const agent = useAgentSession();
 
   // 터미널 상태
   const [lines, setLines] = useState<TermLine[]>([]);
@@ -553,6 +560,16 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
   const crumbs = active ? active.path.split("/") : [];
   const langName = active ? languageOf(active.path) : "";
 
+  /** 같은 뷰를 다시 누르면 사이드바를 접고, 다른 뷰면 전환한다 (VSCode 규약) */
+  const toggleSidebar = (view: "explorer" | "agent") => {
+    if (sidebarOpen && sidebarView === view) {
+      setSidebarOpen(false);
+      return;
+    }
+    setSidebarView(view);
+    setSidebarOpen(true);
+  };
+
   const activityBtn = (activeState: boolean) =>
     `relative flex h-11 w-full items-center justify-center transition-colors ${
       activeState ? "text-white" : "text-[#7a7a7a] hover:text-white"
@@ -563,14 +580,35 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
       <div className="flex min-h-0 flex-1">
         {/* 액티비티 바 */}
         <div className="flex w-11 shrink-0 flex-col items-center border-r border-black/40 bg-[#333333] py-1">
-          <button title="탐색기" className={activityBtn(sidebarOpen)} onClick={() => setSidebarOpen((v) => !v)}>
-            {sidebarOpen && <span className="absolute left-0 top-1.5 h-8 w-[2px] bg-white" />}
+          <button
+            title="탐색기"
+            className={activityBtn(sidebarOpen && sidebarView === "explorer")}
+            onClick={() => toggleSidebar("explorer")}
+          >
+            {sidebarOpen && sidebarView === "explorer" && (
+              <span className="absolute left-0 top-1.5 h-8 w-[2px] bg-white" />
+            )}
             <FiCopy size={20} />
           </button>
           <button title="터미널" className={activityBtn(termOpen)} onClick={() => setTermOpen((v) => !v)}>
             {termOpen && <span className="absolute left-0 top-1.5 h-8 w-[2px] bg-white" />}
             <IconTerminal size={20} />
           </button>
+          {agent?.available && (
+            <button
+              title="AI 에이전트"
+              className={activityBtn(sidebarOpen && sidebarView === "agent")}
+              onClick={() => toggleSidebar("agent")}
+            >
+              {sidebarOpen && sidebarView === "agent" && (
+                <span className="absolute left-0 top-1.5 h-8 w-[2px] bg-white" />
+              )}
+              <IconAgent size={20} />
+              {agent.busy && (
+                <span className="absolute right-2 top-2 h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
+              )}
+            </button>
+          )}
           <div className="mt-auto">
             <span className="flex h-11 w-11 items-center justify-center text-[#5a5a5a]">
               <FiSettings size={19} />
@@ -581,10 +619,26 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
         {/* 사이드바: 탐색기 */}
         {sidebarOpen && (
           <>
-            <div className="flex shrink-0 flex-col bg-[#252526]" style={{ width: sidebarW }}>
-              <div className="flex h-8 items-center justify-between pl-4 pr-2">
-                <span className="text-[11px] uppercase tracking-wide text-[#bbbbbb]">탐색기</span>
+            <div
+              className="flex shrink-0 flex-col bg-[#252526]"
+              style={{ width: sidebarView === "agent" ? agentW : sidebarW }}
+            >
+              <div className="flex h-8 shrink-0 items-center justify-between pl-4 pr-2">
+                <span className="text-[11px] uppercase tracking-wide text-[#bbbbbb]">
+                  {sidebarView === "agent" ? "AI 에이전트" : "탐색기"}
+                </span>
+                {sidebarView === "agent" && agent?.usage && (
+                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-[#cccccc]">
+                    남은 질문 {agent.usage.remaining}/{agent.usage.max}
+                  </span>
+                )}
               </div>
+              {sidebarView === "agent" ? (
+                <div className="min-h-0 flex-1">
+                  <AgentChat theme="dark" showHeader={false} />
+                </div>
+              ) : (
+              <>
               <div
                 className="flex h-[22px] items-center gap-1 bg-[#2d2d30] pl-1 pr-1.5"
                 onContextMenu={(e) => openMenu(e, rootMenu(), { dark: true })}
@@ -704,13 +758,17 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
                   </p>
                 )}
               </div>
+              </>
+              )}
             </div>
             <Divider
               orientation="vertical"
               tone="dark"
               onMove={(x) => {
                 const left = rootRef.current?.getBoundingClientRect().left ?? 0;
-                setSidebarW(Math.max(140, Math.min(x - left - 44, 420)));
+                const next = x - left - 44;
+                if (sidebarView === "agent") setAgentW(Math.max(280, Math.min(next, 640)));
+                else setSidebarW(Math.max(140, Math.min(next, 420)));
               }}
             />
           </>
