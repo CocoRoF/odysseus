@@ -40,4 +40,8 @@ export {
   FiEdit3 as IconRename,
   FiScissors as IconCut,
   FiClipboard as IconPaste,
+  FiMoreHorizontal as IconMore,
+  FiLock as IconLock,
+  FiCheckSquare as IconDone,
+  FiArrowRightCircle as IconNext,
 } from "react-icons/fi";

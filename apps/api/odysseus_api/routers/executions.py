@@ -29,7 +29,7 @@ async def run_command(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await require_own_active(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     command = body.command.strip()
     if len(command) > settings.run_command_max_len:
         raise HTTPException(400, "명령이 너무 깁니다")
@@ -80,7 +80,7 @@ async def list_executions(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await get_attempt_for(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user)
     return (
         await db.execute(
             select(Execution)

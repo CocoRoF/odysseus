@@ -91,7 +91,7 @@ class ScenarioIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     summary: str = Field(default="", max_length=2000)
     difficulty: Literal["easy", "medium", "hard"] = "medium"
-    briefing_md: str = Field(default="", max_length=8000)
+    briefing_md: str = Field(default="", max_length=40000)
     characters: list[CharacterIn] = Field(default_factory=list, max_length=8)
     opening_messages: list[OpeningMessageIn] = Field(default_factory=list, max_length=10)
     initial_files: list[InitialFileIn] = Field(default_factory=list, max_length=60)
@@ -217,6 +217,8 @@ class AttemptScenarioOut(BaseModel):
     points: int
     agent_enabled: bool
     characters: list  # [{key, name, role, color}] — persona/knowledge는 제외
+    # 순차 진행 상태: completed(제출 완료) | in_progress(현재) | locked(아직 잠김)
+    status: str = "in_progress"
     unread: int = 0
 
 
@@ -229,6 +231,7 @@ class AttemptOut(BaseModel):
     deadline_at: datetime
     submitted_at: datetime | None
     agent_max_turns: int
+    current_ordinal: int = 0
     scenarios: list[AttemptScenarioOut]
 
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { Character, Check, CheckType, InitialFile, OpeningMessage, Rubric, Scenario } from "@/lib/types";
 import { CodeEditor } from "@/components/CodeEditor";
+import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
 import { Button, Card, Field, inputCls } from "@/components/ui";
 import { IconAdd, IconDelete } from "@/components/icons";
@@ -56,6 +57,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
   const [summary, setSummary] = useState(initial?.summary ?? "");
   const [difficulty, setDifficulty] = useState(initial?.difficulty ?? "medium");
   const [briefing, setBriefing] = useState(initial?.briefing_md ?? "");
+  const [briefingPreview, setBriefingPreview] = useState(false);
   const [agentEnabled, setAgentEnabled] = useState(initial?.agent_enabled ?? true);
   const [characters, setCharacters] = useState<Character[]>(initial?.characters ?? []);
   const [opening, setOpening] = useState<OpeningMessage[]>(initial?.opening_messages ?? []);
@@ -177,12 +179,48 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
           <Field label="한 줄 요약 (관리용)">
             <input className={inputCls} value={summary} onChange={(e) => setSummary(e.target.value)} />
           </Field>
-          <Field
-            label="응시자 브리핑 (Markdown)"
-            hint="시작 시 한 번 보여주는 최소 안내. 과제 내용은 절대 쓰지 마세요 — '메신저를 확인하세요' 수준이면 충분합니다."
-          >
-            <textarea className={`${inputCls} min-h-28 font-mono text-xs`} value={briefing} onChange={(e) => setBriefing(e.target.value)} />
-          </Field>
+          {/* 시작 화면(브리핑) — 짧게도, 아주 길게도 쓸 수 있다 */}
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-700">시작 화면 안내 (Markdown)</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400">{briefing.length.toLocaleString()}자</span>
+                <button
+                  onClick={() => setBriefingPreview((v) => !v)}
+                  className={`rounded-lg border px-2 py-1 text-xs transition ${
+                    briefingPreview
+                      ? "border-slate-800 bg-slate-900 text-white"
+                      : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  미리보기
+                </button>
+              </div>
+            </div>
+            {briefingPreview ? (
+              <div className="min-h-[13rem] rounded-lg border border-slate-300 bg-slate-50 p-4">
+                {briefing.trim() ? (
+                  <Markdown>{briefing}</Markdown>
+                ) : (
+                  <p className="text-sm text-slate-400">
+                    내용이 없으면 기본 문구(&ldquo;메신저에 새 메시지가 와 있습니다…&rdquo;)가 표시됩니다.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <textarea
+                className={`${inputCls} min-h-[13rem] font-mono text-xs`}
+                value={briefing}
+                onChange={(e) => setBriefing(e.target.value)}
+                placeholder={"응시자가 문제를 시작할 때 보게 될 화면입니다.\n\n예)\n## 상황\n당신은 추론 플랫폼 팀에 합류한 지 3일째입니다...\n\n### 참고\n- 워크스페이스의 `logs/` 아래에 어제 장애 로그가 있습니다.\n- 관계자: 정하늘(SRE), 박지훈(ML)"}
+              />
+            )}
+            <p className="mt-1 text-xs text-slate-400">
+              시작 시 한 번 보여주는 안내입니다. 길이 제한은 넉넉하니(4만 자) 배경 설정·제약·산출물 요구를
+              자세히 써도 됩니다. 다만 <b>정답이나 요구사항 자체는 쓰지 마세요</b> — 그건 대화로 파악하게 하는
+              것이 이 시험의 핵심입니다.
+            </p>
+          </div>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input type="checkbox" checked={agentEnabled} onChange={(e) => setAgentEnabled(e.target.checked)} />
             AI 에이전트 앱 허용 (응시자가 파일 조작 가능한 어시스턴트 사용)

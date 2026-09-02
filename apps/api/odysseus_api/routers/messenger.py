@@ -40,7 +40,7 @@ async def list_messages(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await get_attempt_for(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user)
     q = (
         select(MessengerMessage)
         .where(MessengerMessage.attempt_id == attempt_id, MessengerMessage.scenario_id == scenario_id)
@@ -64,7 +64,7 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await require_own_active(attempt_id, user, db)
-    scenario = await scenario_in_attempt(attempt, scenario_id, db)
+    scenario = await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     character = _find_character(scenario, character_key)
 
     assessment = await db.get(Assessment, attempt.assessment_id)

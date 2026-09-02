@@ -24,7 +24,10 @@ from .routers import (
 from .seed import seed_if_empty
 
 # create_all은 기존 테이블에 컬럼을 추가하지 않는다 — 스키마 변경은 여기에 idempotent DDL로 누적
-MIGRATIONS: list[str] = []
+MIGRATIONS: list[str] = [
+    # 순차 진행(다중 시나리오) — 현재 시나리오 위치
+    "ALTER TABLE attempts ADD COLUMN IF NOT EXISTS current_ordinal INTEGER NOT NULL DEFAULT 0",
+]
 
 
 @asynccontextmanager

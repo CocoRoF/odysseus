@@ -27,7 +27,7 @@ async def list_files(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await get_attempt_for(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user)
     rows = await ws.list_files(db, attempt_id, scenario_id)
     return [
         FileEntryOut(
@@ -51,7 +51,7 @@ async def get_content(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await get_attempt_for(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user)
     try:
         norm = ws.normalize_path(path)
     except ws.WorkspaceError as e:
@@ -74,7 +74,7 @@ async def save_content(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await require_own_active(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     try:
         row, _created = await ws.save_file(
             db, attempt_id, scenario_id, body.path, body.content, actor="ide"
@@ -96,7 +96,7 @@ async def rename_file(
 ):
     """파일 또는 폴더 이름 변경/이동 (폴더는 하위 전체가 함께 이동)."""
     attempt = await require_own_active(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     try:
         moved = await ws.move_path(db, attempt_id, scenario_id, body.from_path, body.to_path, actor="ide")
     except ws.WorkspaceError as e:
@@ -115,7 +115,7 @@ async def copy_file(
 ):
     """파일 또는 폴더 복사 (폴더는 하위 전체 복사)."""
     attempt = await require_own_active(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     try:
         copied = await ws.copy_path(db, attempt_id, scenario_id, body.from_path, body.to_path, actor="ide")
     except ws.WorkspaceError as e:
@@ -133,7 +133,7 @@ async def remove_file(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await require_own_active(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     try:
         removed = await ws.delete_path(db, attempt_id, scenario_id, path, actor="ide")
     except ws.WorkspaceError as e:

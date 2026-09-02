@@ -169,13 +169,21 @@ export default function ExamDesktopPage() {
 
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [error, setError] = useState("");
-  const [scenarioId, setScenarioId] = useState<string | null>(null);
   const [showBriefing, setShowBriefing] = useState(false);
   const [messengerOpened, setMessengerOpened] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
   const [viewerPath, setViewerPath] = useState<string | null>(null);
 
   const inProgress = attempt?.status === "in_progress";
+  // 순차 진행 — 현재 문제는 서버의 current_ordinal 이 정한다 (임의 이동 불가)
+  const scenario: AttemptScenario | null = useMemo(
+    () => attempt?.scenarios.find((s) => s.ordinal === attempt.current_ordinal) ?? null,
+    [attempt],
+  );
+  const scenarioId = scenario?.scenario_id ?? null;
+  const hasNext = Boolean(
+    attempt && attempt.current_ordinal < attempt.scenarios.length - 1,
+  );
   const pushEvent = useActivityTracker(attemptId, Boolean(inProgress), scenarioId);
 
   const wm = useWindowManager((type, app) => pushEvent(type, { app }));
@@ -185,24 +193,44 @@ export default function ExamDesktopPage() {
       .get<Attempt>(`/attempts/${attemptId}`)
       .then((a) => {
         setAttempt(a);
-        setScenarioId(a.scenarios[0]?.scenario_id ?? null);
-        if (a.status === "in_progress") {
-          const seenKey = `odysseus:briefing:${a.id}`;
+        const current = a.scenarios.find((s) => s.ordinal === a.current_ordinal);
+        if (a.status === "in_progress" && current) {
+          const seenKey = `odysseus:briefing:${a.id}:${current.scenario_id}`;
           if (!localStorage.getItem(seenKey)) setShowBriefing(true);
         }
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "불러올 수 없습니다"));
   }, [attemptId]);
 
-  const scenario: AttemptScenario | null = useMemo(
-    () => attempt?.scenarios.find((s) => s.scenario_id === scenarioId) ?? null,
-    [attempt, scenarioId],
-  );
-
   const remainingSeconds = useMemo(() => {
     if (!attempt) return 0;
     return Math.max(0, Math.round((new Date(attempt.deadline_at).getTime() - Date.now()) / 1000));
   }, [attempt]);
+
+  const goNextScenario = useCallback(async () => {
+    if (!attempt || !scenario) return;
+    const ok = await confirm({
+      title: "이 문제를 제출하고 다음으로 넘어갈까요?",
+      message:
+        "제출하면 이 문제로 **되돌아올 수 없습니다**. 대화·파일·실행 기록은 그대로 평가에 사용됩니다.",
+      danger: true,
+      confirmLabel: "제출하고 다음 문제로",
+    });
+    if (!ok) return;
+    try {
+      const next = await api.post<Attempt>(
+        `/attempts/${attemptId}/scenarios/${scenario.scenario_id}/complete`,
+      );
+      setAttempt(next);
+      // 새 문제 = 새 데스크톱: 창을 정리하고 브리핑부터 다시
+      (Object.keys(wm.wins) as AppId[]).forEach((id) => wm.close(id));
+      setViewerPath(null);
+      setMessengerOpened(false);
+      setShowBriefing(true);
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "다음 문제로 넘어갈 수 없습니다", "error");
+    }
+  }, [attempt, scenario, attemptId, confirm, toast, wm]);
 
   const finish = useCallback(
     async (silent = false) => {
@@ -330,23 +358,6 @@ export default function ExamDesktopPage() {
           })}
         </div>
 
-        {/* 시나리오 전환 (복수일 때만) */}
-        {attempt.scenarios.length > 1 && (
-          <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-slate-950/50 p-1 backdrop-blur">
-            {attempt.scenarios.map((s, i) => (
-              <button
-                key={s.scenario_id}
-                onClick={() => setScenarioId(s.scenario_id)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                  s.scenario_id === scenarioId ? "bg-white text-slate-900" : "text-slate-300 hover:bg-white/10"
-                }`}
-              >
-                {i + 1}. {s.title}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* 창들 */}
         <Window
           win={wm.wins.messenger}
@@ -412,12 +423,15 @@ export default function ExamDesktopPage() {
           remainingSeconds={remainingSeconds}
           onExpire={() => finish(true)}
           onFinish={() => finish(false)}
+          onNextScenario={goNextScenario}
           userName={user?.name ?? ""}
           assessmentTitle={
             attempt.scenarios.length > 1
-              ? `${attempt.assessment_title} · ${scenario.title}`
+              ? `${attempt.assessment_title} · ${attempt.current_ordinal + 1}. ${scenario.title}`
               : attempt.assessment_title
           }
+          scenarios={attempt.scenarios}
+          hasNext={hasNext}
           messengerBadge={!messengerOpened}
           agentDisabled={!scenario.agent_enabled}
           viewerLabel={viewerPath ? viewerPath.split("/").pop() : null}
@@ -426,33 +440,49 @@ export default function ExamDesktopPage() {
         {/* 시작 브리핑 */}
         {showBriefing && (
           <div className="absolute inset-0 z-[9500] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-            <div className="window-shadow w-full max-w-lg rounded-2xl bg-white p-7">
-              <p className="text-xs font-bold uppercase tracking-widest text-sky-500">Odysseus</p>
-              <h2 className="mt-1 text-xl font-bold">{attempt.assessment_title}</h2>
-              <div className="mt-4 rounded-xl bg-slate-50 p-4">
-                {scenario.briefing_md ? (
-                  <Markdown>{scenario.briefing_md}</Markdown>
-                ) : (
-                  <p className="text-sm text-slate-600">
-                    메신저에 새 메시지가 와 있습니다. 대화로 상황을 파악하고, IDE와 폴더에서 작업하세요.
-                  </p>
-                )}
+            <div className="window-shadow flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-white">
+              <div className="shrink-0 px-7 pb-4 pt-7">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold uppercase tracking-widest text-sky-500">Odysseus</p>
+                  {attempt.scenarios.length > 1 && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                      문제 {attempt.current_ordinal + 1} / {attempt.scenarios.length}
+                    </span>
+                  )}
+                </div>
+                <h2 className="mt-1 text-xl font-bold">{attempt.assessment_title}</h2>
               </div>
-              <ul className="mt-4 space-y-1 text-xs text-slate-500">
-                <li>· 과제는 지문으로 주어지지 않습니다 — <b>메신저 대화</b>로 파악하세요.</li>
-                <li>· 워크스페이스의 파일이 곧 산출물입니다. IDE·터미널·AI 에이전트를 활용하세요.</li>
-                <li>· 모든 활동은 평가 목적으로 기록됩니다.</li>
-              </ul>
-              <Button
-                className="mt-6 w-full"
-                onClick={() => {
-                  localStorage.setItem(`odysseus:briefing:${attempt.id}`, "1");
-                  setShowBriefing(false);
-                  openApp("messenger");
-                }}
-              >
-                업무 시작하기
-              </Button>
+              <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-7">
+                <div className="rounded-xl bg-slate-50 p-5">
+                  {scenario.briefing_md ? (
+                    <Markdown>{scenario.briefing_md}</Markdown>
+                  ) : (
+                    <p className="text-sm text-slate-600">
+                      메신저에 새 메시지가 와 있습니다. 대화로 상황을 파악하고, IDE와 폴더에서 작업하세요.
+                    </p>
+                  )}
+                </div>
+                <ul className="mt-4 space-y-1 pb-2 text-xs text-slate-500">
+                  <li>· 과제는 지문으로 주어지지 않습니다 — <b>메신저 대화</b>로 파악하세요.</li>
+                  <li>· 워크스페이스의 파일이 곧 산출물입니다. IDE·터미널·AI 에이전트를 활용하세요.</li>
+                  {attempt.scenarios.length > 1 && (
+                    <li>· 문제는 <b>순서대로</b> 진행합니다. 제출하면 이전 문제로 돌아갈 수 없습니다.</li>
+                  )}
+                  <li>· 모든 활동은 평가 목적으로 기록됩니다.</li>
+                </ul>
+              </div>
+              <div className="shrink-0 px-7 pb-7 pt-4">
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    localStorage.setItem(`odysseus:briefing:${attempt.id}:${scenario.scenario_id}`, "1");
+                    setShowBriefing(false);
+                    openApp("messenger");
+                  }}
+                >
+                  업무 시작하기
+                </Button>
+              </div>
             </div>
           </div>
         )}

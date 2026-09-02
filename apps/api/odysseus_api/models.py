@@ -138,6 +138,8 @@ class Attempt(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     status: Mapped[str] = mapped_column(String(20), default="in_progress")  # in_progress | submitted | expired
     superseded: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 다중 시나리오 시험은 순차 진행 — 현재 풀고 있는 시나리오의 ordinal
+    current_ordinal: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -4,7 +4,7 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -79,9 +79,7 @@ async def require_own_active(attempt_id: uuid.UUID, user: User, db: AsyncSession
     return attempt
 
 
-async def scenario_in_attempt(
-    attempt: Attempt, scenario_id: uuid.UUID, db: AsyncSession
-) -> Scenario:
+async def _scenario_link(attempt: Attempt, scenario_id: uuid.UUID, db: AsyncSession) -> AssessmentScenario:
     link = (
         await db.execute(
             select(AssessmentScenario).where(
@@ -92,10 +90,55 @@ async def scenario_in_attempt(
     ).scalar_one_or_none()
     if not link:
         raise HTTPException(404, "이 시험에 포함되지 않은 시나리오입니다")
+    return link
+
+
+def _is_taker(attempt: Attempt, user: User | None) -> bool:
+    """지금 이 응시를 '치르는 중'인 본인인가 — 잠금 규칙은 이 경우에만 적용한다.
+
+    (스태프가 남의 응시를 리뷰할 때는 전 구간을 볼 수 있어야 한다.)
+    """
+    return bool(user) and attempt.user_id == user.id and attempt.status == "in_progress"
+
+
+async def scenario_in_attempt(
+    attempt: Attempt,
+    scenario_id: uuid.UUID,
+    db: AsyncSession,
+    user: User | None = None,
+    *,
+    mutate: bool = False,
+) -> Scenario:
+    """시나리오 접근 가드.
+
+    다중 시나리오 시험은 **순차 진행**이다. 응시 중인 본인에게는
+      · 아직 순서가 오지 않은 시나리오 → 잠김(423)
+      · 이미 제출한 시나리오 → 읽기만 허용(쓰기는 423)
+    """
+    link = await _scenario_link(attempt, scenario_id, db)
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(404, "시나리오를 찾을 수 없습니다")
+
+    if _is_taker(attempt, user):
+        if link.ordinal > attempt.current_ordinal:
+            raise HTTPException(423, "아직 잠긴 문제입니다. 앞선 문제를 먼저 제출하세요")
+        if mutate and link.ordinal < attempt.current_ordinal:
+            raise HTTPException(423, "이미 제출한 문제입니다. 되돌아갈 수 없습니다")
     return scenario
+
+
+def _scenario_status(attempt: Attempt, ordinal: int) -> str:
+    """completed | in_progress | locked.
+
+    시험이 끝난 뒤에는 진행 중이던 문제도 제출된 것으로 본다 (마지막 문제가
+    영원히 '진행 중'으로 남지 않도록).
+    """
+    if ordinal < attempt.current_ordinal:
+        return "completed"
+    if ordinal > attempt.current_ordinal:
+        return "locked"
+    return "in_progress" if attempt.status == "in_progress" else "completed"
 
 
 async def _attempt_out(attempt: Attempt, db: AsyncSession) -> AttemptOut:
@@ -112,9 +155,13 @@ async def _attempt_out(attempt: Attempt, db: AsyncSession) -> AttemptOut:
         AttemptScenarioOut(
             scenario_id=link.scenario_id,
             title=link.scenario.title,
-            briefing_md=link.scenario.briefing_md,
+            # 잠긴 문제의 브리핑은 미리 보여주지 않는다 (스포일러 방지)
+            briefing_md=(
+                link.scenario.briefing_md if link.ordinal <= attempt.current_ordinal else ""
+            ),
             ordinal=link.ordinal,
             points=link.points,
+            status=_scenario_status(attempt, link.ordinal),
             agent_enabled=link.scenario.agent_enabled,
             characters=[
                 {
@@ -137,6 +184,7 @@ async def _attempt_out(attempt: Attempt, db: AsyncSession) -> AttemptOut:
         deadline_at=attempt.deadline_at,
         submitted_at=attempt.submitted_at,
         agent_max_turns=assessment.agent_max_turns,
+        current_ordinal=attempt.current_ordinal,
         scenarios=scenarios,
     )
 
@@ -316,6 +364,48 @@ async def post_events(
         )
     await db.commit()
     return {"ok": True, "recorded": len(events)}
+
+
+@router.post("/attempts/{attempt_id}/scenarios/{scenario_id}/complete", response_model=AttemptOut)
+async def complete_scenario(
+    attempt_id: uuid.UUID,
+    scenario_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """현재 문제를 제출하고 다음 문제로 넘어간다 (되돌아갈 수 없다).
+
+    마지막 문제였다면 시험 자체가 종료된다.
+    """
+    attempt = await require_own_active(attempt_id, user, db)
+    link = await _scenario_link(attempt, scenario_id, db)
+    if link.ordinal != attempt.current_ordinal:
+        raise HTTPException(409, "현재 진행 중인 문제가 아닙니다")
+
+    total = (
+        await db.execute(
+            select(func.count(AssessmentScenario.id)).where(
+                AssessmentScenario.assessment_id == attempt.assessment_id
+            )
+        )
+    ).scalar() or 0
+
+    db.add(
+        Event(
+            attempt_id=attempt.id,
+            scenario_id=scenario_id,
+            type="scenario_completed",
+            payload={"ordinal": link.ordinal, "total": total},
+        )
+    )
+    if link.ordinal + 1 >= total:
+        attempt.status = "submitted"
+        attempt.submitted_at = utcnow()
+        db.add(Event(attempt_id=attempt.id, type="attempt_submitted", payload={}))
+    else:
+        attempt.current_ordinal = link.ordinal + 1
+    await db.commit()
+    return await _attempt_out(attempt, db)
 
 
 @router.post("/attempts/{attempt_id}/finish", response_model=AttemptOut)

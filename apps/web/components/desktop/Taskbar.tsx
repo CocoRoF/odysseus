@@ -4,14 +4,19 @@ import { useEffect, useState } from "react";
 import { Timer } from "@/components/Timer";
 import {
   IconAgent,
+  IconDone,
   IconExitFullscreen,
   IconFile,
   IconFolder,
   IconFullscreen,
   IconIde,
+  IconLock,
   IconMessenger,
   IconMonitor,
+  IconMore,
+  IconNext,
 } from "@/components/icons";
+import type { AttemptScenario } from "@/lib/types";
 import type { AppId, WindowManager } from "./wm";
 
 const APPS: { id: AppId; label: string; icon: React.ReactNode }[] = [
@@ -58,13 +63,89 @@ function FullscreenButton() {
   );
 }
 
+/** 문제 목록 — 진행 상황만 보여주는 읽기 전용 팝오버 (이동 불가) */
+function ScenarioListButton({ scenarios }: { scenarios: AttemptScenario[] }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+
+  const done = scenarios.filter((s) => s.status === "completed").length;
+
+  return (
+    <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+      <button
+        title="문제 목록"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition ${
+          open
+            ? "border-white/25 bg-white/15 text-white"
+            : "border-white/15 text-slate-300 hover:bg-white/10 hover:text-white"
+        }`}
+      >
+        <IconMore size={15} />
+        <span className="hidden xl:inline">
+          문제 {Math.min(done + 1, scenarios.length)}/{scenarios.length}
+        </span>
+      </button>
+
+      {open && (
+        <div className="window-shadow absolute bottom-11 left-0 z-[9100] w-80 overflow-hidden rounded-xl border border-slate-700 bg-slate-900/95 backdrop-blur-xl">
+          <div className="border-b border-white/10 px-3 py-2">
+            <p className="text-xs font-bold text-white">문제 목록</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              순서대로 진행합니다 — 제출한 문제로는 돌아갈 수 없습니다.
+            </p>
+          </div>
+          <ul className="max-h-72 overflow-y-auto py-1">
+            {scenarios.map((s, i) => {
+              const state =
+                s.status === "completed"
+                  ? { icon: <IconDone size={13} />, cls: "text-emerald-400", label: "제출 완료" }
+                  : s.status === "in_progress"
+                    ? { icon: <IconNext size={13} />, cls: "text-sky-400", label: "진행 중" }
+                    : { icon: <IconLock size={13} />, cls: "text-slate-500", label: "잠김" };
+              return (
+                <li
+                  key={s.scenario_id}
+                  className={`flex items-center gap-2.5 px-3 py-2 text-sm ${
+                    s.status === "in_progress" ? "bg-white/5" : ""
+                  }`}
+                >
+                  <span className={`shrink-0 ${state.cls}`}>{state.icon}</span>
+                  <span className="w-4 shrink-0 text-center text-[11px] text-slate-500">{i + 1}</span>
+                  <span
+                    className={`min-w-0 flex-1 truncate ${
+                      s.status === "locked" ? "text-slate-500" : "text-slate-200"
+                    }`}
+                  >
+                    {s.status === "locked" ? "· · · · ·" : s.title}
+                  </span>
+                  <span className={`shrink-0 text-[11px] ${state.cls}`}>{state.label}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Taskbar({
   wm,
   remainingSeconds,
   onExpire,
   onFinish,
+  onNextScenario,
   userName,
   assessmentTitle,
+  scenarios,
+  hasNext,
   messengerBadge,
   agentDisabled,
   viewerLabel,
@@ -73,8 +154,11 @@ export function Taskbar({
   remainingSeconds: number;
   onExpire: () => void;
   onFinish: () => void;
+  onNextScenario: () => void;
   userName: string;
   assessmentTitle: string;
+  scenarios: AttemptScenario[];
+  hasNext: boolean;
   messengerBadge: boolean;
   agentDisabled: boolean;
   viewerLabel?: string | null;
@@ -83,6 +167,7 @@ export function Taskbar({
     <div className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] select-none items-center gap-3 border-t border-white/10 bg-slate-950/70 px-3 backdrop-blur-xl">
       {/* 좌측: [전체화면] [{참여자}의 컴퓨터 — {시험명}] */}
       <div className="flex min-w-0 items-center gap-2">
+        {scenarios.length > 1 && <ScenarioListButton scenarios={scenarios} />}
         <FullscreenButton />
         <div className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
           <IconMonitor size={14} className="shrink-0 text-sky-400" />
@@ -142,12 +227,21 @@ export function Taskbar({
       <div className="flex shrink-0 items-center gap-3">
         <Clock />
         <Timer initialSeconds={remainingSeconds} onExpire={onExpire} />
-        <button
-          onClick={onFinish}
-          className="rounded-lg bg-red-500/90 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-red-500"
-        >
-          시험 종료
-        </button>
+        {hasNext ? (
+          <button
+            onClick={onNextScenario}
+            className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-sky-500"
+          >
+            <IconNext size={15} /> 다음 문제로
+          </button>
+        ) : (
+          <button
+            onClick={onFinish}
+            className="rounded-lg bg-red-500/90 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-red-500"
+          >
+            시험 종료
+          </button>
+        )}
       </div>
     </div>
   );

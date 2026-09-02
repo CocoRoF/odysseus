@@ -158,6 +158,8 @@ export interface AttemptScenario {
   points: number;
   agent_enabled: boolean;
   characters: AttemptCharacter[];
+  /** 순차 진행 상태 */
+  status: "completed" | "in_progress" | "locked";
   unread: number;
 }
 
@@ -170,6 +172,7 @@ export interface Attempt {
   deadline_at: string;
   submitted_at: string | null;
   agent_max_turns: number;
+  current_ordinal: number;
   scenarios: AttemptScenario[];
 }
 

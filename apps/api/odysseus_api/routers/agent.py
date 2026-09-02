@@ -62,7 +62,7 @@ async def list_agent_messages(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await get_attempt_for(attempt_id, user, db)
-    await scenario_in_attempt(attempt, scenario_id, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user)
     return (
         await db.execute(
             select(AgentMessage)
@@ -81,7 +81,7 @@ async def send_agent_message(
     db: AsyncSession = Depends(get_db),
 ):
     attempt = await require_own_active(attempt_id, user, db)
-    scenario = await scenario_in_attempt(attempt, scenario_id, db)
+    scenario = await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     if not scenario.agent_enabled:
         raise HTTPException(403, "이 시나리오에서는 AI 에이전트를 사용할 수 없습니다")
 
