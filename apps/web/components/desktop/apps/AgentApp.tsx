@@ -4,16 +4,46 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamAgentChat } from "@/lib/api";
 import type { AgentMessage, AgentStep, AgentUsage } from "@/lib/types";
 import { Markdown } from "@/components/Markdown";
-import { IconAgent, IconSend } from "@/components/icons";
+import { IconAgent, IconCheck, IconCopy, IconSend } from "@/components/icons";
+import { copyText, selectedText } from "@/lib/clipboard";
 import { useWorkspace } from "../workspace";
+import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
 
 const TOOL_LABEL: Record<string, string> = {
   list_files: "파일 목록",
   read_file: "파일 읽기",
   write_file: "파일 쓰기",
   delete_file: "파일 삭제",
+  search_files: "파일 검색",
+  copy_file: "파일 복사",
+  move_file: "파일 이동",
   run_command: "명령 실행",
 };
+
+/** 메시지 우상단 복사 버튼 — 호버 시 나타난다 */
+function CopyButton({ text, tone = "light" }: { text: string; tone?: "light" | "dark" }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      title="메시지 복사"
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (await copyText(text)) {
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        }
+      }}
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md opacity-0 transition group-hover:opacity-100 ${
+        tone === "dark"
+          ? "text-slate-300 hover:bg-white/15 hover:text-white"
+          : "text-slate-400 hover:bg-slate-200/70 hover:text-slate-600"
+      }`}
+    >
+      {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
+    </button>
+  );
+}
 
 interface ChatItem {
   id: string;
@@ -41,6 +71,22 @@ export function AgentApp({ readOnly = false, onActivity }: { readOnly?: boolean;
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+
+  const transcript = () =>
+    items
+      .map((m) => `[${m.role === "user" ? "나" : "에이전트"}] ${m.content}`)
+      .join("\n\n");
+
+  const messageMenu = (text: string): MenuEntry[] => {
+    const sel = selectedText();
+    const entries: MenuEntry[] = [];
+    if (sel) entries.push({ label: "선택 영역 복사", shortcut: "Ctrl+C", onClick: () => copyText(sel) });
+    entries.push({ label: "메시지 복사", onClick: () => copyText(text) });
+    entries.push("separator");
+    entries.push({ label: "대화 전체 복사", onClick: () => copyText(transcript()) });
+    return entries;
+  };
 
   const loadHistory = useCallback(async () => {
     const [msgs, u] = await Promise.all([
@@ -120,7 +166,18 @@ export function AgentApp({ readOnly = false, onActivity }: { readOnly?: boolean;
         )}
       </div>
 
-      <div ref={scrollRef} className="thin-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      <ContextMenuView menu={menu} onClose={closeMenu} />
+      <div
+        ref={scrollRef}
+        className="thin-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
+        onContextMenu={(e) => {
+          const sel = selectedText();
+          openMenu(e, [
+            ...(sel ? ([{ label: "선택 영역 복사", onClick: () => copyText(sel) }] as MenuEntry[]) : []),
+            { label: "대화 전체 복사", onClick: () => copyText(transcript()) },
+          ]);
+        }}
+      >
         {items.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <IconAgent size={28} className="text-slate-300" />
@@ -137,13 +194,22 @@ export function AgentApp({ readOnly = false, onActivity }: { readOnly?: boolean;
         )}
         {items.map((m) =>
           m.role === "user" ? (
-            <div key={m.id} className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-slate-800 px-3.5 py-2 text-sm text-white">
+            <div
+              key={m.id}
+              className="group flex items-start justify-end gap-1"
+              onContextMenu={(e) => openMenu(e, messageMenu(m.content))}
+            >
+              <CopyButton text={m.content} />
+              <div className="max-w-[85%] select-text whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-slate-800 px-3.5 py-2 text-sm text-white">
                 {m.content}
               </div>
             </div>
           ) : (
-            <div key={m.id} className="space-y-1.5">
+            <div
+              key={m.id}
+              className="group space-y-1.5"
+              onContextMenu={(e) => openMenu(e, messageMenu(m.content))}
+            >
               {m.steps.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {m.steps.map((s, i) => (
@@ -152,9 +218,12 @@ export function AgentApp({ readOnly = false, onActivity }: { readOnly?: boolean;
                 </div>
               )}
               {(m.content || m.streaming) && (
-                <div className="max-w-[95%] rounded-2xl rounded-tl-md border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm">
-                  <Markdown>{m.content || ""}</Markdown>
-                  {m.streaming && <span className="ml-0.5 inline-block animate-pulse text-sky-500">▍</span>}
+                <div className="flex items-start gap-1">
+                  <div className="max-w-[95%] select-text rounded-2xl rounded-tl-md border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm">
+                    <Markdown>{m.content || ""}</Markdown>
+                    {m.streaming && <span className="ml-0.5 inline-block animate-pulse text-sky-500">▍</span>}
+                  </div>
+                  {!m.streaming && <CopyButton text={m.content} />}
                 </div>
               )}
               {m.error && (

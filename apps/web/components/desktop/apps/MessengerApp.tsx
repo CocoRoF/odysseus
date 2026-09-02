@@ -5,7 +5,33 @@ import { api, ApiError } from "@/lib/api";
 import type { AttemptCharacter, MessengerMessage } from "@/lib/types";
 import { fmtTime } from "@/lib/format";
 import { Markdown } from "@/components/Markdown";
-import { IconSend } from "@/components/icons";
+import { IconCheck, IconCopy, IconSend } from "@/components/icons";
+import { copyText, selectedText } from "@/lib/clipboard";
+import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
+
+function CopyButton({ text, tone = "light" }: { text: string; tone?: "light" | "dark" }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      title="메시지 복사"
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (await copyText(text)) {
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        }
+      }}
+      className={`flex h-6 w-6 shrink-0 items-center justify-center self-center rounded-md opacity-0 transition group-hover:opacity-100 ${
+        tone === "dark"
+          ? "text-slate-300 hover:bg-white/15 hover:text-white"
+          : "text-slate-400 hover:bg-slate-200/70 hover:text-slate-600"
+      }`}
+    >
+      {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
+    </button>
+  );
+}
 
 function Avatar({ ch, size = 40 }: { ch: AttemptCharacter; size?: number }) {
   return (
@@ -40,6 +66,7 @@ export function MessengerApp({
   const [seen, setSeen] = useState<Record<string, number>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const base = `/attempts/${attemptId}/scenarios/${scenarioId}`;
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
   const load = useCallback(async () => {
     const rows = await api.get<MessengerMessage[]>(`${base}/messenger`);
@@ -63,6 +90,21 @@ export function MessengerApp({
 
   const active = characters.find((c) => c.key === activeKey);
   const thread = (messages ?? []).filter((m) => m.character_key === activeKey);
+
+  const threadText = () =>
+    thread
+      .map((m) => `[${m.sender === "candidate" ? "나" : active?.name ?? m.character_key}] ${m.content}`)
+      .join("\n\n");
+
+  const messageMenu = (text: string): MenuEntry[] => {
+    const sel = selectedText();
+    const entries: MenuEntry[] = [];
+    if (sel) entries.push({ label: "선택 영역 복사", shortcut: "Ctrl+C", onClick: () => copyText(sel) });
+    entries.push({ label: "메시지 복사", onClick: () => copyText(text) });
+    entries.push("separator");
+    entries.push({ label: "대화 전체 복사", onClick: () => copyText(threadText()) });
+    return entries;
+  };
 
   const send = async () => {
     const content = input.trim();
@@ -97,6 +139,7 @@ export function MessengerApp({
 
   return (
     <div className="flex h-full min-h-0">
+      <ContextMenuView menu={menu} onClose={closeMenu} />
       {/* 대화 상대 목록 */}
       <div className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-slate-50/70">
         <div className="border-b border-slate-200 px-4 py-3">
@@ -144,7 +187,17 @@ export function MessengerApp({
                 <p className="truncate text-xs text-slate-400">{active.role}</p>
               </div>
             </div>
-            <div ref={scrollRef} className="thin-scroll min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/50 p-4">
+            <div
+              ref={scrollRef}
+              className="thin-scroll min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/50 p-4"
+              onContextMenu={(e) => {
+                const sel = selectedText();
+                openMenu(e, [
+                  ...(sel ? ([{ label: "선택 영역 복사", onClick: () => copyText(sel) }] as MenuEntry[]) : []),
+                  { label: "대화 전체 복사", onClick: () => copyText(threadText()) },
+                ]);
+              }}
+            >
               {thread.length === 0 && (
                 <p className="pt-8 text-center text-xs text-slate-400">
                   아직 대화가 없습니다. 먼저 말을 걸어 보세요.
@@ -152,21 +205,31 @@ export function MessengerApp({
               )}
               {thread.map((m) =>
                 m.sender === "candidate" ? (
-                  <div key={m.id} className="msg-in flex justify-end gap-2">
+                  <div
+                    key={m.id}
+                    className="msg-in group flex justify-end gap-1.5"
+                    onContextMenu={(e) => openMenu(e, messageMenu(m.content))}
+                  >
+                    <CopyButton text={m.content} />
                     <span className="mt-auto shrink-0 text-[10px] text-slate-300">{fmtTime(m.created_at)}</span>
-                    <div className="max-w-[75%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-sky-600 px-3.5 py-2 text-sm text-white">
+                    <div className="max-w-[75%] select-text whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-sky-600 px-3.5 py-2 text-sm text-white">
                       {m.content}
                     </div>
                   </div>
                 ) : (
-                  <div key={m.id} className="msg-in flex items-start gap-2.5">
+                  <div
+                    key={m.id}
+                    className="msg-in group flex items-start gap-2.5"
+                    onContextMenu={(e) => openMenu(e, messageMenu(m.content))}
+                  >
                     <Avatar ch={active} size={30} />
                     <div className="min-w-0">
-                      <div className="max-w-full rounded-2xl rounded-tl-md border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-800 shadow-sm">
+                      <div className="max-w-full select-text rounded-2xl rounded-tl-md border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-800 shadow-sm">
                         <Markdown>{m.content}</Markdown>
                       </div>
                       <span className="mt-0.5 block text-[10px] text-slate-300">{fmtTime(m.created_at)}</span>
                     </div>
+                    <CopyButton text={m.content} />
                   </div>
                 ),
               )}

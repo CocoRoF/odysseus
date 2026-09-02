@@ -80,7 +80,7 @@ export function Taskbar({
   viewerLabel?: string | null;
 }) {
   return (
-    <div className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] items-center gap-3 border-t border-white/10 bg-slate-950/70 px-3 backdrop-blur-xl">
+    <div className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] select-none items-center gap-3 border-t border-white/10 bg-slate-950/70 px-3 backdrop-blur-xl">
       {/* 좌측: [전체화면] [{참여자}의 컴퓨터 — {시험명}] */}
       <div className="flex min-w-0 items-center gap-2">
         <FullscreenButton />

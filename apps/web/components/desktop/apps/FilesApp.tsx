@@ -20,6 +20,7 @@ import {
   IconRefresh,
   IconView,
 } from "@/components/icons";
+import { copyText } from "@/lib/clipboard";
 import { isKeepPath, useWorkspace } from "../workspace";
 import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
 import { typeLabel, FileGlyph, FolderGlyph } from "../fileicons";
@@ -201,12 +202,8 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
   };
 
   const copyPathText = async (path: string) => {
-    try {
-      await navigator.clipboard.writeText(path);
-      toast("경로를 클립보드에 복사했습니다", "success");
-    } catch {
-      toast(path, "info");
-    }
+    if (await copyText(path)) toast("경로를 클립보드에 복사했습니다", "success");
+    else toast(path, "info");
   };
 
   const entryMenu = (e: DirEntry): MenuEntry[] => {

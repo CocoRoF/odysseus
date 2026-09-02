@@ -7,6 +7,7 @@ import type { Attempt, AttemptScenario } from "@/lib/types";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
 import { useUser } from "@/components/useUser";
+import { COPY_EVENT } from "@/lib/clipboard";
 import { Button, Spinner } from "@/components/ui";
 import { IconAgent, IconFile, IconFolder, IconIde, IconMessenger } from "@/components/icons";
 import { useWindowManager, AppId } from "@/components/desktop/wm";
@@ -90,6 +91,16 @@ function useActivityTracker(attemptId: string, active: boolean, scenarioId: stri
     };
     const onOffline = () => push("net_offline");
     const onOnline = () => push("net_online");
+    // 복사/잘라내기 — 평가용 무결성 신호 (선택 복사, 앱 내부 복사 버튼 모두)
+    const recordCopy = (type: "copy" | "cut", text: string) => {
+      const trimmed = (text ?? "").trim();
+      if (!trimmed) return;
+      push(type, { chars: trimmed.length, text: trimmed.slice(0, 500) });
+    };
+    const onCopy = () => recordCopy("copy", window.getSelection()?.toString() ?? "");
+    const onCut = () => recordCopy("cut", window.getSelection()?.toString() ?? "");
+    const onAppCopy = (e: Event) =>
+      recordCopy("copy", String((e as CustomEvent<{ text?: string }>).detail?.text ?? ""));
     const onExit = () => {
       push("page_exit");
       if (queue.current.length) {
@@ -103,6 +114,9 @@ function useActivityTracker(attemptId: string, active: boolean, scenarioId: stri
 
     push("page_enter");
     document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", onCut);
+    window.addEventListener(COPY_EVENT, onAppCopy);
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
     window.addEventListener("offline", onOffline);
@@ -112,6 +126,9 @@ function useActivityTracker(attemptId: string, active: boolean, scenarioId: stri
       flush();
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("cut", onCut);
+      window.removeEventListener(COPY_EVENT, onAppCopy);
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("offline", onOffline);
@@ -247,7 +264,7 @@ export default function ExamDesktopPage() {
       }}
     >
       <div
-        className="desktop-wallpaper relative h-screen w-screen overflow-hidden select-none"
+        className="desktop-wallpaper relative h-screen w-screen overflow-hidden"
         onClick={() => setSelectedIcon(null)}
         onContextMenu={(e) => {
           // 시험 환경은 OS처럼 동작한다 — 앱이 자체 메뉴를 열지 않은 경우 브라우저 메뉴는 막는다.
@@ -259,7 +276,10 @@ export default function ExamDesktopPage() {
         }}
       >
         {/* 바탕화면 아이콘 — 클릭=선택, 더블클릭/Enter=열기 (Windows 규약) */}
-        <div className="absolute left-4 top-5 z-10 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="absolute left-4 top-5 z-10 flex select-none flex-col gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
           {ICONS.map((it) => {
             if (it.id === "agent" && !scenario.agent_enabled) return null;
             const selected = selectedIcon === it.id;

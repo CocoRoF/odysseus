@@ -16,6 +16,7 @@ import {
   IconTerminal,
 } from "@/components/icons";
 import { FiCopy, FiSettings } from "react-icons/fi";
+import { copyText, selectedText } from "@/lib/clipboard";
 import { buildTree, isKeepPath, languageOf, TreeNode, useWorkspace } from "../workspace";
 import { FileGlyph, FolderGlyph } from "../fileicons";
 import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
@@ -342,12 +343,8 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
   };
 
   const copyPathText = async (path: string) => {
-    try {
-      await navigator.clipboard.writeText(path);
-      toast("경로를 클립보드에 복사했습니다", "success");
-    } catch {
-      toast(path, "info");
-    }
+    if (await copyText(path)) toast("경로를 클립보드에 복사했습니다", "success");
+    else toast(path, "info");
   };
 
   const rowMenu = (row: Row): MenuEntry[] => {
@@ -793,9 +790,16 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
             className="min-h-0 flex-1"
             onContextMenu={(e) => {
               if (!active) return;
+              const sel = selectedText();
               openMenu(
                 e,
                 [
+                  ...(sel
+                    ? ([
+                        { label: "선택 영역 복사", shortcut: "Ctrl+C", onClick: () => copyText(sel) },
+                        "separator",
+                      ] as MenuEntry[])
+                    : []),
                   ...(readOnly
                     ? []
                     : ([
@@ -884,17 +888,18 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
                           },
                         },
                         {
+                          label: "선택 영역 복사",
+                          disabled: !selectedText(),
+                          onClick: () => copyText(selectedText()),
+                        },
+                        {
                           label: "출력 복사",
                           onClick: async () => {
                             const text = lines
                               .map((l) => (l.kind === "cmd" ? `$ ${l.text}` : l.text))
                               .join("\n");
-                            try {
-                              await navigator.clipboard.writeText(text);
-                              toast("터미널 출력을 복사했습니다", "success");
-                            } catch {
-                              toast("복사에 실패했습니다", "error");
-                            }
+                            if (await copyText(text)) toast("터미널 출력을 복사했습니다", "success");
+                            else toast("복사에 실패했습니다", "error");
                           },
                         },
                         "separator",
