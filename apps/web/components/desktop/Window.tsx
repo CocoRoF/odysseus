@@ -127,4 +127,5 @@ export const APP_META: Record<
   ide: { title: "IDE", accent: "bg-slate-100" },
   agent: { title: "AI 에이전트", accent: "bg-sky-50" },
   files: { title: "폴더", accent: "bg-amber-50" },
+  viewer: { title: "뷰어", accent: "bg-slate-50" },
 };

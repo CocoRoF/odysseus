@@ -21,6 +21,7 @@ export function CodeEditor({
   value,
   onChange,
   onPaste,
+  onCursorChange,
   readOnly = false,
   height = "100%",
   theme = "vs-dark",
@@ -29,12 +30,15 @@ export function CodeEditor({
   value: string;
   onChange?: (code: string) => void;
   onPaste?: (pastedText: string) => void;
+  onCursorChange?: (line: number, column: number) => void;
   readOnly?: boolean;
   height?: string;
   theme?: "vs-dark" | "light";
 }) {
   const pasteHandlerRef = useRef(onPaste);
   pasteHandlerRef.current = onPaste;
+  const cursorHandlerRef = useRef(onCursorChange);
+  cursorHandlerRef.current = onCursorChange;
 
   return (
     <Editor
@@ -47,6 +51,9 @@ export function CodeEditor({
         editor.onDidPaste((e) => {
           const text = editor.getModel()?.getValueInRange(e.range) ?? "";
           if (text.length > 0) pasteHandlerRef.current?.(text);
+        });
+        editor.onDidChangeCursorPosition((e) => {
+          cursorHandlerRef.current?.(e.position.lineNumber, e.position.column);
         });
       }}
       options={{

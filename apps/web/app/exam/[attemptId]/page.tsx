@@ -8,12 +8,13 @@ import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
 import { useUser } from "@/components/useUser";
 import { Button, Spinner } from "@/components/ui";
-import { IconAgent, IconFolder, IconIde, IconMessenger } from "@/components/icons";
+import { IconAgent, IconFile, IconFolder, IconIde, IconMessenger } from "@/components/icons";
 import { useWindowManager, AppId } from "@/components/desktop/wm";
 import { Window, APP_META } from "@/components/desktop/Window";
 import { Taskbar } from "@/components/desktop/Taskbar";
 import { WorkspaceProvider } from "@/components/desktop/workspace";
 import { MessengerApp } from "@/components/desktop/apps/MessengerApp";
+import { ViewerApp } from "@/components/desktop/apps/ViewerApp";
 import { IdeApp } from "@/components/desktop/apps/IdeApp";
 import { AgentApp } from "@/components/desktop/apps/AgentApp";
 import { FilesApp } from "@/components/desktop/apps/FilesApp";
@@ -154,6 +155,7 @@ export default function ExamDesktopPage() {
   const [showBriefing, setShowBriefing] = useState(false);
   const [messengerOpened, setMessengerOpened] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
+  const [viewerPath, setViewerPath] = useState<string | null>(null);
 
   const inProgress = attempt?.status === "in_progress";
   const pushEvent = useActivityTracker(attemptId, Boolean(inProgress), scenarioId);
@@ -235,7 +237,15 @@ export default function ExamDesktopPage() {
   };
 
   return (
-    <WorkspaceProvider attemptId={attemptId} scenarioId={scenario.scenario_id} onOpenIde={() => openApp("ide")}>
+    <WorkspaceProvider
+      attemptId={attemptId}
+      scenarioId={scenario.scenario_id}
+      onOpenIde={() => openApp("ide")}
+      onOpenViewer={(path) => {
+        setViewerPath(path);
+        openApp("viewer");
+      }}
+    >
       <div
         className="desktop-wallpaper relative h-screen w-screen overflow-hidden select-none"
         onClick={() => setSelectedIcon(null)}
@@ -347,6 +357,15 @@ export default function ExamDesktopPage() {
         >
           <FilesApp key={scenario.scenario_id} />
         </Window>
+        <Window
+          win={wm.wins.viewer}
+          wm={wm}
+          title={viewerPath ? `뷰어 — ${viewerPath.split("/").pop()}` : "뷰어"}
+          accent={APP_META.viewer.accent}
+          icon={<IconFile size={15} />}
+        >
+          <ViewerApp key={scenario.scenario_id} path={viewerPath} />
+        </Window>
 
         {/* 작업 표시줄 */}
         <Taskbar
@@ -362,6 +381,7 @@ export default function ExamDesktopPage() {
           }
           messengerBadge={!messengerOpened}
           agentDisabled={!scenario.agent_enabled}
+          viewerLabel={viewerPath ? viewerPath.split("/").pop() : null}
         />
 
         {/* 시작 브리핑 */}

@@ -5,6 +5,7 @@ import { Timer } from "@/components/Timer";
 import {
   IconAgent,
   IconExitFullscreen,
+  IconFile,
   IconFolder,
   IconFullscreen,
   IconIde,
@@ -66,6 +67,7 @@ export function Taskbar({
   assessmentTitle,
   messengerBadge,
   agentDisabled,
+  viewerLabel,
 }: {
   wm: WindowManager;
   remainingSeconds: number;
@@ -75,6 +77,7 @@ export function Taskbar({
   assessmentTitle: string;
   messengerBadge: boolean;
   agentDisabled: boolean;
+  viewerLabel?: string | null;
 }) {
   return (
     <div className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] items-center gap-3 border-t border-white/10 bg-slate-950/70 px-3 backdrop-blur-xl">
@@ -119,6 +122,21 @@ export function Taskbar({
             </button>
           );
         })}
+        {/* 뷰어 — 열려 있을 때만 나타나는 실행 창 (아이콘: 파일) */}
+        {wm.wins.viewer.open && (
+          <button
+            title={viewerLabel ? `뷰어 — ${viewerLabel}` : "뷰어"}
+            onClick={() =>
+              wm.wins.viewer.minimized ? (wm.open("viewer"), wm.focus("viewer")) : wm.minimize("viewer")
+            }
+            className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
+              !wm.wins.viewer.minimized ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/10"
+            }`}
+          >
+            <IconFile size={17} />
+            <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-sky-400" />
+          </button>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-3">

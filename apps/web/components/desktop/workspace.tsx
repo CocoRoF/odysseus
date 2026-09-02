@@ -17,6 +17,8 @@ interface WorkspaceCtxValue {
   renameFile: (from: string, to: string) => Promise<void>;
   /** 폴더 앱 → IDE로 파일 열기 요청 (데스크톱이 IDE 창을 띄우고 전달) */
   requestOpenInIde: (path: string) => void;
+  /** 더블클릭 → 읽기 전용 뷰어 앱으로 열기 */
+  openInViewer: (path: string) => void;
   /** IDE가 소비할 대기 중 열기 요청 */
   pendingIdeOpen: string | null;
   consumeIdeOpen: () => void;
@@ -34,11 +36,13 @@ export function WorkspaceProvider({
   attemptId,
   scenarioId,
   onOpenIde,
+  onOpenViewer,
   children,
 }: {
   attemptId: string;
   scenarioId: string;
   onOpenIde: () => void;
+  onOpenViewer?: (path: string) => void;
   children: React.ReactNode;
 }) {
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -97,6 +101,13 @@ export function WorkspaceProvider({
 
   const consumeIdeOpen = useCallback(() => setPendingIdeOpen(null), []);
 
+  const openInViewer = useCallback(
+    (path: string) => {
+      onOpenViewer?.(path);
+    },
+    [onOpenViewer],
+  );
+
   const value = useMemo(
     () => ({
       attemptId,
@@ -109,6 +120,7 @@ export function WorkspaceProvider({
       deleteFile,
       renameFile,
       requestOpenInIde,
+      openInViewer,
       pendingIdeOpen,
       consumeIdeOpen,
     }),
@@ -123,6 +135,7 @@ export function WorkspaceProvider({
       deleteFile,
       renameFile,
       requestOpenInIde,
+      openInViewer,
       pendingIdeOpen,
       consumeIdeOpen,
     ],

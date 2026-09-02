@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { fmtBytes, fmtDateTime } from "@/lib/format";
-import { CodeEditor } from "@/components/CodeEditor";
-import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
 import {
   IconArrowLeft,
@@ -18,88 +16,12 @@ import {
   IconListView,
   IconMonitor,
   IconRefresh,
+  IconView,
 } from "@/components/icons";
-import { languageOf, useWorkspace } from "../workspace";
+import { useWorkspace } from "../workspace";
+import { typeLabel, FileGlyph, FolderGlyph } from "../fileicons";
+import { FilePreview } from "../FilePreview";
 import type { FileEntry } from "@/lib/types";
-
-// ── 파일 유형/아이콘 ─────────────────────────────────────────
-
-const TYPE_LABEL: Record<string, string> = {
-  py: "Python 파일",
-  js: "JavaScript 파일",
-  ts: "TypeScript 파일",
-  json: "JSON 파일",
-  csv: "CSV 파일",
-  md: "Markdown 문서",
-  txt: "텍스트 문서",
-  html: "HTML 문서",
-  css: "CSS 파일",
-  sql: "SQL 파일",
-  sh: "셸 스크립트",
-  yml: "YAML 파일",
-  yaml: "YAML 파일",
-  log: "로그 파일",
-};
-
-function extOf(path: string): string {
-  const name = path.split("/").pop() ?? "";
-  return name.includes(".") ? (name.split(".").pop() ?? "").toLowerCase() : "";
-}
-
-function typeLabel(path: string): string {
-  const ext = extOf(path);
-  return TYPE_LABEL[ext] ?? (ext ? `${ext.toUpperCase()} 파일` : "파일");
-}
-
-const EXT_COLOR: Record<string, string> = {
-  py: "text-blue-500",
-  js: "text-yellow-500",
-  ts: "text-blue-600",
-  json: "text-amber-600",
-  csv: "text-emerald-600",
-  md: "text-slate-500",
-  txt: "text-slate-400",
-  sh: "text-lime-600",
-  html: "text-orange-500",
-  css: "text-sky-500",
-  log: "text-slate-400",
-};
-
-function FileGlyph({ path, size = 16 }: { path: string; size?: number }) {
-  const ext = extOf(path);
-  const color = EXT_COLOR[ext] ?? "text-slate-400";
-  return (
-    <span className={`relative inline-flex shrink-0 items-center justify-center ${color}`}>
-      <svg width={size} height={size * 1.18} viewBox="0 0 20 24" fill="none">
-        <path
-          d="M3 2.5A1.5 1.5 0 0 1 4.5 1H12l5 5v15.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 21.5v-19Z"
-          fill="currentColor"
-          fillOpacity="0.14"
-          stroke="currentColor"
-          strokeWidth="1.4"
-        />
-        <path d="M12 1v5h5" stroke="currentColor" strokeWidth="1.4" fill="none" />
-      </svg>
-      {ext && size >= 24 && (
-        <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 text-[8px] font-black uppercase">
-          {ext.slice(0, 4)}
-        </span>
-      )}
-    </span>
-  );
-}
-
-function FolderGlyph({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size * 0.82} viewBox="0 0 24 20" className="shrink-0">
-      <path
-        d="M1.5 4A2 2 0 0 1 3.5 2h5l2.2 2.5h9.8a2 2 0 0 1 2 2V16a2 2 0 0 1-2 2h-17a2 2 0 0 1-2-2V4Z"
-        fill="#fbbf24"
-      />
-      <path d="M1.5 7h21v9a2 2 0 0 1-2 2h-17a2 2 0 0 1-2-2V7Z" fill="#fcd34d" />
-    </svg>
-  );
-}
 
 // ── 디렉터리 계산 ────────────────────────────────────────────
 
@@ -148,52 +70,10 @@ function allDirs(files: FileEntry[]): string[] {
   return [...set].sort();
 }
 
-// ── 미리보기 ─────────────────────────────────────────────────
-
-function csvToRows(content: string): string[][] {
-  return content
-    .trim()
-    .split("\n")
-    .slice(0, 300)
-    .map((line) => line.split(","));
-}
-
-function Preview({ path, content }: { path: string; content: string }) {
-  const ext = extOf(path);
-  if (ext === "md") {
-    return (
-      <div className="thin-scroll h-full overflow-y-auto p-4">
-        <Markdown>{content}</Markdown>
-      </div>
-    );
-  }
-  if (ext === "csv") {
-    const rows = csvToRows(content);
-    return (
-      <div className="thin-scroll h-full overflow-auto p-3">
-        <table className="w-full border-collapse text-xs">
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className={i === 0 ? "bg-slate-100 font-semibold" : "odd:bg-slate-50/60"}>
-                {r.map((c, j) => (
-                  <td key={j} className="whitespace-nowrap border border-slate-200 px-2 py-1">
-                    {c}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-  return <CodeEditor language={languageOf(path)} value={content} readOnly theme="light" />;
-}
-
 // ── 탐색기 본체 ──────────────────────────────────────────────
 
 /** 폴더(탐색기) — Windows 탐색기 규약: 뒤로/앞으로/위로, 주소 표시줄, 목록/아이콘 보기,
- *  클릭=선택(+미리보기), 더블클릭=폴더 진입/IDE 열기. */
+ *  클릭=선택(+미리보기), 더블클릭=폴더 진입/뷰어 열기. */
 export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
   const ws = useWorkspace();
   const { toast, confirm } = useToast();
@@ -202,7 +82,9 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
   const [histIdx, setHistIdx] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "grid">("list");
+  const [previewOn, setPreviewOn] = useState(readOnly); // 리뷰 화면은 기본 켜짐
   const [content, setContent] = useState<string | null>(null);
+  const lastClickRef = useRef<{ path: string; t: number } | null>(null);
 
   const entries = useMemo(() => entriesOf(ws.files, cwd), [ws.files, cwd]);
   const dirs = useMemo(() => allDirs(ws.files), [ws.files]);
@@ -237,7 +119,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
 
   // 파일 선택 시 미리보기 로드
   useEffect(() => {
-    if (!selected || selectedEntry?.isDir) {
+    if (!previewOn || !selected || selectedEntry?.isDir) {
       setContent(null);
       return;
     }
@@ -246,7 +128,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
       .then((fc) => setContent(fc.content))
       .catch(() => setContent("(파일을 불러올 수 없습니다)"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, selectedEntry?.updated_at]);
+  }, [selected, previewOn, selectedEntry?.updated_at]);
 
   // cwd가 사라졌으면(전체 삭제) 루트로 복귀
   useEffect(() => {
@@ -259,7 +141,19 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
 
   const activate = (e: DirEntry) => {
     if (e.isDir) navigate(e.path);
-    else ws.requestOpenInIde(e.path);
+    else ws.openInViewer(e.path);
+  };
+
+  /** 클릭=선택. 같은 항목 400ms 내 재클릭=더블클릭으로 간주해 활성화. */
+  const handleSelect = (e: DirEntry) => {
+    const now = Date.now();
+    const last = lastClickRef.current;
+    lastClickRef.current = { path: e.path, t: now };
+    if (last && last.path === e.path && now - last.t < 400) {
+      activate(e);
+      return;
+    }
+    setSelected(e.path);
   };
 
   const remove = async (path: string) => {
@@ -274,7 +168,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
   };
 
   const crumbs = cwd ? cwd.split("/") : [];
-  const showPreview = selectedEntry && !selectedEntry.isDir;
+  const previewFile = previewOn && selectedEntry && !selectedEntry.isDir ? selectedEntry : null;
 
   const toolBtn =
     "flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-700 disabled:pointer-events-none disabled:opacity-30";
@@ -339,6 +233,14 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
         >
           <IconGridView size={14} />
         </button>
+        <div className="mx-0.5 h-5 w-px bg-slate-200" />
+        <button
+          title="미리보기 패널"
+          className={`${toolBtn} ${previewOn ? "bg-slate-200/80 text-slate-800" : ""}`}
+          onClick={() => setPreviewOn((v) => !v)}
+        >
+          <IconView size={14} />
+        </button>
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -372,8 +274,19 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
           })}
         </div>
 
-        {/* 메인 목록 */}
-        <div className="flex min-w-0 flex-1 flex-col" onClick={() => setSelected(null)}>
+        {/* 메인 목록 — Del 키로 선택 항목 삭제 */}
+        <div
+          className="flex min-w-0 flex-1 flex-col outline-none"
+          tabIndex={0}
+          onClick={() => setSelected(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Delete" && selectedEntry && !selectedEntry.isDir && !readOnly) {
+              remove(selectedEntry.path);
+            }
+            if (e.key === "Enter" && selectedEntry) activate(selectedEntry);
+            if (e.key === "Backspace") goUp();
+          }}
+        >
           {view === "list" ? (
             <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
               <table className="w-full border-collapse text-[13px]">
@@ -391,9 +304,8 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                       key={e.path}
                       onClick={(ev) => {
                         ev.stopPropagation();
-                        setSelected(e.path);
+                        handleSelect(e);
                       }}
-                      onDoubleClick={() => activate(e)}
                       className={`cursor-default select-none ${
                         selected === e.path ? "bg-sky-100/80" : "hover:bg-slate-50"
                       }`}
@@ -427,9 +339,8 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                     key={e.path}
                     onClick={(ev) => {
                       ev.stopPropagation();
-                      setSelected(e.path);
+                      handleSelect(e);
                     }}
-                    onDoubleClick={() => activate(e)}
                     className={`flex flex-col items-center gap-1.5 rounded-lg border px-1 pb-2 pt-3 ${
                       selected === e.path
                         ? "border-sky-200 bg-sky-100/80"
@@ -462,18 +373,23 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
           </div>
         </div>
 
-        {/* 미리보기 패널 */}
-        {showPreview && (
+        {/* 미리보기 패널 (토글) */}
+        {previewOn && !previewFile && (
+          <div className="flex w-[46%] min-w-[280px] shrink-0 items-center justify-center border-l border-slate-200 text-xs text-slate-400">
+            파일을 선택하면 미리보기가 표시됩니다
+          </div>
+        )}
+        {previewFile && (
           <div className="flex w-[46%] min-w-[280px] shrink-0 flex-col border-l border-slate-200">
             <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/70 px-3 py-1.5">
               <span className="flex min-w-0 items-center gap-1.5">
-                <FileGlyph path={selectedEntry.path} size={13} />
-                <span className="min-w-0 truncate font-mono text-xs text-slate-600">{selectedEntry.name}</span>
+                <FileGlyph path={previewFile.path} size={13} />
+                <span className="min-w-0 truncate font-mono text-xs text-slate-600">{previewFile.name}</span>
               </span>
               <div className="flex shrink-0 items-center gap-1">
                 <button
                   title="IDE에서 열기"
-                  onClick={() => ws.requestOpenInIde(selectedEntry.path)}
+                  onClick={() => ws.requestOpenInIde(previewFile.path)}
                   className="flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 hover:bg-slate-50"
                 >
                   <IconIde size={12} /> IDE
@@ -481,7 +397,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                 {!readOnly && (
                   <button
                     title="삭제"
-                    onClick={() => remove(selectedEntry.path)}
+                    onClick={() => remove(previewFile.path)}
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500"
                   >
                     <IconDelete size={13} />
@@ -489,7 +405,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                 )}
                 <button
                   title="미리보기 닫기"
-                  onClick={() => setSelected(null)}
+                  onClick={() => setPreviewOn(false)}
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/70 hover:text-slate-600"
                 >
                   <IconClose size={14} />
@@ -500,7 +416,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
               {content === null ? (
                 <p className="p-4 text-xs text-slate-400">불러오는 중...</p>
               ) : (
-                <Preview path={selectedEntry.path} content={content} />
+                <FilePreview path={previewFile.path} content={content} />
               )}
             </div>
           </div>
