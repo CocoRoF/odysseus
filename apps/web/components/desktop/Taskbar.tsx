@@ -70,8 +70,15 @@ function ScenarioListButton({ scenarios }: { scenarios: AttemptScenario[] }) {
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const done = scenarios.filter((s) => s.status === "completed").length;

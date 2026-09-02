@@ -211,8 +211,12 @@ export default function ExamDesktopPage() {
     if (!attempt || !scenario) return;
     const ok = await confirm({
       title: "이 문제를 제출하고 다음으로 넘어갈까요?",
-      message:
-        "제출하면 이 문제로 **되돌아올 수 없습니다**. 대화·파일·실행 기록은 그대로 평가에 사용됩니다.",
+      message: (
+        <>
+          제출하면 이 문제로 <b className="text-slate-700">되돌아올 수 없습니다</b>. 대화·파일·실행 기록은
+          그대로 평가에 사용됩니다.
+        </>
+      ),
       danger: true,
       confirmLabel: "제출하고 다음 문제로",
     });

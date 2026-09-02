@@ -7,19 +7,20 @@ type ToastKind = "success" | "error" | "info";
 interface Toast {
   id: number;
   kind: ToastKind;
-  message: string;
+  message: ReactNode;
 }
 
 interface ConfirmOptions {
   title: string;
-  message?: string;
+  /** 문자열 또는 JSX — 강조가 필요하면 <b>…</b> 를 쓴다 (마크다운 문법은 렌더되지 않는다) */
+  message?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
 }
 
 interface ToastContextValue {
-  toast: (message: string, kind?: ToastKind) => void;
+  toast: (message: ReactNode, kind?: ToastKind) => void;
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
 }
 
@@ -70,7 +71,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [dialog, setDialog] = useState<(ConfirmOptions & { resolve: (v: boolean) => void }) | null>(null);
   const nextId = useRef(1);
 
-  const toast = useCallback((message: string, kind: ToastKind = "info") => {
+  const toast = useCallback((message: ReactNode, kind: ToastKind = "info") => {
     const id = nextId.current++;
     setToasts((prev) => [...prev, { id, kind, message }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
@@ -97,7 +98,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           return (
             <div
               key={t.id}
-              className="toast-in pointer-events-auto flex items-start gap-3 overflow-hidden rounded-xl border border-slate-200 bg-white pl-0 shadow-lg"
+              onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+              title="클릭하면 닫힙니다"
+              className="toast-in pointer-events-auto flex cursor-pointer items-start gap-3 overflow-hidden rounded-xl border border-slate-200 bg-white pl-0 shadow-lg transition hover:border-slate-300"
             >
               <span className={`w-1 self-stretch ${s.bar}`} />
               <span className={`mt-3 shrink-0 ${ICON_TONE[t.kind]}`}>{s.icon}</span>
@@ -112,6 +115,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         <div
           className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
           onClick={() => closeDialog(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") closeDialog(false);
+            if (e.key === "Enter" && !(e.target instanceof HTMLButtonElement)) closeDialog(true);
+          }}
+          role="dialog"
+          aria-modal="true"
+          tabIndex={-1}
         >
           <div
             className="w-full max-w-sm rounded-2xl bg-white p-6 text-slate-900 shadow-2xl"
