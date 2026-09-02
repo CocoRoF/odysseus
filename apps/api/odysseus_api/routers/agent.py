@@ -46,6 +46,8 @@ async def agent_usage(
         remaining=max(0, assessment.agent_max_turns - used),
         configured=bool(res and res.configured),
         model=res.model if res else None,
+        tools_available=bool(res and ai_provider.supports_host_tools(res)),
+        provider_name=res.name if res else None,
     )
 
 

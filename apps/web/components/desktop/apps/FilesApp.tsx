@@ -15,10 +15,13 @@ import {
   IconIde,
   IconListView,
   IconMonitor,
+  IconNewFile,
+  IconNewFolder,
   IconRefresh,
   IconView,
 } from "@/components/icons";
-import { useWorkspace } from "../workspace";
+import { isKeepPath, useWorkspace } from "../workspace";
+import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
 import { typeLabel, FileGlyph, FolderGlyph } from "../fileicons";
 import { FilePreview } from "../FilePreview";
 import type { FileEntry } from "@/lib/types";
@@ -43,6 +46,7 @@ function entriesOf(files: FileEntry[], cwd: string): DirEntry[] {
     const rest = f.path.slice(prefix.length);
     const slash = rest.indexOf("/");
     if (slash === -1) {
+      if (isKeepPath(f.path)) continue; // 빈 폴더 유지용 플레이스홀더
       out.push({ name: rest, path: f.path, isDir: false, size: f.size, updated_at: f.updated_at, childCount: 0 });
     } else {
       const name = rest.slice(0, slash);
@@ -85,6 +89,11 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
   const [previewOn, setPreviewOn] = useState(readOnly); // 리뷰 화면은 기본 켜짐
   const [content, setContent] = useState<string | null>(null);
   const lastClickRef = useRef<{ path: string; t: number } | null>(null);
+  const [draft, setDraft] = useState<
+    { kind: "file" | "folder" | "rename"; target?: string; value: string } | null
+  >(null);
+  const [draftError, setDraftError] = useState("");
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
   const entries = useMemo(() => entriesOf(ws.files, cwd), [ws.files, cwd]);
   const dirs = useMemo(() => allDirs(ws.files), [ws.files]);
@@ -144,6 +153,121 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
     else ws.openInViewer(e.path);
   };
 
+  const joinCwd = (name: string) => (cwd ? `${cwd}/${name}` : name);
+
+  const commitDraft = async () => {
+    if (!draft) return;
+    const name = draft.value.trim().replace(/^\/+|\/+$/g, "");
+    if (!name) {
+      setDraft(null);
+      return;
+    }
+    try {
+      if (draft.kind === "rename" && draft.target) {
+        const parent = draft.target.includes("/") ? draft.target.slice(0, draft.target.lastIndexOf("/")) : "";
+        const to = parent ? `${parent}/${name}` : name;
+        if (to !== draft.target) {
+          await ws.renameFile(draft.target, to);
+          if (selected === draft.target) setSelected(to);
+        }
+      } else if (draft.kind === "folder") {
+        await ws.createFolder(joinCwd(name));
+      } else {
+        await ws.saveContent(joinCwd(name), "");
+      }
+      setDraft(null);
+      setDraftError("");
+    } catch (e) {
+      setDraftError(e instanceof ApiError ? e.message : "작업에 실패했습니다");
+    }
+  };
+
+  const duplicateEntry = async (e: DirEntry) => {
+    const taken = new Set(ws.files.map((f) => f.path));
+    const dot = e.name.lastIndexOf(".");
+    const stem = !e.isDir && dot > 0 ? e.name.slice(0, dot) : e.name;
+    const ext = !e.isDir && dot > 0 ? e.name.slice(dot) : "";
+    let to = "";
+    for (let i = 1; i < 100; i++) {
+      to = joinCwd(`${stem} copy${i === 1 ? "" : ` ${i}`}${ext}`);
+      if (![...taken].some((pth) => pth === to || pth.startsWith(`${to}/`))) break;
+    }
+    try {
+      await ws.copyPath(e.path, to);
+      toast(`복사됨 — ${to}`, "success");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "복사에 실패했습니다", "error");
+    }
+  };
+
+  const copyPathText = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path);
+      toast("경로를 클립보드에 복사했습니다", "success");
+    } catch {
+      toast(path, "info");
+    }
+  };
+
+  const entryMenu = (e: DirEntry): MenuEntry[] => {
+    const items: MenuEntry[] = [
+      { label: e.isDir ? "열기" : "뷰어로 열기", onClick: () => activate(e) },
+    ];
+    if (!e.isDir) items.push({ label: "IDE에서 열기", onClick: () => ws.requestOpenInIde(e.path) });
+    if (!readOnly) {
+      items.push("separator");
+      items.push({ label: "이름 바꾸기", shortcut: "F2", onClick: () => { setSelected(e.path); setDraftError(""); setDraft({ kind: "rename", target: e.path, value: e.name }); } });
+      items.push({ label: "복사본 만들기", onClick: () => duplicateEntry(e) });
+    }
+    items.push({ label: "경로 복사", onClick: () => copyPathText(e.path) });
+    if (!readOnly) {
+      items.push("separator");
+      items.push({ label: "삭제", shortcut: "Del", danger: true, onClick: () => remove(e.path, e.isDir) });
+    }
+    return items;
+  };
+
+  const areaMenu = (): MenuEntry[] => {
+    const items: MenuEntry[] = [];
+    if (!readOnly) {
+      items.push({ label: "새 파일", onClick: () => { setDraftError(""); setDraft({ kind: "file", value: "" }); } });
+      items.push({ label: "새 폴더", onClick: () => { setDraftError(""); setDraft({ kind: "folder", value: "" }); } });
+      items.push("separator");
+    }
+    items.push({ label: "새로고침", onClick: () => ws.refresh() });
+    items.push({ label: previewOn ? "미리보기 숨기기" : "미리보기 표시", onClick: () => setPreviewOn((v) => !v) });
+    return items;
+  };
+
+  const draftInput = (
+    <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5">
+      {draft?.kind === "folder" ? <FolderGlyph size={17} /> : <FileGlyph path={draft?.value || "new"} size={14} />}
+      <input
+        autoFocus
+        value={draft?.value ?? ""}
+        onChange={(ev) => {
+          setDraftError("");
+          setDraft((d) => (d ? { ...d, value: ev.target.value } : d));
+        }}
+        onKeyDown={(ev) => {
+          if (ev.key === "Enter" && !ev.nativeEvent.isComposing) commitDraft();
+          if (ev.key === "Escape") {
+            setDraft(null);
+            setDraftError("");
+          }
+        }}
+        onBlur={() => commitDraft()}
+        onClick={(ev) => ev.stopPropagation()}
+        placeholder={draft?.kind === "folder" ? "폴더 이름" : draft?.kind === "rename" ? "새 이름" : "파일 이름"}
+        className={`min-w-0 flex-1 rounded border px-1.5 py-0.5 text-[13px] outline-none ${
+          draftError ? "border-red-400" : "border-sky-400"
+        }`}
+        aria-label="explorer-draft"
+      />
+      {draftError && <span className="shrink-0 text-[11px] text-red-500">{draftError}</span>}
+    </div>
+  );
+
   /** 클릭=선택. 같은 항목 400ms 내 재클릭=더블클릭으로 간주해 활성화. */
   const handleSelect = (e: DirEntry) => {
     const now = Date.now();
@@ -156,9 +280,14 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
     setSelected(e.path);
   };
 
-  const remove = async (path: string) => {
-    if (!(await confirm({ title: "파일을 삭제할까요?", message: path, danger: true, confirmLabel: "삭제" })))
-      return;
+  const remove = async (path: string, isDir = false) => {
+    const okToGo = await confirm({
+      title: isDir ? "폴더를 삭제할까요?" : "파일을 삭제할까요?",
+      message: isDir ? `${path} — 하위 파일이 모두 삭제됩니다.` : path,
+      danger: true,
+      confirmLabel: "삭제",
+    });
+    if (!okToGo) return;
     try {
       await ws.deleteFile(path);
       if (selected === path) setSelected(null);
@@ -175,6 +304,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
+      <ContextMenuView menu={menu} onClose={closeMenu} />
       {/* 도구 모음 + 주소 표시줄 */}
       <div className="flex shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-50/80 px-2 py-1.5">
         <button title="뒤로" className={toolBtn} onClick={goBack} disabled={histIdx === 0}>
@@ -215,6 +345,30 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
             );
           })}
         </div>
+        {!readOnly && (
+          <>
+            <button
+              title="새 파일"
+              className={toolBtn}
+              onClick={() => {
+                setDraftError("");
+                setDraft({ kind: "file", value: "" });
+              }}
+            >
+              <IconNewFile size={14} />
+            </button>
+            <button
+              title="새 폴더"
+              className={toolBtn}
+              onClick={() => {
+                setDraftError("");
+                setDraft({ kind: "folder", value: "" });
+              }}
+            >
+              <IconNewFolder size={14} />
+            </button>
+          </>
+        )}
         <button title="새로고침" className={toolBtn} onClick={() => ws.refresh()}>
           <IconRefresh size={13} />
         </button>
@@ -279,9 +433,16 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
           className="flex min-w-0 flex-1 flex-col outline-none"
           tabIndex={0}
           onClick={() => setSelected(null)}
+          onContextMenu={(e) => openMenu(e, areaMenu())}
           onKeyDown={(e) => {
-            if (e.key === "Delete" && selectedEntry && !selectedEntry.isDir && !readOnly) {
-              remove(selectedEntry.path);
+            if (draft) return;
+            if (e.key === "Delete" && selectedEntry && !readOnly) {
+              remove(selectedEntry.path, selectedEntry.isDir);
+            }
+            if (e.key === "F2" && selectedEntry && !readOnly) {
+              e.preventDefault();
+              setDraftError("");
+              setDraft({ kind: "rename", target: selectedEntry.path, value: selectedEntry.name });
             }
             if (e.key === "Enter" && selectedEntry) activate(selectedEntry);
             if (e.key === "Backspace") goUp();
@@ -299,12 +460,23 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((e) => (
+                  {entries.map((e) =>
+                    draft?.kind === "rename" && draft.target === e.path ? (
+                      <tr key={e.path}>
+                        <td colSpan={4} className="p-0">
+                          {draftInput}
+                        </td>
+                      </tr>
+                    ) : (
                     <tr
                       key={e.path}
                       onClick={(ev) => {
                         ev.stopPropagation();
                         handleSelect(e);
+                      }}
+                      onContextMenu={(ev) => {
+                        setSelected(e.path);
+                        openMenu(ev, entryMenu(e));
                       }}
                       className={`cursor-default select-none ${
                         selected === e.path ? "bg-sky-100/80" : "hover:bg-slate-50"
@@ -324,11 +496,21 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                         {e.isDir ? "—" : fmtBytes(e.size)}
                       </td>
                     </tr>
-                  ))}
+                    ),
+                  )}
+                  {draft && draft.kind !== "rename" && (
+                    <tr>
+                      <td colSpan={4} className="p-0">
+                        {draftInput}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
-              {entries.length === 0 && (
-                <p className="p-6 text-center text-xs text-slate-400">이 폴더는 비어 있습니다</p>
+              {entries.length === 0 && !draft && (
+                <p className="p-6 text-center text-xs text-slate-400">
+                  이 폴더는 비어 있습니다 — 우클릭으로 파일을 만드세요
+                </p>
               )}
             </div>
           ) : (
@@ -340,6 +522,10 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                     onClick={(ev) => {
                       ev.stopPropagation();
                       handleSelect(e);
+                    }}
+                    onContextMenu={(ev) => {
+                      setSelected(e.path);
+                      openMenu(ev, entryMenu(e));
                     }}
                     className={`flex flex-col items-center gap-1.5 rounded-lg border px-1 pb-2 pt-3 ${
                       selected === e.path
@@ -354,7 +540,8 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                   </button>
                 ))}
               </div>
-              {entries.length === 0 && (
+              {draft && draft.kind !== "rename" && <div className="mt-2">{draftInput}</div>}
+              {entries.length === 0 && !draft && (
                 <p className="p-6 text-center text-xs text-slate-400">이 폴더는 비어 있습니다</p>
               )}
             </div>
@@ -397,7 +584,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
                 {!readOnly && (
                   <button
                     title="삭제"
-                    onClick={() => remove(previewFile.path)}
+                    onClick={() => remove(previewFile.path, false)}
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500"
                   >
                     <IconDelete size={13} />

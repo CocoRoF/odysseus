@@ -7,16 +7,18 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { Divider } from "@/components/Divider";
 import { useToast } from "@/components/toast";
 import {
-  IconAdd,
   IconChevronRight,
   IconClose,
   IconDelete,
+  IconNewFile,
+  IconNewFolder,
   IconRefresh,
   IconTerminal,
 } from "@/components/icons";
 import { FiCopy, FiSettings } from "react-icons/fi";
-import { buildTree, languageOf, TreeNode, useWorkspace } from "../workspace";
+import { buildTree, isKeepPath, languageOf, TreeNode, useWorkspace } from "../workspace";
 import { FileGlyph, FolderGlyph } from "../fileicons";
+import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
 
 interface Tab {
   path: string;
@@ -24,81 +26,48 @@ interface Tab {
   dirty: boolean;
 }
 
-// ── 탐색기 트리 (VSCode 스타일: 셰브론 + 파일 글리프) ─────────
+// ── 탐색기 ───────────────────────────────────────────────────
 
-function TreeView({
-  nodes,
-  depth,
-  activePath,
-  collapsed,
-  onToggle,
-  onOpen,
-  onDelete,
-  readOnly,
-}: {
-  nodes: TreeNode[];
+interface Row {
+  path: string;
+  name: string;
+  isDir: boolean;
   depth: number;
-  activePath: string | null;
-  collapsed: Set<string>;
-  onToggle: (path: string) => void;
-  onOpen: (path: string) => void;
-  onDelete: (path: string) => void;
-  readOnly: boolean;
-}) {
-  return (
-    <>
-      {nodes.map((n) => {
-        const open = n.isDir && !collapsed.has(n.path);
-        return (
-          <div key={(n.isDir ? "d:" : "f:") + n.path}>
-            <div
-              className={`group flex h-[22px] cursor-pointer items-center gap-1 pr-1 text-[13px] ${
-                activePath === n.path
-                  ? "bg-[#37373d] text-white"
-                  : "text-[#cccccc] hover:bg-[#2a2d2e]"
-              }`}
-              style={{ paddingLeft: 6 + depth * 12 }}
-              onClick={() => (n.isDir ? onToggle(n.path) : onOpen(n.path))}
-            >
-              <span className={`flex w-4 shrink-0 justify-center text-[#8a8a8a] transition-transform ${n.isDir ? (open ? "rotate-90" : "") : "opacity-0"}`}>
-                <IconChevronRight size={12} />
-              </span>
-              {n.isDir ? (
-                <FolderGlyph size={14} open={open} />
-              ) : (
-                <FileGlyph path={n.path} size={12} dark />
-              )}
-              <span className="min-w-0 flex-1 truncate">{n.name}</span>
-              {!n.isDir && !readOnly && (
-                <button
-                  title="삭제"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(n.path);
-                  }}
-                  className="hidden h-4 w-4 shrink-0 items-center justify-center rounded-sm text-[#8a8a8a] hover:bg-white/10 hover:text-red-400 group-hover:flex"
-                >
-                  <IconDelete size={10} />
-                </button>
-              )}
-            </div>
-            {open && (
-              <TreeView
-                nodes={n.children}
-                depth={depth + 1}
-                activePath={activePath}
-                collapsed={collapsed}
-                onToggle={onToggle}
-                onOpen={onOpen}
-                onDelete={onDelete}
-                readOnly={readOnly}
-              />
-            )}
-          </div>
-        );
-      })}
-    </>
-  );
+}
+
+/** 접힘 상태를 반영해 트리를 평탄화 — 인라인 입력행 삽입과 컨텍스트 메뉴 처리가 쉬워진다. */
+function flattenTree(nodes: TreeNode[], collapsed: Set<string>, depth = 0, out: Row[] = []): Row[] {
+  for (const n of nodes) {
+    out.push({ path: n.path, name: n.name, isDir: n.isDir, depth });
+    if (n.isDir && !collapsed.has(n.path)) flattenTree(n.children, collapsed, depth + 1, out);
+  }
+  return out;
+}
+
+function dirOf(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+}
+
+function baseOf(path: string): string {
+  return path.split("/").pop() ?? path;
+}
+
+function joinPath(dir: string, name: string): string {
+  return dir ? `${dir}/${name}` : name;
+}
+
+/** "report.py" → "report copy.py" (중복이면 copy 2, copy 3 …) — VSCode 규약 */
+function duplicateName(path: string, taken: Set<string>): string {
+  const dir = dirOf(path);
+  const base = baseOf(path);
+  const dot = base.lastIndexOf(".");
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : "";
+  for (let i = 1; i < 100; i++) {
+    const candidate = joinPath(dir, `${stem} copy${i === 1 ? "" : ` ${i}`}${ext}`);
+    if (!taken.has(candidate)) return candidate;
+  }
+  return joinPath(dir, `${stem} copy ${Date.now()}${ext}`);
 }
 
 // ── 터미널 ───────────────────────────────────────────────────
@@ -174,6 +143,13 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
   const [termOpen, setTermOpen] = useState(true);
   const [termH, setTermH] = useState(190);
   const [cursor, setCursor] = useState({ ln: 1, col: 1 });
+  // 탐색기: 선택 항목 + 인라인 새 파일/폴더/이름 바꾸기 초안
+  const [treeSel, setTreeSel] = useState<string | null>(null);
+  const [draft, setDraft] = useState<
+    { kind: "file" | "folder" | "rename"; parent: string; target?: string; value: string } | null
+  >(null);
+  const [draftError, setDraftError] = useState("");
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
   // 터미널 상태
   const [lines, setLines] = useState<TermLine[]>([]);
@@ -190,6 +166,7 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
   const termInputRef = useRef<HTMLInputElement>(null);
 
   const tree = buildTree(ws.files);
+  const rows = flattenTree(tree, collapsed);
   const active = tabs.find((t) => t.path === activePath) ?? null;
   const dirSet = useMemo(() => {
     const set = new Set<string>();
@@ -263,25 +240,182 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
     return () => window.removeEventListener("keydown", handler);
   }, [tabs, activePath, save]);
 
-  const newFile = async () => {
-    const path = window.prompt("새 파일 경로 (예: src/solution.py)");
-    if (!path?.trim()) return;
+  // ── 탐색기 조작 (인라인 생성/이름 바꾸기 · 복사 · 삭제) ──
+  const expand = (dir: string) =>
+    setCollapsed((s) => {
+      if (!dir || !s.has(dir)) return s;
+      const n = new Set(s);
+      n.delete(dir);
+      return n;
+    });
+
+  const beginCreate = (kind: "file" | "folder", parent: string) => {
+    if (readOnly) return;
+    expand(parent);
+    setDraftError("");
+    setDraft({ kind, parent, value: "" });
+  };
+
+  const beginRename = (path: string) => {
+    if (readOnly) return;
+    setDraftError("");
+    setDraft({ kind: "rename", parent: dirOf(path), target: path, value: baseOf(path) });
+  };
+
+  /** 이름 변경/삭제 후 열린 탭 경로를 따라가게 한다 (폴더 이동이면 프리픽스 전체). */
+  const remapTabs = (from: string, to: string | null) => {
+    setTabs((list) =>
+      list.flatMap((t) => {
+        const isSelf = t.path === from;
+        const isChild = t.path.startsWith(`${from}/`);
+        if (!isSelf && !isChild) return [t];
+        if (to === null) return [];
+        const next = isSelf ? to : `${to}/${t.path.slice(from.length + 1)}`;
+        return [{ ...t, path: next }];
+      }),
+    );
+    setActivePath((cur) => {
+      if (!cur) return cur;
+      const isSelf = cur === from;
+      const isChild = cur.startsWith(`${from}/`);
+      if (!isSelf && !isChild) return cur;
+      if (to === null) return null;
+      return isSelf ? to : `${to}/${cur.slice(from.length + 1)}`;
+    });
+  };
+
+  const commitDraft = async () => {
+    if (!draft) return;
+    const name = draft.value.trim().replace(/^\/+|\/+$/g, "");
+    if (!name) {
+      setDraft(null);
+      return;
+    }
     try {
-      await ws.saveContent(path.trim(), "");
-      await openFile(path.trim().replace(/^\/+/, ""));
+      if (draft.kind === "rename" && draft.target) {
+        const target = joinPath(dirOf(draft.target), name);
+        if (target !== draft.target) {
+          await ws.renameFile(draft.target, target);
+          remapTabs(draft.target, target);
+        }
+      } else if (draft.kind === "folder") {
+        await ws.createFolder(joinPath(draft.parent, name));
+      } else {
+        const path = joinPath(draft.parent, name);
+        await ws.saveContent(path, "");
+        await openFile(path);
+      }
+      setDraft(null);
+      setDraftError("");
     } catch (e) {
-      toast(e instanceof ApiError ? e.message : "생성에 실패했습니다", "error");
+      setDraftError(e instanceof ApiError ? e.message : "작업에 실패했습니다");
     }
   };
 
-  const removeFile = async (path: string) => {
-    if (!(await confirm({ title: "파일을 삭제할까요?", message: path, danger: true, confirmLabel: "삭제" }))) return;
+  const removePath = async (path: string, isDir: boolean) => {
+    if (readOnly) return;
+    const okToGo = await confirm({
+      title: isDir ? "폴더를 삭제할까요?" : "파일을 삭제할까요?",
+      message: isDir ? `${path} — 하위 파일이 모두 삭제됩니다.` : path,
+      danger: true,
+      confirmLabel: "삭제",
+    });
+    if (!okToGo) return;
     try {
       await ws.deleteFile(path);
-      closeTab(path);
+      remapTabs(path, null);
     } catch (e) {
       toast(e instanceof ApiError ? e.message : "삭제에 실패했습니다", "error");
     }
+  };
+
+  const duplicatePath = async (path: string) => {
+    if (readOnly) return;
+    const taken = new Set(ws.files.map((f) => f.path));
+    try {
+      const to = duplicateName(path, taken);
+      await ws.copyPath(path, to);
+      toast(`복사됨 — ${to}`, "success");
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "복사에 실패했습니다", "error");
+    }
+  };
+
+  const copyPathText = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path);
+      toast("경로를 클립보드에 복사했습니다", "success");
+    } catch {
+      toast(path, "info");
+    }
+  };
+
+  const rowMenu = (row: Row): MenuEntry[] => {
+    const dirTarget = row.isDir ? row.path : dirOf(row.path);
+    const items: MenuEntry[] = [];
+    if (!row.isDir) items.push({ label: "열기", onClick: () => openFile(row.path) });
+    if (!readOnly) {
+      items.push({ label: "새 파일", onClick: () => beginCreate("file", dirTarget) });
+      items.push({ label: "새 폴더", onClick: () => beginCreate("folder", dirTarget) });
+      items.push("separator");
+      items.push({ label: "이름 바꾸기", shortcut: "F2", onClick: () => beginRename(row.path) });
+      items.push({ label: "복사본 만들기", onClick: () => duplicatePath(row.path) });
+    }
+    items.push({ label: "경로 복사", onClick: () => copyPathText(row.path) });
+    if (!readOnly) {
+      items.push("separator");
+      items.push({ label: "삭제", shortcut: "Del", danger: true, onClick: () => removePath(row.path, row.isDir) });
+    }
+    return items;
+  };
+
+  /** 인라인 입력행 — 새 파일/새 폴더/이름 바꾸기 공용 (VSCode와 동일한 위치에 렌더) */
+  const draftInput = (depth: number) => (
+    <div className="flex h-[22px] items-center gap-1 pr-1" style={{ paddingLeft: 6 + depth * 12 }}>
+      <span className="w-4 shrink-0" />
+      {draft?.kind === "folder" ? (
+        <FolderGlyph size={14} />
+      ) : (
+        <FileGlyph path={draft?.value || "new"} size={12} dark />
+      )}
+      <input
+        autoFocus
+        value={draft?.value ?? ""}
+        onChange={(e) => {
+          setDraftError("");
+          setDraft((d) => (d ? { ...d, value: e.target.value } : d));
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) commitDraft();
+          if (e.key === "Escape") {
+            setDraft(null);
+            setDraftError("");
+          }
+        }}
+        onBlur={() => commitDraft()}
+        placeholder={draft?.kind === "folder" ? "폴더 이름" : "파일 이름"}
+        className={`min-w-0 flex-1 rounded-sm border bg-[#1e1e1e] px-1 py-[1px] text-[13px] text-[#cccccc] outline-none ${
+          draftError ? "border-red-500" : "border-[#0078d4]"
+        }`}
+        aria-label="explorer-draft"
+      />
+      {draftError && (
+        <span className="absolute z-10 mt-8 rounded bg-red-900/90 px-2 py-0.5 text-[11px] text-red-100">
+          {draftError}
+        </span>
+      )}
+    </div>
+  );
+
+  const rootMenu = (): MenuEntry[] => {
+    const items: MenuEntry[] = [];
+    if (!readOnly) {
+      items.push({ label: "새 파일", onClick: () => beginCreate("file", "") });
+      items.push({ label: "새 폴더", onClick: () => beginCreate("folder", "") });
+      items.push("separator");
+    }
+    items.push({ label: "새로고침", onClick: () => ws.refresh() });
+    return items;
   };
 
   // ── 터미널 ──
@@ -454,7 +588,10 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
               <div className="flex h-8 items-center justify-between pl-4 pr-2">
                 <span className="text-[11px] uppercase tracking-wide text-[#bbbbbb]">탐색기</span>
               </div>
-              <div className="group/head flex h-[22px] items-center gap-1 bg-[#2d2d30] pl-1 pr-1.5">
+              <div
+                className="flex h-[22px] items-center gap-1 bg-[#2d2d30] pl-1 pr-1.5"
+                onContextMenu={(e) => openMenu(e, rootMenu(), { dark: true })}
+              >
                 <span className="flex w-4 justify-center text-[#8a8a8a]">
                   <IconChevronRight size={12} className="rotate-90" />
                 </span>
@@ -462,34 +599,112 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
                   워크스페이스
                 </span>
                 {!readOnly && (
-                  <button title="새 파일" onClick={newFile} className="flex h-5 w-5 items-center justify-center rounded-sm text-[#aaaaaa] hover:bg-white/10 hover:text-white">
-                    <IconAdd size={12} />
-                  </button>
+                  <>
+                    <button
+                      title="새 파일"
+                      onClick={() => beginCreate("file", "")}
+                      className="flex h-5 w-5 items-center justify-center rounded-sm text-[#aaaaaa] hover:bg-white/10 hover:text-white"
+                    >
+                      <IconNewFile size={13} />
+                    </button>
+                    <button
+                      title="새 폴더"
+                      onClick={() => beginCreate("folder", "")}
+                      className="flex h-5 w-5 items-center justify-center rounded-sm text-[#aaaaaa] hover:bg-white/10 hover:text-white"
+                    >
+                      <IconNewFolder size={13} />
+                    </button>
+                  </>
                 )}
-                <button title="새로고침" onClick={() => ws.refresh()} className="flex h-5 w-5 items-center justify-center rounded-sm text-[#aaaaaa] hover:bg-white/10 hover:text-white">
+                <button
+                  title="새로고침"
+                  onClick={() => ws.refresh()}
+                  className="flex h-5 w-5 items-center justify-center rounded-sm text-[#aaaaaa] hover:bg-white/10 hover:text-white"
+                >
                   <IconRefresh size={11} />
                 </button>
               </div>
-              <div className="thin-scroll min-h-0 flex-1 overflow-y-auto py-0.5">
-                <TreeView
-                  nodes={tree}
-                  depth={0}
-                  activePath={activePath}
-                  collapsed={collapsed}
-                  onToggle={(p) =>
-                    setCollapsed((s) => {
-                      const n = new Set(s);
-                      if (n.has(p)) n.delete(p);
-                      else n.add(p);
-                      return n;
-                    })
+              <div
+                className="thin-scroll min-h-0 flex-1 overflow-y-auto py-0.5 outline-none"
+                tabIndex={0}
+                onContextMenu={(e) => openMenu(e, rootMenu(), { dark: true })}
+                onClick={() => setTreeSel(null)}
+                onKeyDown={(e) => {
+                  if (!treeSel || draft) return;
+                  const row = rows.find((r) => r.path === treeSel);
+                  if (!row) return;
+                  if (e.key === "F2") {
+                    e.preventDefault();
+                    beginRename(row.path);
                   }
-                  onOpen={openFile}
-                  onDelete={removeFile}
-                  readOnly={readOnly}
-                />
-                {ws.files.length === 0 && !ws.loading && (
-                  <p className="px-4 pt-3 text-xs text-[#8a8a8a]">워크스페이스가 비어 있습니다</p>
+                  if (e.key === "Delete") {
+                    e.preventDefault();
+                    removePath(row.path, row.isDir);
+                  }
+                }}
+              >
+                {/* 루트에 새로 만드는 중 */}
+                {draft && draft.kind !== "rename" && draft.parent === "" && draftInput(0)}
+
+                {rows.map((row) => {
+                  const isRenaming = draft?.kind === "rename" && draft.target === row.path;
+                  const open = row.isDir && !collapsed.has(row.path);
+                  return (
+                    <div key={(row.isDir ? "d:" : "f:") + row.path}>
+                      {isRenaming ? (
+                        draftInput(row.depth)
+                      ) : (
+                        <div
+                          className={`group flex h-[22px] cursor-pointer items-center gap-1 pr-1 text-[13px] ${
+                            activePath === row.path || treeSel === row.path
+                              ? "bg-[#37373d] text-white"
+                              : "text-[#cccccc] hover:bg-[#2a2d2e]"
+                          }`}
+                          style={{ paddingLeft: 6 + row.depth * 12 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTreeSel(row.path);
+                            if (row.isDir) {
+                              setCollapsed((sset) => {
+                                const n = new Set(sset);
+                                if (n.has(row.path)) n.delete(row.path);
+                                else n.add(row.path);
+                                return n;
+                              });
+                            } else {
+                              openFile(row.path);
+                            }
+                          }}
+                          onContextMenu={(e) => {
+                            setTreeSel(row.path);
+                            openMenu(e, rowMenu(row), { dark: true });
+                          }}
+                        >
+                          <span
+                            className={`flex w-4 shrink-0 justify-center text-[#8a8a8a] transition-transform ${
+                              row.isDir ? (open ? "rotate-90" : "") : "opacity-0"
+                            }`}
+                          >
+                            <IconChevronRight size={12} />
+                          </span>
+                          {row.isDir ? (
+                            <FolderGlyph size={14} open={open} />
+                          ) : (
+                            <FileGlyph path={row.path} size={12} dark />
+                          )}
+                          <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                        </div>
+                      )}
+                      {/* 이 폴더 아래에 새로 만드는 중 */}
+                      {draft && draft.kind !== "rename" && draft.parent === row.path && draftInput(row.depth + 1)}
+                    </div>
+                  );
+                })}
+
+                {ws.files.length === 0 && !ws.loading && !draft && (
+                  <p className="px-4 pt-3 text-xs text-[#8a8a8a]">
+                    워크스페이스가 비어 있습니다 — 우클릭으로 파일을 만드세요
+                  </p>
                 )}
               </div>
             </div>
@@ -514,6 +729,30 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
                 <button
                   key={t.path}
                   onClick={() => setActivePath(t.path)}
+                  onContextMenu={(e) =>
+                    openMenu(
+                      e,
+                      [
+                        { label: "닫기", onClick: () => closeTab(t.path) },
+                        {
+                          label: "다른 탭 모두 닫기",
+                          onClick: () => {
+                            setTabs((list) => list.filter((x) => x.path === t.path));
+                            setActivePath(t.path);
+                          },
+                        },
+                        "separator",
+                        { label: "경로 복사", onClick: () => copyPathText(t.path) },
+                        ...(readOnly
+                          ? []
+                          : ([
+                              { label: "이름 바꾸기", onClick: () => beginRename(t.path) },
+                              { label: "복사본 만들기", onClick: () => duplicatePath(t.path) },
+                            ] as MenuEntry[])),
+                      ],
+                      { dark: true },
+                    )
+                  }
                   className={`group flex h-full shrink-0 items-center gap-1.5 border-r border-black/40 px-3 text-[13px] ${
                     isActive
                       ? "border-t border-t-[#0078d4] bg-[#1e1e1e] text-white"
@@ -550,7 +789,35 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
             </div>
           )}
           {/* 에디터 */}
-          <div className="min-h-0 flex-1">
+          <div
+            className="min-h-0 flex-1"
+            onContextMenu={(e) => {
+              if (!active) return;
+              openMenu(
+                e,
+                [
+                  ...(readOnly
+                    ? []
+                    : ([
+                        {
+                          label: "저장",
+                          shortcut: "Ctrl+S",
+                          disabled: !active.dirty,
+                          onClick: () => save(active),
+                        },
+                        { label: "이름 바꾸기", onClick: () => beginRename(active.path) },
+                        { label: "복사본 만들기", onClick: () => duplicatePath(active.path) },
+                        "separator",
+                      ] as MenuEntry[])),
+                  { label: "경로 복사", onClick: () => copyPathText(active.path) },
+                  { label: "탐색기에서 표시", onClick: () => { setSidebarOpen(true); setTreeSel(active.path); expand(dirOf(active.path)); } },
+                  "separator",
+                  { label: "탭 닫기", onClick: () => closeTab(active.path) },
+                ],
+                { dark: true },
+              );
+            }}
+          >
             {active ? (
               <CodeEditor
                 language={languageOf(active.path)}
@@ -599,6 +866,43 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
                   ref={termScrollRef}
                   className="thin-scroll min-h-0 flex-1 cursor-text overflow-y-auto px-2 py-1 font-mono text-[12.5px] leading-[1.45]"
                   onClick={() => termInputRef.current?.focus()}
+                  onContextMenu={(e) =>
+                    openMenu(
+                      e,
+                      [
+                        {
+                          label: "붙여넣기",
+                          disabled: readOnly || running,
+                          onClick: async () => {
+                            try {
+                              const text = await navigator.clipboard.readText();
+                              if (text) setInput((v) => v + text.replace(/\n/g, " "));
+                              termInputRef.current?.focus();
+                            } catch {
+                              toast("클립보드를 읽을 수 없습니다 (Ctrl+V를 사용하세요)", "info");
+                            }
+                          },
+                        },
+                        {
+                          label: "출력 복사",
+                          onClick: async () => {
+                            const text = lines
+                              .map((l) => (l.kind === "cmd" ? `$ ${l.text}` : l.text))
+                              .join("\n");
+                            try {
+                              await navigator.clipboard.writeText(text);
+                              toast("터미널 출력을 복사했습니다", "success");
+                            } catch {
+                              toast("복사에 실패했습니다", "error");
+                            }
+                          },
+                        },
+                        "separator",
+                        { label: "터미널 지우기", shortcut: "Ctrl+L", onClick: () => setLines([]) },
+                      ],
+                      { dark: true },
+                    )
+                  }
                 >
                   {lines.map((l, i) =>
                     l.kind === "cmd" ? (
@@ -637,6 +941,8 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
           )}
         </div>
       </div>
+
+      <ContextMenuView menu={menu} onClose={closeMenu} />
 
       {/* 상태 바 */}
       <div className="flex h-[22px] shrink-0 items-center justify-between bg-[#007acc] px-2 text-[11px] text-white">

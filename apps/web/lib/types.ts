@@ -204,6 +204,8 @@ export interface AgentUsage {
   remaining: number;
   configured: boolean;
   model?: string | null;
+  tools_available: boolean;
+  provider_name?: string | null;
 }
 
 // ── 워크스페이스 / 실행 ──────────────────────────────────────

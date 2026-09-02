@@ -34,4 +34,10 @@ export {
   FiMaximize as IconFullscreen,
   FiMinimize as IconExitFullscreen,
   FiMonitor as IconMonitor,
+  FiFilePlus as IconNewFile,
+  FiFolderPlus as IconNewFolder,
+  FiCopy as IconCopy,
+  FiEdit3 as IconRename,
+  FiScissors as IconCut,
+  FiClipboard as IconPaste,
 } from "react-icons/fi";

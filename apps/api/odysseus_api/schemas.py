@@ -284,6 +284,9 @@ class AgentUsageOut(BaseModel):
     remaining: int
     configured: bool
     model: str | None = None
+    # 이 공급자가 워크스페이스 조작 도구를 받을 수 있는가 (Claude Code CLI 등은 대화 전용)
+    tools_available: bool = True
+    provider_name: str | None = None
 
 
 # ── workspace ────────────────────────────────────────────────

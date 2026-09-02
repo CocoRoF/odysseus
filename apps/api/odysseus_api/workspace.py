@@ -123,6 +123,114 @@ async def delete_file(
     return bool(result.rowcount)
 
 
+async def copy_path(
+    db: AsyncSession,
+    attempt_id: uuid.UUID,
+    scenario_id: uuid.UUID,
+    from_path: str,
+    to_path: str,
+    *,
+    actor: str = "ide",
+) -> int:
+    """파일 또는 폴더(프리픽스) 복사. 복사된 파일 수 반환.
+
+    from_path가 파일이면 단순 복사. 폴더면 그 아래 전체를 to_path 프리픽스로 옮겨 복사한다.
+    대상이 이미 있으면 409.
+    """
+    src = normalize_path(from_path)
+    dst = normalize_path(to_path)
+    if dst == src or dst.startswith(src + "/"):
+        raise WorkspaceError(400, "대상 경로가 원본 안에 있을 수 없습니다")
+
+    exact = await get_file(db, attempt_id, scenario_id, src)
+    if exact is not None:
+        if await get_file(db, attempt_id, scenario_id, dst):
+            raise WorkspaceError(409, f"대상이 이미 존재합니다: {dst}")
+        await save_file(db, attempt_id, scenario_id, dst, exact.content, actor=actor, record_event=False)
+        db.add(Event(attempt_id=attempt_id, scenario_id=scenario_id, type="file_copy",
+                     payload={"from": src, "to": dst, "actor": actor}))
+        return 1
+
+    # 폴더 복사
+    rows = await list_files(db, attempt_id, scenario_id)
+    prefix = src + "/"
+    members = [r for r in rows if r.path.startswith(prefix)]
+    if not members:
+        raise WorkspaceError(404, f"경로가 없습니다: {src}")
+    count = 0
+    for r in members:
+        new_path = dst + "/" + r.path[len(prefix):]
+        if await get_file(db, attempt_id, scenario_id, new_path):
+            continue
+        await save_file(db, attempt_id, scenario_id, new_path, r.content, actor=actor, record_event=False)
+        count += 1
+    db.add(Event(attempt_id=attempt_id, scenario_id=scenario_id, type="file_copy",
+                 payload={"from": src, "to": dst, "count": count, "actor": actor}))
+    return count
+
+
+async def move_path(
+    db: AsyncSession,
+    attempt_id: uuid.UUID,
+    scenario_id: uuid.UUID,
+    from_path: str,
+    to_path: str,
+    *,
+    actor: str = "ide",
+) -> int:
+    """파일 또는 폴더 이름 변경/이동. 옮긴 파일 수 반환."""
+    src = normalize_path(from_path)
+    dst = normalize_path(to_path)
+    if dst == src:
+        return 0
+    if dst.startswith(src + "/"):
+        raise WorkspaceError(400, "대상 경로가 원본 안에 있을 수 없습니다")
+
+    exact = await get_file(db, attempt_id, scenario_id, src)
+    if exact is not None:
+        if await get_file(db, attempt_id, scenario_id, dst):
+            raise WorkspaceError(409, f"대상이 이미 존재합니다: {dst}")
+        content = exact.content
+        await delete_file(db, attempt_id, scenario_id, src, actor=actor)
+        await save_file(db, attempt_id, scenario_id, dst, content, actor=actor, record_event=False)
+        db.add(Event(attempt_id=attempt_id, scenario_id=scenario_id, type="file_rename",
+                     payload={"from": src, "to": dst, "actor": actor}))
+        return 1
+
+    rows = await list_files(db, attempt_id, scenario_id)
+    prefix = src + "/"
+    members = [r for r in rows if r.path.startswith(prefix)]
+    if not members:
+        raise WorkspaceError(404, f"경로가 없습니다: {src}")
+    for r in members:
+        new_path = dst + "/" + r.path[len(prefix):]
+        if await get_file(db, attempt_id, scenario_id, new_path):
+            raise WorkspaceError(409, f"대상이 이미 존재합니다: {new_path}")
+    for r in members:
+        content = r.content
+        new_path = dst + "/" + r.path[len(prefix):]
+        await delete_file(db, attempt_id, scenario_id, r.path, actor=actor)
+        await save_file(db, attempt_id, scenario_id, new_path, content, actor=actor, record_event=False)
+    db.add(Event(attempt_id=attempt_id, scenario_id=scenario_id, type="file_rename",
+                 payload={"from": src, "to": dst, "count": len(members), "actor": actor}))
+    return len(members)
+
+
+async def delete_path(
+    db: AsyncSession, attempt_id: uuid.UUID, scenario_id: uuid.UUID, path: str, *, actor: str = "ide"
+) -> int:
+    """파일 또는 폴더(프리픽스) 삭제. 삭제된 파일 수 반환."""
+    src = normalize_path(path)
+    if await delete_file(db, attempt_id, scenario_id, src, actor=actor):
+        return 1
+    rows = await list_files(db, attempt_id, scenario_id)
+    prefix = src + "/"
+    members = [r for r in rows if r.path.startswith(prefix)]
+    for r in members:
+        await delete_file(db, attempt_id, scenario_id, r.path, actor=actor)
+    return len(members)
+
+
 def files_payload(rows: list[WorkspaceFile]) -> list[dict]:
     """러너 잡에 싣는 파일 목록."""
     return [{"path": r.path, "content": r.content} for r in rows]

@@ -166,6 +166,16 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
             </Field>
             <Field label="AI 에이전트 공급자" hint="응시자가 사용하는 에이전트">
               {providerSelect(agentProviderId, setAgentProviderId)}
+              {(() => {
+                const picked = providers.find((p) => p.id === agentProviderId);
+                const chatOnly = picked ? picked.supports_host_tools === false : false;
+                return chatOnly ? (
+                  <p className="mt-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+                    이 공급자는 도구 호출을 지원하지 않아 에이전트가 <b>대화 전용</b>으로 동작합니다 — 파일을
+                    직접 찾거나 만들 수 없습니다. 파일 조작이 필요하면 도구를 지원하는 공급자를 지정하세요.
+                  </p>
+                ) : null;
+              })()}
             </Field>
           </div>
         </Card>

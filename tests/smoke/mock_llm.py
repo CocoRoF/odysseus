@@ -60,6 +60,10 @@ class Handler(BaseHTTPRequestHandler):
             # 도구 결과가 마지막이면 종결 (키워드보다 먼저 — 무한루프 방지)
             if last.get("role") == "tool":
                 return self._json(self._text(model, now, "도구 결과 확인: " + str(last.get("content", ""))[:120]))
+            if "찾아줘" in last_text:
+                return self._json(self._tool(model, now, "search_files", {"query": "orders", "in_content": False}))
+            if "폴더에만들어줘" in last_text:
+                return self._json(self._tool(model, now, "write_file", {"path": "src/utils/parse.py", "content": "# agent nested file\n"}))
             if "파일만들어줘" in last_text:
                 return self._json(self._tool(model, now, "write_file", {"path": "agent_note.txt", "content": "에이전트가 생성한 파일"}))
             if "실행해줘" in last_text:

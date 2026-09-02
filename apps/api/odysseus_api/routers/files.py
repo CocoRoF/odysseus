@@ -94,23 +94,34 @@ async def rename_file(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """파일 또는 폴더 이름 변경/이동 (폴더는 하위 전체가 함께 이동)."""
     attempt = await require_own_active(attempt_id, user, db)
     await scenario_in_attempt(attempt, scenario_id, db)
     try:
-        from_path = ws.normalize_path(body.from_path)
-        to_path = ws.normalize_path(body.to_path)
-        row = await ws.get_file(db, attempt_id, scenario_id, from_path)
-        if not row:
-            raise HTTPException(404, f"파일이 없습니다: {from_path}")
-        if await ws.get_file(db, attempt_id, scenario_id, to_path):
-            raise HTTPException(409, f"대상 경로가 이미 존재합니다: {to_path}")
-        content = row.content
-        await ws.delete_file(db, attempt_id, scenario_id, from_path, actor="ide")
-        await ws.save_file(db, attempt_id, scenario_id, to_path, content, actor="ide")
+        moved = await ws.move_path(db, attempt_id, scenario_id, body.from_path, body.to_path, actor="ide")
     except ws.WorkspaceError as e:
         raise HTTPException(e.code, e.message)
     await db.commit()
-    return {"ok": True, "from": from_path, "to": to_path}
+    return {"ok": True, "from": body.from_path, "to": body.to_path, "moved": moved}
+
+
+@router.post("/attempts/{attempt_id}/scenarios/{scenario_id}/files/copy")
+async def copy_file(
+    attempt_id: uuid.UUID,
+    scenario_id: uuid.UUID,
+    body: FileRenameIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """파일 또는 폴더 복사 (폴더는 하위 전체 복사)."""
+    attempt = await require_own_active(attempt_id, user, db)
+    await scenario_in_attempt(attempt, scenario_id, db)
+    try:
+        copied = await ws.copy_path(db, attempt_id, scenario_id, body.from_path, body.to_path, actor="ide")
+    except ws.WorkspaceError as e:
+        raise HTTPException(e.code, e.message)
+    await db.commit()
+    return {"ok": True, "from": body.from_path, "to": body.to_path, "copied": copied}
 
 
 @router.delete("/attempts/{attempt_id}/scenarios/{scenario_id}/files")
@@ -124,10 +135,10 @@ async def remove_file(
     attempt = await require_own_active(attempt_id, user, db)
     await scenario_in_attempt(attempt, scenario_id, db)
     try:
-        ok = await ws.delete_file(db, attempt_id, scenario_id, path, actor="ide")
+        removed = await ws.delete_path(db, attempt_id, scenario_id, path, actor="ide")
     except ws.WorkspaceError as e:
         raise HTTPException(e.code, e.message)
     await db.commit()
-    if not ok:
+    if not removed:
         raise HTTPException(404, "파일이 없습니다")
-    return {"ok": True}
+    return {"ok": True, "removed": removed}

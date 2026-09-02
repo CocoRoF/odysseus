@@ -249,6 +249,14 @@ export default function ExamDesktopPage() {
       <div
         className="desktop-wallpaper relative h-screen w-screen overflow-hidden select-none"
         onClick={() => setSelectedIcon(null)}
+        onContextMenu={(e) => {
+          // 시험 환경은 OS처럼 동작한다 — 앱이 자체 메뉴를 열지 않은 경우 브라우저 메뉴는 막는다.
+          // 단, 입력 요소에서는 기본 메뉴(붙여넣기 등)를 남긴다.
+          const el = e.target as HTMLElement;
+          const editable =
+            el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
+          if (!editable) e.preventDefault();
+        }}
       >
         {/* 바탕화면 아이콘 — 클릭=선택, 더블클릭/Enter=열기 (Windows 규약) */}
         <div className="absolute left-4 top-5 z-10 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>

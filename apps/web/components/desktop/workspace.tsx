@@ -15,6 +15,8 @@ interface WorkspaceCtxValue {
   saveContent: (path: string, content: string) => Promise<void>;
   deleteFile: (path: string) => Promise<void>;
   renameFile: (from: string, to: string) => Promise<void>;
+  copyPath: (from: string, to: string) => Promise<void>;
+  createFolder: (path: string) => Promise<void>;
   /** 폴더 앱 → IDE로 파일 열기 요청 (데스크톱이 IDE 창을 띄우고 전달) */
   requestOpenInIde: (path: string) => void;
   /** 더블클릭 → 읽기 전용 뷰어 앱으로 열기 */
@@ -91,6 +93,23 @@ export function WorkspaceProvider({
     [base, refresh],
   );
 
+  const copyPath = useCallback(
+    async (from: string, to: string) => {
+      await api.post(`${base}/files/copy`, { from_path: from, to_path: to });
+      await refresh();
+    },
+    [base, refresh],
+  );
+
+  /** 빈 폴더는 .keep 플레이스홀더로 표현한다 (워크스페이스가 경로 기반이라 디렉터리 엔트리가 없음). */
+  const createFolder = useCallback(
+    async (path: string) => {
+      await api.put(`${base}/files/content`, { path: `${path.replace(/\/+$/, "")}/${KEEP_NAME}`, content: "" });
+      await refresh();
+    },
+    [base, refresh],
+  );
+
   const requestOpenInIde = useCallback(
     (path: string) => {
       setPendingIdeOpen(path);
@@ -119,6 +138,8 @@ export function WorkspaceProvider({
       saveContent,
       deleteFile,
       renameFile,
+      copyPath,
+      createFolder,
       requestOpenInIde,
       openInViewer,
       pendingIdeOpen,
@@ -134,6 +155,8 @@ export function WorkspaceProvider({
       saveContent,
       deleteFile,
       renameFile,
+      copyPath,
+      createFolder,
       requestOpenInIde,
       openInViewer,
       pendingIdeOpen,
@@ -145,6 +168,13 @@ export function WorkspaceProvider({
 }
 
 // ── 파일 트리 유틸 ───────────────────────────────────────────
+
+/** 빈 폴더 유지용 플레이스홀더 — UI/에이전트 목록에서는 감춘다. */
+export const KEEP_NAME = ".keep";
+
+export function isKeepPath(path: string): boolean {
+  return path.split("/").pop() === KEEP_NAME;
+}
 
 export interface TreeNode {
   name: string;
@@ -171,6 +201,12 @@ export function buildTree(files: FileEntry[]): TreeNode[] {
       node = child;
     }
   }
+  // .keep 리프는 제거 — 폴더 노드는 남으므로 빈 폴더가 유지된다
+  const prune = (n: TreeNode) => {
+    n.children = n.children.filter((c) => c.isDir || c.name !== KEEP_NAME);
+    n.children.forEach(prune);
+  };
+  prune(root);
   const sortRec = (n: TreeNode) => {
     n.children.sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
     n.children.forEach(sortRec);

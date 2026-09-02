@@ -89,6 +89,33 @@ files2 = {f["path"] for f in ad.get(f"{base}/files").json()}
 check("file rename", "notes/plan2.md" in files2 and "notes/plan.md" not in files2, str(files2))
 ad.delete(f"{base}/files", params={"path": "notes/plan2.md"})
 
+# 4b. 복사 / 폴더 단위 이름변경·삭제 (탐색기 우클릭 조작의 서버 표면)
+ad.put(f"{base}/files/content", json={"path": "pkg/a.txt", "content": "A"})
+ad.put(f"{base}/files/content", json={"path": "pkg/sub/b.txt", "content": "B"})
+r = ad.post(f"{base}/files/copy", json={"from_path": "report.py", "to_path": "report copy.py"})
+check("file copy", r.status_code == 200 and r.json()["copied"] == 1, r.text[:150])
+dup = ad.get(f"{base}/files/content", params={"path": "report copy.py"}).json()
+check("copy has same content", "total_by_date" in dup["content"], dup["content"][:60])
+r = ad.post(f"{base}/files/copy", json={"from_path": "pkg", "to_path": "pkg_copy"})
+check("folder copy (recursive)", r.status_code == 200 and r.json()["copied"] == 2, r.text[:150])
+paths = {f["path"] for f in ad.get(f"{base}/files").json()}
+check("folder copy children", {"pkg_copy/a.txt", "pkg_copy/sub/b.txt"} <= paths, str(sorted(paths))[:200])
+r = ad.post(f"{base}/files/copy", json={"from_path": "report.py", "to_path": "report copy.py"})
+check("copy conflict (409)", r.status_code == 409, str(r.status_code))
+r = ad.post(f"{base}/files/rename", json={"from_path": "pkg_copy", "to_path": "renamed_pkg"})
+check("folder rename", r.status_code == 200 and r.json()["moved"] == 2, r.text[:150])
+paths = {f["path"] for f in ad.get(f"{base}/files").json()}
+check("folder rename moved children", "renamed_pkg/sub/b.txt" in paths and "pkg_copy/a.txt" not in paths, str(sorted(paths))[:220])
+r = ad.delete(f"{base}/files", params={"path": "renamed_pkg"})
+check("folder delete (recursive)", r.status_code == 200 and r.json()["removed"] == 2, r.text[:150])
+# 빈 폴더 = .keep 플레이스홀더
+ad.put(f"{base}/files/content", json={"path": "empty_dir/.keep", "content": ""})
+paths = {f["path"] for f in ad.get(f"{base}/files").json()}
+check("empty folder placeholder", "empty_dir/.keep" in paths, "")
+ad.delete(f"{base}/files", params={"path": "empty_dir"})
+ad.delete(f"{base}/files", params={"path": "pkg"})
+ad.delete(f"{base}/files", params={"path": "report copy.py"})
+
 # 5. IDE 실행 (러너 E2E — 산출물 파일 반영)
 run = ad.post(f"{base}/run", json={"command": "python3 report.py"}).json()
 done = None
@@ -128,6 +155,16 @@ amsgs2 = ad.get(f"{base}/agent/messages").json()
 last_meta = amsgs2[-1]["meta"]
 check("agent run step recorded", any(st.get("tool") == "run_command" for st in last_meta.get("steps", [])), str(last_meta)[:200])
 check("agent saw run result", "도구 결과 확인" in amsgs2[-1]["content"] or "exit" in amsgs2[-1]["content"], amsgs2[-1]["content"][:120])
+
+# 7c. 에이전트 파일 검색 / 중첩 경로 생성 (파일시스템 연결)
+r = ad.post(f"{base}/agent/messages", json={"content": "찾아줘"})
+check("agent search tool streamed", r.status_code == 200 and "search_files" in r.text, r.text[:200])
+amsgs3 = ad.get(f"{base}/agent/messages").json()
+check("agent search found file", "orders.csv" in amsgs3[-1]["content"], amsgs3[-1]["content"][:150])
+r = ad.post(f"{base}/agent/messages", json={"content": "폴더에만들어줘"})
+check("agent nested create", r.status_code == 200 and '"done"' in r.text, r.text[:150])
+nested = ad.get(f"{base}/files/content", params={"path": "src/utils/parse.py"})
+check("agent created nested file", nested.status_code == 200 and "agent nested file" in nested.json()["content"], str(nested.status_code))
 
 # 8. 행동 이벤트 (화이트리스트)
 r = ad.post(f"{API}/attempts/{at['id']}/events", json={"events": [

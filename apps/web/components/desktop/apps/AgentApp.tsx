@@ -106,7 +106,9 @@ export function AgentApp({ readOnly = false, onActivity }: { readOnly?: boolean;
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-4 py-2">
         <span className="flex items-center gap-1.5 text-xs text-slate-500">
           <IconAgent size={13} className="text-sky-500" />
-          워크스페이스 파일을 읽고·쓰고·실행할 수 있는 어시스턴트
+          {usage && !usage.tools_available
+            ? "대화 전용 — 이 모델은 파일 조작 도구를 사용할 수 없습니다"
+            : "워크스페이스 파일을 읽고·쓰고·검색하고·실행할 수 있는 어시스턴트"}
         </span>
         {usage && (
           <span
@@ -127,6 +129,11 @@ export function AgentApp({ readOnly = false, onActivity }: { readOnly?: boolean;
             <p className="max-w-xs text-xs text-slate-400">
               시나리오 정보는 모르는 상태로 시작합니다. 파악한 내용을 알려주고 작업을 맡겨 보세요.
             </p>
+            {usage?.tools_available && (
+              <p className="max-w-xs text-[11px] text-slate-300">
+                예: &ldquo;워크스페이스에 어떤 파일이 있는지 찾아줘&rdquo; · &ldquo;src/main.py 만들어줘&rdquo;
+              </p>
+            )}
           </div>
         )}
         {items.map((m) =>
