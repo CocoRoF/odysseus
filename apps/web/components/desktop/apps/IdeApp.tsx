@@ -495,6 +495,7 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
             </div>
             <Divider
               orientation="vertical"
+              tone="dark"
               onMove={(x) => {
                 const left = rootRef.current?.getBoundingClientRect().left ?? 0;
                 setSidebarW(Math.max(140, Math.min(x - left - 44, 420)));
@@ -513,10 +514,10 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
                 <button
                   key={t.path}
                   onClick={() => setActivePath(t.path)}
-                  className={`group flex h-full shrink-0 items-center gap-1.5 border-r border-black/30 px-3 text-[13px] ${
+                  className={`group flex h-full shrink-0 items-center gap-1.5 border-r border-black/40 px-3 text-[13px] ${
                     isActive
                       ? "border-t border-t-[#0078d4] bg-[#1e1e1e] text-white"
-                      : "border-t border-t-transparent text-[#969696] hover:text-[#cccccc]"
+                      : "border-t border-t-transparent bg-[#2d2d2d] text-[#969696] hover:bg-[#2a2a2a] hover:text-[#cccccc]"
                   }`}
                 >
                   <FileGlyph path={t.path} size={11} dark />
@@ -574,6 +575,7 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
             <>
               <Divider
                 orientation="horizontal"
+                tone="dark"
                 onMove={(_x, y) => {
                   const rect = rootRef.current?.getBoundingClientRect();
                   if (rect) setTermH(Math.max(90, Math.min(rect.bottom - y - 22, rect.height - 160)));
@@ -637,9 +639,9 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
       </div>
 
       {/* 상태 바 */}
-      <div className="flex h-[22px] shrink-0 items-center justify-between bg-[#0078d4] px-2 text-[11px] text-white">
+      <div className="flex h-[22px] shrink-0 items-center justify-between bg-[#007acc] px-2 text-[11px] text-white">
         <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1 bg-white/15 px-2 py-[1px]">Odysseus</span>
+          <span className="flex items-center gap-1 bg-[#16825d] px-2 py-[1px] font-semibold">Odysseus</span>
           <span className="opacity-90">워크스페이스</span>
         </div>
         <div className="flex items-center gap-3">

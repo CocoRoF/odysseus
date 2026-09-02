@@ -318,6 +318,7 @@ export default function ExamDesktopPage() {
           wm={wm}
           title={APP_META.messenger.title}
           accent={APP_META.messenger.accent}
+          theme={APP_META.messenger.theme}
           icon={<IconMessenger size={15} />}
         >
           <MessengerApp
@@ -333,6 +334,7 @@ export default function ExamDesktopPage() {
           wm={wm}
           title={APP_META.ide.title}
           accent={APP_META.ide.accent}
+          theme={APP_META.ide.theme}
           icon={<IconIde size={15} />}
         >
           <IdeApp key={scenario.scenario_id} onActivity={() => undefined} />
@@ -353,6 +355,7 @@ export default function ExamDesktopPage() {
           wm={wm}
           title={APP_META.files.title}
           accent={APP_META.files.accent}
+          theme={APP_META.files.theme}
           icon={<IconFolder size={15} />}
         >
           <FilesApp key={scenario.scenario_id} />
@@ -362,6 +365,7 @@ export default function ExamDesktopPage() {
           wm={wm}
           title={viewerPath ? `뷰어 — ${viewerPath.split("/").pop()}` : "뷰어"}
           accent={APP_META.viewer.accent}
+          theme={APP_META.viewer.theme}
           icon={<IconFile size={15} />}
         >
           <ViewerApp key={scenario.scenario_id} path={viewerPath} />

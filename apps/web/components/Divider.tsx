@@ -6,14 +6,22 @@ import { useState } from "react";
 export function Divider({
   orientation,
   onMove,
+  tone = "light",
 }: {
   orientation: "vertical" | "horizontal";
   onMove: (clientX: number, clientY: number) => void;
+  tone?: "light" | "dark";
 }) {
   const [dragging, setDragging] = useState(false);
-  const base =
-    "relative z-20 shrink-0 transition-colors " +
-    (dragging ? "bg-violet-500" : "bg-slate-200 hover:bg-violet-400/80");
+  const palette =
+    tone === "dark"
+      ? dragging
+        ? "bg-[#0078d4]"
+        : "bg-black/40 hover:bg-[#0078d4]/80"
+      : dragging
+        ? "bg-violet-500"
+        : "bg-slate-200 hover:bg-violet-400/80";
+  const base = "relative z-20 shrink-0 transition-colors " + palette;
   const dims =
     orientation === "vertical"
       ? "w-1 cursor-col-resize after:absolute after:inset-y-0 after:-left-1.5 after:-right-1.5"

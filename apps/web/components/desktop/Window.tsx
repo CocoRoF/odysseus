@@ -11,6 +11,7 @@ export function Window({
   title,
   icon,
   accent = "bg-slate-100",
+  theme = "light",
   children,
 }: {
   win: WinState;
@@ -18,6 +19,7 @@ export function Window({
   title: string;
   icon: ReactNode;
   accent?: string;
+  theme?: "light" | "dark";
   children: ReactNode;
 }) {
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
@@ -68,39 +70,50 @@ export function Window({
     el.addEventListener("pointerup", upHandler);
   };
 
+  const dark = theme === "dark";
+  const frameCls = dark
+    ? "border-black/60 bg-[#1e1e1e]"
+    : "border-slate-300/60 bg-white";
+  const titleCls = dark
+    ? "border-black/50 bg-[#323233]"
+    : `border-slate-200 ${accent}`;
+  const btnCls = dark
+    ? "text-[#9a9a9a] hover:bg-white/10 hover:text-white"
+    : "text-slate-400 hover:bg-slate-200/70 hover:text-slate-600";
+
   return (
     <div
-      className="window-in window-shadow absolute flex flex-col overflow-hidden rounded-xl border border-slate-300/60 bg-white"
+      className={`window-in window-shadow absolute flex flex-col overflow-hidden rounded-xl border ${frameCls}`}
       style={style}
       onPointerDown={() => wm.focus(win.id)}
     >
       {/* 타이틀바 */}
       <div
-        className={`flex h-10 shrink-0 select-none items-center gap-2 border-b border-slate-200 px-3 ${accent}`}
+        className={`flex h-10 shrink-0 select-none items-center gap-2 border-b px-3 ${titleCls}`}
         onPointerDown={startDrag}
         onDoubleClick={() => wm.toggleMaximize(win.id)}
       >
-        <span className="flex h-5 w-5 items-center justify-center text-slate-500">{icon}</span>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">{title}</span>
+        <span className={`flex h-5 w-5 items-center justify-center ${dark ? "text-[#9a9a9a]" : "text-slate-500"}`}>{icon}</span>
+        <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${dark ? "text-[#cccccc]" : "text-slate-700"}`}>{title}</span>
         <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
           <button
             title="최소화"
             onClick={() => wm.minimize(win.id)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/70 hover:text-slate-600"
+            className={`flex h-7 w-7 items-center justify-center rounded-lg ${btnCls}`}
           >
             <IconMinimize size={14} />
           </button>
           <button
             title={win.maximized ? "이전 크기" : "최대화"}
             onClick={() => wm.toggleMaximize(win.id)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/70 hover:text-slate-600"
+            className={`flex h-7 w-7 items-center justify-center rounded-lg ${btnCls}`}
           >
             <IconMaximize size={13} />
           </button>
           <button
             title="닫기"
             onClick={() => wm.close(win.id)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-500 hover:text-white"
+            className={`flex h-7 w-7 items-center justify-center rounded-lg ${dark ? "text-[#9a9a9a]" : "text-slate-400"} hover:bg-red-500 hover:text-white`}
           >
             <IconClose size={15} />
           </button>
@@ -121,11 +134,11 @@ export function Window({
 
 export const APP_META: Record<
   AppId,
-  { title: string; accent: string }
+  { title: string; accent: string; theme: "light" | "dark" }
 > = {
-  messenger: { title: "메신저", accent: "bg-violet-50" },
-  ide: { title: "IDE", accent: "bg-slate-100" },
-  agent: { title: "AI 에이전트", accent: "bg-sky-50" },
-  files: { title: "폴더", accent: "bg-amber-50" },
-  viewer: { title: "뷰어", accent: "bg-slate-50" },
+  messenger: { title: "메신저", accent: "bg-violet-50", theme: "light" },
+  ide: { title: "IDE", accent: "bg-slate-100", theme: "dark" },
+  agent: { title: "AI 에이전트", accent: "bg-sky-50", theme: "light" },
+  files: { title: "폴더", accent: "bg-amber-50", theme: "light" },
+  viewer: { title: "뷰어", accent: "bg-slate-50", theme: "light" },
 };
