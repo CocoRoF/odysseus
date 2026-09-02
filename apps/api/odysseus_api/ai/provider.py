@@ -125,8 +125,9 @@ PROVIDER_CATALOG: list[dict] = [
         "placeholder_model": "sonnet",
         "description": (
             "서버에 설치된 claude CLI를 순수 LLM으로 구동합니다. 내장 도구·스킬·MCP가 "
-            "전부 차단되어 다른 공급자와 동일하게 채팅만 수행합니다. 키는 Anthropic API 키"
-            "(sk-ant-…) 또는 `claude setup-token` 토큰(sk-ant-oat…)을 지원합니다. "
+            "전부 차단되어 다른 공급자와 동일하게 채팅만 수행합니다. 인증은 아래 "
+            "'Claude 계정으로 로그인'(구독 계정, 1년 토큰 자동 발급) 또는 API 키"
+            "(sk-ant-…)/setup-token(sk-ant-oat…) 직접 입력을 지원합니다. "
             "temperature·최대 토큰 설정은 CLI가 지원하지 않아 무시됩니다."
         ),
     },

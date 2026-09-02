@@ -1,11 +1,14 @@
+import asyncio
 import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import provider as ai
+from ..ai.claude_login import ClaudeLoginError, manager as claude_login
 from ..config import settings as env
 from ..db import get_db
 from ..deps import require_admin
@@ -210,6 +213,52 @@ async def discover(body: AiTestIn, db: AsyncSession = Depends(get_db)):
     """공급자가 실제 서빙 중인 모델 목록 (라이브 디스커버리, 실패 시 unavailable)."""
     res = await _resolved_for_test(body, db)
     return await ai.list_models(res)
+
+
+# ── Claude 계정 로그인 (setup-token 중계) ────────────────────────
+#
+# 관리자 전용. `claude setup-token`을 서버 PTY에서 구동해 OAuth URL을 넘겨주고,
+# 관리자가 브라우저 로그인 후 받은 코드를 되받아 장수 토큰(sk-ant-oat…)을 얻는다.
+# 얻은 토큰은 공급자의 API 키 자리에 저장되며, 이후 실행은 기존 setup_token
+# 채널(CLAUDE_CODE_OAUTH_TOKEN)로 흐른다.
+
+
+class ClaudeLoginCodeIn(BaseModel):
+    code: str = Field(min_length=4, max_length=4000)
+
+
+def _login_error(e: ClaudeLoginError) -> HTTPException:
+    return HTTPException(e.code, e.message)
+
+
+@router.post("/ai/claude-login")
+async def claude_login_start():
+    try:
+        return await asyncio.to_thread(claude_login.start)
+    except ClaudeLoginError as e:
+        raise _login_error(e)
+
+
+@router.get("/ai/claude-login/{session_id}")
+async def claude_login_status(session_id: str):
+    try:
+        return await asyncio.to_thread(claude_login.status, session_id)
+    except ClaudeLoginError as e:
+        raise _login_error(e)
+
+
+@router.post("/ai/claude-login/{session_id}/code")
+async def claude_login_code(session_id: str, body: ClaudeLoginCodeIn):
+    try:
+        return await asyncio.to_thread(claude_login.submit_code, session_id, body.code)
+    except ClaudeLoginError as e:
+        raise _login_error(e)
+
+
+@router.delete("/ai/claude-login/{session_id}")
+async def claude_login_cancel(session_id: str):
+    await asyncio.to_thread(claude_login.cancel, session_id)
+    return {"ok": True}
 
 
 # ── 레거시(v0.2 단일 설정) 마이그레이션 — 앱 기동 시 1회 호출 ──────

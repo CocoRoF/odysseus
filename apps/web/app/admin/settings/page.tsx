@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
   AiModelInfo,
@@ -345,7 +345,8 @@ function ProviderModal({
       ...f,
       provider,
       base_url: f.base_url || next?.default_base_url || "",
-      name: f.name || next?.label || "",
+      // 이름이 비었거나 다른 유형의 기본 라벨 그대로면 새 유형 라벨로 교체
+      name: !f.name || meta.catalog.some((c) => c.label === f.name) ? next?.label ?? "" : f.name,
     }));
     setModels(null);
     setModelsError("");
@@ -479,6 +480,15 @@ function ProviderModal({
           </div>
         </Field>
 
+        {cat?.provider === "claude_code_cli" && (
+          <ClaudeLoginBox
+            onToken={(token) => {
+              set("api_key", token);
+              set("clearKey", false);
+            }}
+          />
+        )}
+
         <Field label="모델">
           <div className="flex gap-2">
             <input
@@ -583,5 +593,170 @@ function ProviderModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+
+// ── Claude 계정 로그인 (setup-token 중계) ─────────────────────
+
+interface ClaudeLoginState {
+  session_id: string;
+  state: "starting" | "awaiting_code" | "success" | "error";
+  url: string | null;
+  token: string | null;
+  error: string | null;
+}
+
+function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
+  const [phase, setPhase] = useState<"idle" | "starting" | "awaiting" | "verifying" | "success" | "error">("idle");
+  const [session, setSession] = useState<ClaudeLoginState | null>(null);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const sessionRef = useRef<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPoll = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopPoll();
+      // 모달 닫힘 → 진행 중 세션 정리 (best-effort)
+      if (sessionRef.current) api.del(`/admin/settings/ai/claude-login/${sessionRef.current}`).catch(() => undefined);
+    };
+  }, []);
+
+  const applyState = (st: ClaudeLoginState): boolean => {
+    setSession(st);
+    if (st.state === "success" && st.token) {
+      stopPoll();
+      onToken(st.token);
+      setPhase("success");
+      sessionRef.current = null;
+      return true;
+    }
+    if (st.state === "error") {
+      stopPoll();
+      setError(st.error || "로그인에 실패했습니다");
+      setPhase("error");
+      return true;
+    }
+    if (st.state === "awaiting_code" && st.url) setPhase("awaiting");
+    return false;
+  };
+
+  const pollUntilSettled = (sid: string, timeoutMs: number) => {
+    stopPoll();
+    const deadline = Date.now() + timeoutMs;
+    pollRef.current = setInterval(async () => {
+      if (Date.now() > deadline) {
+        stopPoll();
+        setError("응답 대기 시간이 초과되었습니다. 다시 시도하세요.");
+        setPhase("error");
+        return;
+      }
+      try {
+        const st = await api.get<ClaudeLoginState>(`/admin/settings/ai/claude-login/${sid}`);
+        applyState(st);
+      } catch (e) {
+        stopPoll();
+        setError(e instanceof ApiError ? e.message : "상태 조회 실패");
+        setPhase("error");
+      }
+    }, 1500);
+  };
+
+  const start = async () => {
+    setPhase("starting");
+    setError("");
+    setCode("");
+    try {
+      const st = await api.post<ClaudeLoginState>("/admin/settings/ai/claude-login");
+      sessionRef.current = st.session_id;
+      if (!applyState(st) && !st.url) pollUntilSettled(st.session_id, 60_000);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "로그인 세션을 시작할 수 없습니다");
+      setPhase("error");
+    }
+  };
+
+  const submitCode = async () => {
+    if (!session || !code.trim()) return;
+    setPhase("verifying");
+    setError("");
+    try {
+      const st = await api.post<ClaudeLoginState>(
+        `/admin/settings/ai/claude-login/${session.session_id}/code`,
+        { code: code.trim() },
+      );
+      if (!applyState(st)) pollUntilSettled(session.session_id, 60_000);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "코드 제출 실패");
+      setPhase("error");
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-slate-700">Claude 계정으로 로그인</p>
+          <p className="text-xs text-slate-400">
+            브라우저에서 구독 계정으로 로그인하면 1년 유효 토큰이 자동으로 입력됩니다 (API 키 불필요)
+          </p>
+        </div>
+        {(phase === "idle" || phase === "error") && (
+          <Button variant="secondary" onClick={start}>
+            {phase === "error" ? "다시 시도" : "로그인 시작"}
+          </Button>
+        )}
+        {phase === "starting" && <span className="text-xs text-slate-400">준비 중...</span>}
+      </div>
+
+      {(phase === "awaiting" || phase === "verifying") && session?.url && (
+        <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white">1</span>
+            <a
+              href={session.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-sky-600 underline underline-offset-2 hover:text-sky-500"
+            >
+              Claude 로그인 페이지 열기 (새 탭)
+            </a>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white">2</span>
+            <input
+              className={`${inputCls} font-mono text-xs`}
+              placeholder="로그인 후 표시되는 인증 코드 붙여넣기"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitCode();
+              }}
+              disabled={phase === "verifying"}
+            />
+            <Button className="shrink-0 whitespace-nowrap" onClick={submitCode} disabled={!code.trim() || phase === "verifying"}>
+              {phase === "verifying" ? "확인 중..." : "코드 제출"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {phase === "success" && (
+        <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          로그인 성공 — 발급된 토큰(1년 유효)이 API 키 칸에 입력되었습니다. <b>저장</b>을 눌러 완료하세요.
+        </p>
+      )}
+      {phase === "error" && error && (
+        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
+      )}
+    </div>
   );
 }
