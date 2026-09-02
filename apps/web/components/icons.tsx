@@ -25,4 +25,13 @@ export {
   FiClock as IconClock,
   FiCheckCircle as IconCheck,
   FiAlertTriangle as IconWarn,
+  FiArrowLeft as IconArrowLeft,
+  FiArrowRight as IconArrowRight,
+  FiArrowUp as IconArrowUp,
+  FiChevronRight as IconChevronRight,
+  FiGrid as IconGridView,
+  FiList as IconListView,
+  FiMaximize as IconFullscreen,
+  FiMinimize as IconExitFullscreen,
+  FiMonitor as IconMonitor,
 } from "react-icons/fi";

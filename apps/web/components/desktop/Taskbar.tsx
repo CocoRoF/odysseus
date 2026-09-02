@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Timer } from "@/components/Timer";
-import { IconAgent, IconFolder, IconIde, IconMessenger } from "@/components/icons";
+import {
+  IconAgent,
+  IconExitFullscreen,
+  IconFolder,
+  IconFullscreen,
+  IconIde,
+  IconMessenger,
+  IconMonitor,
+} from "@/components/icons";
 import type { AppId, WindowManager } from "./wm";
 
 const APPS: { id: AppId; label: string; icon: React.ReactNode }[] = [
@@ -25,13 +33,37 @@ function Clock() {
   );
 }
 
+/** 전체화면 토글 — 브라우저 fullscreen API, 상태에 따라 아이콘 전환 */
+function FullscreenButton() {
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const sync = () => setFull(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+  const toggle = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+    else document.documentElement.requestFullscreen().catch(() => undefined);
+  };
+  return (
+    <button
+      title={full ? "전체화면 종료" : "전체화면"}
+      onClick={toggle}
+      className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-white/15 px-2.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+    >
+      {full ? <IconExitFullscreen size={14} /> : <IconFullscreen size={14} />}
+      <span className="hidden lg:inline">{full ? "전체화면 종료" : "전체화면"}</span>
+    </button>
+  );
+}
+
 export function Taskbar({
   wm,
   remainingSeconds,
   onExpire,
   onFinish,
+  userName,
   assessmentTitle,
-  scenarioTitle,
   messengerBadge,
   agentDisabled,
 }: {
@@ -39,21 +71,24 @@ export function Taskbar({
   remainingSeconds: number;
   onExpire: () => void;
   onFinish: () => void;
+  userName: string;
   assessmentTitle: string;
-  scenarioTitle?: string;
   messengerBadge: boolean;
   agentDisabled: boolean;
 }) {
   return (
-    <div className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] items-center gap-3 border-t border-white/10 bg-slate-950/70 px-4 backdrop-blur-xl">
+    <div className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] items-center gap-3 border-t border-white/10 bg-slate-950/70 px-3 backdrop-blur-xl">
+      {/* 좌측: [전체화면] [{참여자}의 컴퓨터 — {시험명}] */}
       <div className="flex min-w-0 items-center gap-2">
-        <span className="text-sm font-black text-white">
-          Odysseus<span className="text-sky-400">.</span>
-        </span>
-        <span className="hidden max-w-[260px] truncate text-xs text-slate-400 md:block">
-          {assessmentTitle}
-          {scenarioTitle ? ` · ${scenarioTitle}` : ""}
-        </span>
+        <FullscreenButton />
+        <div className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+          <IconMonitor size={14} className="shrink-0 text-sky-400" />
+          <span className="truncate text-xs font-medium text-slate-200">
+            {userName ? `${userName}의 컴퓨터` : "내 컴퓨터"}
+            <span className="mx-1.5 text-slate-500">—</span>
+            <span className="text-slate-400">{assessmentTitle}</span>
+          </span>
+        </div>
       </div>
 
       <div className="mx-auto flex items-center gap-1.5">

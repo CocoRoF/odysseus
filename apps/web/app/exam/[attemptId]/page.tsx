@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import type { Attempt, AttemptScenario } from "@/lib/types";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
+import { useUser } from "@/components/useUser";
 import { Button, Spinner } from "@/components/ui";
 import { IconAgent, IconFolder, IconIde, IconMessenger } from "@/components/icons";
 import { useWindowManager, AppId } from "@/components/desktop/wm";
@@ -17,11 +18,35 @@ import { IdeApp } from "@/components/desktop/apps/IdeApp";
 import { AgentApp } from "@/components/desktop/apps/AgentApp";
 import { FilesApp } from "@/components/desktop/apps/FilesApp";
 
-const ICONS: { id: AppId; label: string; icon: React.ReactNode; tint: string }[] = [
-  { id: "messenger", label: "메신저", icon: <IconMessenger size={26} />, tint: "bg-violet-500/90" },
-  { id: "ide", label: "IDE", icon: <IconIde size={26} />, tint: "bg-slate-600/90" },
-  { id: "agent", label: "AI 에이전트", icon: <IconAgent size={26} />, tint: "bg-sky-500/90" },
-  { id: "files", label: "폴더", icon: <IconFolder size={26} />, tint: "bg-amber-500/90" },
+const ICONS: { id: AppId; label: string; icon: React.ReactNode; tile: string; glow: string }[] = [
+  {
+    id: "messenger",
+    label: "메신저",
+    icon: <IconMessenger size={30} />,
+    tile: "from-violet-400 via-violet-500 to-fuchsia-600",
+    glow: "group-hover:shadow-[0_0_26px_rgba(167,139,250,0.55)]",
+  },
+  {
+    id: "ide",
+    label: "IDE",
+    icon: <IconIde size={30} />,
+    tile: "from-slate-500 via-slate-600 to-slate-800",
+    glow: "group-hover:shadow-[0_0_26px_rgba(148,163,184,0.45)]",
+  },
+  {
+    id: "agent",
+    label: "AI 에이전트",
+    icon: <IconAgent size={30} />,
+    tile: "from-sky-400 via-sky-500 to-blue-600",
+    glow: "group-hover:shadow-[0_0_26px_rgba(56,189,248,0.55)]",
+  },
+  {
+    id: "files",
+    label: "폴더",
+    icon: <IconFolder size={30} />,
+    tile: "from-amber-400 via-amber-500 to-orange-600",
+    glow: "group-hover:shadow-[0_0_26px_rgba(251,191,36,0.55)]",
+  },
 ];
 
 /** 응시 중 행동 이벤트 배치 기록 (포커스/가시성/네트워크) */
@@ -121,12 +146,14 @@ export default function ExamDesktopPage() {
   const attemptId = params.attemptId;
   const router = useRouter();
   const { toast, confirm } = useToast();
+  const { user } = useUser(["candidate", "admin", "evaluator"]);
 
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [error, setError] = useState("");
   const [scenarioId, setScenarioId] = useState<string | null>(null);
   const [showBriefing, setShowBriefing] = useState(false);
   const [messengerOpened, setMessengerOpened] = useState(false);
+  const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
 
   const inProgress = attempt?.status === "in_progress";
   const pushEvent = useActivityTracker(attemptId, Boolean(inProgress), scenarioId);
@@ -209,29 +236,48 @@ export default function ExamDesktopPage() {
 
   return (
     <WorkspaceProvider attemptId={attemptId} scenarioId={scenario.scenario_id} onOpenIde={() => openApp("ide")}>
-      <div className="desktop-wallpaper relative h-screen w-screen overflow-hidden select-none">
-        {/* 바탕화면 아이콘 */}
-        <div className="absolute left-5 top-6 z-10 flex flex-col gap-4">
+      <div
+        className="desktop-wallpaper relative h-screen w-screen overflow-hidden select-none"
+        onClick={() => setSelectedIcon(null)}
+      >
+        {/* 바탕화면 아이콘 — 클릭=선택, 더블클릭/Enter=열기 (Windows 규약) */}
+        <div className="absolute left-4 top-5 z-10 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
           {ICONS.map((it) => {
             if (it.id === "agent" && !scenario.agent_enabled) return null;
+            const selected = selectedIcon === it.id;
             return (
               <button
                 key={it.id}
+                onClick={() => setSelectedIcon(it.id)}
                 onDoubleClick={() => openApp(it.id)}
-                onClick={() => openApp(it.id)}
-                className="group flex w-20 flex-col items-center gap-1.5 rounded-xl p-2 hover:bg-white/10"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") openApp(it.id);
+                }}
+                title={`${it.label} — 더블 클릭으로 열기`}
+                className={`group flex w-[92px] flex-col items-center gap-1.5 rounded-xl border px-2 pb-1.5 pt-2.5 transition ${
+                  selected
+                    ? "border-sky-300/40 bg-sky-400/20"
+                    : "border-transparent hover:border-white/10 hover:bg-white/10"
+                }`}
               >
                 <span
-                  className={`relative flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-lg ${it.tint}`}
+                  className={`relative flex h-14 w-14 items-center justify-center rounded-[17px] bg-gradient-to-br text-white shadow-lg transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:scale-105 group-active:scale-95 ${it.tile} ${it.glow}`}
                 >
-                  {it.icon}
+                  {/* 유리 광택 */}
+                  <span className="pointer-events-none absolute inset-0 rounded-[17px] bg-gradient-to-b from-white/40 via-white/10 to-transparent opacity-80" />
+                  <span className="pointer-events-none absolute inset-0 rounded-[17px] ring-1 ring-inset ring-white/25" />
+                  <span className="relative drop-shadow-sm">{it.icon}</span>
                   {it.id === "messenger" && !messengerOpened && (
-                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                      !
+                    <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-slate-900/40 bg-red-500 text-[10px] font-bold text-white shadow">
+                      1
                     </span>
                   )}
                 </span>
-                <span className="text-center text-[11px] font-medium leading-tight text-white/90 drop-shadow">
+                <span
+                  className={`max-w-full truncate rounded px-1 text-center text-[11px] font-semibold leading-tight text-white ${
+                    selected ? "" : "drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+                  }`}
+                >
                   {it.label}
                 </span>
               </button>
@@ -308,8 +354,12 @@ export default function ExamDesktopPage() {
           remainingSeconds={remainingSeconds}
           onExpire={() => finish(true)}
           onFinish={() => finish(false)}
-          assessmentTitle={attempt.assessment_title}
-          scenarioTitle={attempt.scenarios.length > 1 ? scenario.title : undefined}
+          userName={user?.name ?? ""}
+          assessmentTitle={
+            attempt.scenarios.length > 1
+              ? `${attempt.assessment_title} · ${scenario.title}`
+              : attempt.assessment_title
+          }
           messengerBadge={!messengerOpened}
           agentDisabled={!scenario.agent_enabled}
         />
