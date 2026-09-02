@@ -1,0 +1,28 @@
+/** 아이콘 중앙 관리 — 화면에서는 반드시 이 시맨틱 이름으로만 사용한다 (Feather 세트). */
+
+export {
+  FiEdit2 as IconEdit,
+  FiTrash2 as IconDelete,
+  FiBarChart2 as IconResults,
+  FiEye as IconView,
+  FiPlus as IconAdd,
+  FiSearch as IconSearch,
+  FiMessageSquare as IconMessenger,
+  FiCode as IconIde,
+  FiCpu as IconAgent,
+  FiFolder as IconFolder,
+  FiFile as IconFile,
+  FiFileText as IconFileText,
+  FiPlay as IconRun,
+  FiX as IconClose,
+  FiMinus as IconMinimize,
+  FiMaximize2 as IconMaximize,
+  FiSend as IconSend,
+  FiRefreshCw as IconRefresh,
+  FiSave as IconSave,
+  FiTerminal as IconTerminal,
+  FiUser as IconUser,
+  FiClock as IconClock,
+  FiCheckCircle as IconCheck,
+  FiAlertTriangle as IconWarn,
+} from "react-icons/fi";

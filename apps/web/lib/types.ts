@@ -1,0 +1,381 @@
+// ── 공통 ─────────────────────────────────────────────────────
+
+export type Role = "admin" | "evaluator" | "candidate";
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  is_active: boolean;
+  created_at: string;
+}
+
+// ── 시나리오 ─────────────────────────────────────────────────
+
+export interface Character {
+  key: string;
+  name: string;
+  role: string;
+  color: string;
+  persona: string;
+  knowledge: string;
+}
+
+export interface OpeningMessage {
+  character_key: string;
+  content: string;
+}
+
+export interface InitialFile {
+  path: string;
+  content: string;
+}
+
+export type CheckType = "file_exists" | "file_contains" | "command";
+
+export interface Check {
+  label: string;
+  type: CheckType;
+  path?: string | null;
+  pattern?: string | null;
+  command?: string | null;
+  expected_stdout?: string | null;
+  points: number;
+}
+
+export interface RubricItem {
+  name: string;
+  points: number;
+  desc: string;
+}
+
+export interface Rubric {
+  process_weight: number;
+  result_weight: number;
+  process: RubricItem[];
+  result: RubricItem[];
+}
+
+export interface ScenarioSummary {
+  id: string;
+  title: string;
+  summary: string;
+  difficulty: string;
+  character_count: number;
+  check_count: number;
+  agent_enabled: boolean;
+  is_archived: boolean;
+  updated_at: string;
+}
+
+export interface Scenario {
+  id: string;
+  title: string;
+  summary: string;
+  difficulty: string;
+  briefing_md: string;
+  characters: Character[];
+  opening_messages: OpeningMessage[];
+  initial_files: InitialFile[];
+  objectives_md: string;
+  checks: Check[];
+  rubric: Rubric;
+  agent_enabled: boolean;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── 시험 ─────────────────────────────────────────────────────
+
+export interface AssessmentSummary {
+  id: string;
+  title: string;
+  duration_min: number;
+  scenario_count: number;
+  assignee_count: number;
+  attempt_count: number;
+  created_at: string;
+}
+
+export interface AssessmentScenarioRef {
+  scenario_id: string;
+  title: string;
+  difficulty: string;
+  ordinal: number;
+  points: number;
+}
+
+export interface AssignmentRef {
+  user_id: string;
+  name: string;
+  email: string;
+}
+
+export interface Assessment {
+  id: string;
+  title: string;
+  description: string;
+  duration_min: number;
+  agent_max_turns: number;
+  npc_provider_id: string | null;
+  agent_provider_id: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string;
+  scenarios: AssessmentScenarioRef[];
+  assignments: AssignmentRef[];
+}
+
+// ── 응시 ─────────────────────────────────────────────────────
+
+export interface MyAssignment {
+  assessment_id: string;
+  title: string;
+  description: string;
+  duration_min: number;
+  scenario_count: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  attempt_id: string | null;
+  attempt_status: string | null;
+  assigned: boolean;
+}
+
+export interface AttemptCharacter {
+  key: string;
+  name: string;
+  role: string;
+  color: string;
+}
+
+export interface AttemptScenario {
+  scenario_id: string;
+  title: string;
+  briefing_md: string;
+  ordinal: number;
+  points: number;
+  agent_enabled: boolean;
+  characters: AttemptCharacter[];
+  unread: number;
+}
+
+export interface Attempt {
+  id: string;
+  assessment_id: string;
+  assessment_title: string;
+  status: "in_progress" | "submitted" | "expired";
+  started_at: string;
+  deadline_at: string;
+  submitted_at: string | null;
+  agent_max_turns: number;
+  scenarios: AttemptScenario[];
+}
+
+// ── 메신저 / 에이전트 ────────────────────────────────────────
+
+export interface MessengerMessage {
+  id: string;
+  character_key: string;
+  sender: "candidate" | "npc";
+  content: string;
+  created_at: string;
+}
+
+export interface AgentStep {
+  tool: string;
+  detail: string;
+}
+
+export interface AgentMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  model: string | null;
+  meta: { steps?: AgentStep[]; error?: string };
+  created_at: string;
+}
+
+export interface AgentUsage {
+  enabled: boolean;
+  used: number;
+  max: number;
+  remaining: number;
+  configured: boolean;
+  model?: string | null;
+}
+
+// ── 워크스페이스 / 실행 ──────────────────────────────────────
+
+export interface FileEntry {
+  path: string;
+  size: number;
+  updated_at: string;
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  updated_at: string;
+}
+
+export interface Execution {
+  id: string;
+  scenario_id: string;
+  source: "ide" | "agent" | "check";
+  command: string;
+  status: "queued" | "running" | "done" | "error";
+  exit_code: number | null;
+  stdout: string | null;
+  stderr: string | null;
+  time_ms: number | null;
+  changed_files: { path: string; action: string }[] | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+// ── 리뷰 / 평가 ──────────────────────────────────────────────
+
+export interface ReviewAttemptRow {
+  id: string;
+  user: { id: string; name: string; email: string; role: Role };
+  assessment_id: string;
+  assessment_title: string;
+  status: string;
+  superseded: boolean;
+  is_staff: boolean;
+  started_at: string;
+  submitted_at: string | null;
+  has_auto_eval: boolean;
+  has_human_eval: boolean;
+}
+
+export interface ReviewScenario {
+  scenario_id: string;
+  title: string;
+  difficulty: string;
+  points: number;
+  briefing_md: string;
+  objectives_md: string;
+  checks: Check[];
+  rubric: Rubric;
+  characters: Character[];
+  initial_files: string[];
+}
+
+export interface Evaluation {
+  id: string;
+  kind: "auto" | "human";
+  evaluator: string | null;
+  scores: Record<string, unknown>;
+  summary: string;
+  created_at: string;
+}
+
+export interface ReviewAttempt {
+  id: string;
+  status: string;
+  superseded: boolean;
+  started_at: string;
+  deadline_at: string;
+  submitted_at: string | null;
+  user: { id: string; name: string; email: string; role: Role };
+  assessment: { id: string; title: string; duration_min: number; agent_max_turns: number };
+  scenarios: ReviewScenario[];
+  evaluations: Evaluation[];
+}
+
+export interface ReviewEvent {
+  id: number;
+  scenario_id: string | null;
+  type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface EvalScenarioResult {
+  scenario_id: string;
+  title: string;
+  points: number;
+  score_pct: number;
+  earned_points: number;
+  checks: { label: string; type: string; passed: boolean; points: number; earned: number; detail: string }[];
+  checks_earned: number;
+  checks_total: number;
+  process: { name: string; score: number; max: number; comment: string }[];
+  result: { name: string; score: number; max: number; comment: string }[];
+  requirement_discovery: string;
+  summary: string;
+  strengths: string[];
+  concerns: string[];
+  integrity_flags: string[];
+}
+
+// ── LLM 공급자 설정 ──────────────────────────────────────────
+
+export interface AiProviderMeta {
+  provider: string;
+  label: string;
+  kind: "cloud" | "local" | "cli";
+  needs_key: boolean;
+  needs_base_url: boolean;
+  default_base_url: string | null;
+  placeholder_model: string;
+  supports_host_tools: boolean;
+  description: string;
+}
+
+export interface AiEffective {
+  configured: boolean;
+  provider: string;
+  model: string;
+  name: string;
+  source: "db" | "env";
+}
+
+export interface AiSettingsMeta {
+  catalog: AiProviderMeta[];
+  effective_chat: AiEffective | null;
+  effective_eval: AiEffective | null;
+  env_fallback_available: boolean;
+}
+
+export interface AiProviderRow {
+  id: string;
+  name: string;
+  provider: string;
+  base_url: string | null;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  enabled: boolean;
+  is_chat_default: boolean;
+  is_eval_default: boolean;
+  has_key: boolean;
+  key_hint: string | null;
+  supports_host_tools: boolean;
+  created_at: string;
+}
+
+export interface AiModelInfo {
+  id: string;
+  display_name: string | null;
+}
+
+export interface AiTestResult {
+  ok: boolean;
+  latency_ms?: number;
+  provider?: string;
+  model?: string;
+  reply?: string;
+  error?: string;
+}
+
+export interface EvalProviderRef {
+  id: string;
+  name: string;
+  provider: string;
+  model: string;
+  is_eval_default: boolean;
+}

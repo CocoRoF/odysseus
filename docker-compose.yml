@@ -1,0 +1,86 @@
+name: odysseus
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: odysseus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-odysseus}
+      POSTGRES_DB: odysseus
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odysseus -d odysseus"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://odysseus:${POSTGRES_PASSWORD:-odysseus}@postgres:5432/odysseus
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-odysseus-dev-secret-change-me}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-odysseus-internal-change-me}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gpt-4o-mini}
+      AI_EVAL_MODEL: ${AI_EVAL_MODEL:-gpt-4o-mini}
+    ports:
+      - "${API_PORT:-8100}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  runner:
+    build: ./apps/runner
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      API_BASE_URL: http://api:8000
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-odysseus-internal-change-me}
+      RUNNER_CONCURRENCY: ${RUNNER_CONCURRENCY:-2}
+    pids_limit: 1024
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+  web:
+    build: ./apps/web
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_started
+
+  # 단일 오리진 엣지 — /api(SSE 포함)를 FastAPI로, 나머지는 Next.js로
+  edge:
+    build: ./apps/edge
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3100}:80"
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+
+volumes:
+  pgdata:
