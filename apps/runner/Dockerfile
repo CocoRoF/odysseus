@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         python3-redis \
         python3-requests \
+        python3-yaml \
         jq \
         tini \
         ca-certificates \

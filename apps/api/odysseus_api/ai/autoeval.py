@@ -102,7 +102,10 @@ async def run_checks(
                     entry["detail"] = f"{path} 없음"
                 else:
                     pattern = str(check.get("pattern", ""))
-                    entry["passed"] = bool(re.search(pattern, row.content, re.MULTILINE))
+                    # 줄바꿈 정규화 — csv.writer 등이 남기는 CRLF 때문에 정답이
+                    # `$` 앵커에 걸리지 않던 문제(응시자에게 불리한 오채점)를 막는다.
+                    text = row.content.replace("\r\n", "\n").replace("\r", "\n")
+                    entry["passed"] = bool(re.search(pattern, text, re.MULTILINE))
                     entry["detail"] = f"{path} 에서 /{pattern}/ " + ("일치" if entry["passed"] else "불일치")
             elif ctype == "command":
                 command = str(check.get("command", "")).strip()

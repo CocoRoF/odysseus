@@ -38,6 +38,23 @@ docker compose up -d --build
 | **AI 에이전트** | 파일을 찾고·읽고·쓰고·실행할 수 있는 어시스턴트. 시나리오 정보는 모름(제로 컨텍스트) — 무엇을 어떻게 시켰는지가 그대로 평가 데이터. **데스크톱 창과 IDE 사이드바는 같은 대화 하나**를 보여준다(멀티 세션 없음) |
 | **폴더** | 워크스페이스 탐색기 + 미리보기(CSV 표·Markdown·코드) |
 
+## 기본 제공 시나리오
+
+설치 즉시 6개 시나리오와 3개 시험이 들어 있습니다. 모두 **참조 해답으로 만점이 검증**되어 있습니다
+(`tests/smoke/test_scenarios.py`).
+
+| 시나리오 | 난이도 | 다루는 것 |
+|---|---|---|
+| 주간 매출 리포트 이상 | 보통 | 집계 규칙 파악, 버그 수정 (입문) |
+| LLM 추론 서비스가 GPU 노드에서 계속 죽는다 | 어려움 | **docker compose** — GPU 예약·텐서 병렬·KV 캐시·NCCL `/dev/shm`·헬스체크 의존성 |
+| 쿠버네티스 추론 파드가 스케줄되지 않는다 | 어려움 | **Kubernetes** — taint/toleration·`nvidia.com/gpu`·프로브·OOMKilled·Service 셀렉터·PVC |
+| GPU 패스스루 추론 VM이 느리고 가끔 부팅에 실패한다 | 어려움 | **KVM/libvirt** — IOMMU 그룹·NUMA 로컬리티·1GiB 휴지페이지·CPU 모델 |
+| 추론 게이트웨이가 SLO를 못 맞추고 비용도 넘겼다 | 어려움 | 로그 600건 분석 — p95(nearest-rank)·과금 계산·라우팅 규칙 개선 |
+| 야간 임베딩 배치가 결과를 흘린다 | 어려움 | 동시성 디버깅 — off-by-one·경쟁 조건·순서 보장 (숨은 계약 테스트로 채점) |
+
+기본 시험: **실무 시뮬레이션 데모**(1개, 90분) · **인프라 심화 — LLM 추론 스택**(3개, 240분) ·
+**심화 문제 해결 — 분석과 동시성**(2개, 180분)
+
 ## 시나리오 스튜디오 (관리자)
 
 문제 상황 전체를 설계하는 편집기:
@@ -94,6 +111,7 @@ cp .env.example .env   # 필요 시 수정 (없어도 기본값으로 기동)
 python3 tests/smoke/mock_llm.py &     # :18011 모의 LLM (NPC/에이전트/평가)
 # 게이트웨이: docker network inspect odysseus_default -f '{{(index .IPAM.Config 0).Gateway}}'
 python3 tests/smoke/test_core.py "http://<gateway>:18011/v1"      # 54
+python3 tests/smoke/test_scenarios.py                            # 기본 시나리오 6종 참조 해답 검증 (14)
 
 # api 컨테이너 내부 (MCP 브리지 · CLI 잠금 · Claude 로그인 중계)
 docker cp tests/smoke/test_mcp_bridge.py odysseus-api-1:/tmp/

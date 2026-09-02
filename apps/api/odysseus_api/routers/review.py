@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..ai import provider as ai_provider
-from ..ai.autoeval import run_auto_eval
+from ..ai.autoeval import run_auto_eval, run_checks
 from ..db import get_db
 from ..deps import require_staff
 from ..models import (
@@ -175,6 +175,33 @@ async def eval_providers(db: AsyncSession = Depends(get_db)):
         }
         for r in rows
     ]
+
+
+@router.post("/attempts/{attempt_id}/checks")
+async def run_scenario_checks(attempt_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """자동 체크만 실행 (LLM 없이) — 시나리오 설계 검증과 빠른 결과 확인용."""
+    attempt = await _load_attempt(attempt_id, db)
+    links = (
+        await db.execute(
+            select(AssessmentScenario)
+            .where(AssessmentScenario.assessment_id == attempt.assessment_id)
+            .options(selectinload(AssessmentScenario.scenario))
+            .order_by(AssessmentScenario.ordinal)
+        )
+    ).scalars().all()
+    out = []
+    for link in links:
+        checks = await run_checks(db, attempt, link.scenario)
+        out.append(
+            {
+                "scenario_id": str(link.scenario_id),
+                "title": link.scenario.title,
+                "checks": checks,
+                "earned": sum(c["earned"] for c in checks),
+                "total": sum(c["points"] for c in checks),
+            }
+        )
+    return {"scenarios": out}
 
 
 @router.post("/attempts/{attempt_id}/autoeval")
