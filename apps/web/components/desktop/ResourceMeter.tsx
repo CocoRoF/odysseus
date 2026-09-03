@@ -15,8 +15,8 @@ const POLL_MS = 1500;
 const HISTORY = 32;
 
 function Spark({ values, color }: { values: number[]; color: string }) {
-  const width = 44;
-  const height = 14;
+  const width = 40;
+  const height = 16;
   const points = values.map((v, i) => {
     const x = values.length === 1 ? width : (i / (values.length - 1)) * width;
     const y = height - Math.max(0.02, Math.min(1, v)) * height;
@@ -50,17 +50,19 @@ function Gauge({
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-7 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
         {label}
       </span>
       <Spark values={history} color={color} />
-      <div className="h-1.5 w-10 shrink-0 overflow-hidden rounded-full bg-white/10">
+      <div className="h-1 w-8 shrink-0 overflow-hidden rounded-full bg-white/10">
         <div
           className="h-full rounded-full transition-[width] duration-500"
-          style={{ width: `${Math.min(100, Math.max(2, ratio * 100))}%`, background: color }}
+          style={{ width: `${Math.min(100, Math.max(3, ratio * 100))}%`, background: color }}
         />
       </div>
-      <span className="w-11 shrink-0 text-right font-mono text-[10.5px] text-slate-300">{text}</span>
+      <span className="w-10 shrink-0 text-right font-mono text-[10.5px] tabular-nums text-slate-300">
+        {text}
+      </span>
     </div>
   );
 }
@@ -112,7 +114,7 @@ export function ResourceMeter({ attemptId }: { attemptId: string }) {
   return (
     <div
       title={title}
-      className={`flex shrink-0 flex-col gap-[3px] rounded-lg border px-2.5 py-1 transition ${
+      className={`flex h-9 shrink-0 items-center gap-3 rounded-lg border px-2.5 transition ${
         busy ? "border-sky-400/30 bg-sky-400/10" : "border-white/10 bg-white/5"
       }`}
     >
@@ -123,6 +125,7 @@ export function ResourceMeter({ attemptId }: { attemptId: string }) {
         color={cpuRatio > 0.75 ? "#f87171" : "#38bdf8"}
         history={cpuHist.current}
       />
+      <span className="h-4 w-px shrink-0 bg-white/10" />
       <Gauge
         label="RAM"
         ratio={memRatio}
