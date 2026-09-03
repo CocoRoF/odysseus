@@ -2,7 +2,8 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 실행 툴체인 — python3 중심 (jq/curl 등 순수 CLI 도구 일부 포함, 네트워크는 없음)
+# 실행 툴체인 — python3 중심. 이 컨테이너는 internal 네트워크에만 붙어
+# 외부 인터넷과 데이터베이스에 닿지 않는다 (docker-compose.yml 참조).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         python3-redis \
@@ -13,10 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 응시 코드를 실행할 비특권 사용자
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin sandbox \
-    && mkdir -p /work \
-    && chmod 777 /work
+# 작업 루트 — 0711 이라 경로 통과는 되지만 목록은 볼 수 없다.
+# 실행마다 그 안에 0700 폴더를 만들고 실행 전용 UID 에게 넘긴다 (worker.py 참조).
+RUN mkdir -p /work && chmod 711 /work
 
 WORKDIR /app
 COPY worker.py sandbox.py ./

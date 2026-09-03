@@ -13,7 +13,6 @@ import hashlib
 import json
 import os
 import shutil
-import stat
 import threading
 import time
 import traceback
@@ -22,7 +21,7 @@ import uuid
 import redis
 import requests
 
-from sandbox import execute
+from sandbox import execute, next_exec_uid
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
@@ -43,8 +42,12 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def materialize(workdir: str, files: list[dict]) -> dict[str, str]:
-    """파일 트리 생성. path→해시 스냅샷 반환."""
+def materialize(workdir: str, files: list[dict], uid: int, gid: int) -> dict[str, str]:
+    """파일 트리 생성. path→해시 스냅샷 반환.
+
+    소유자는 이번 실행의 UID, 권한은 0700/0600 — 같은 컨테이너에서 동시에 도는
+    다른 응시자의 실행이 이 트리를 열어볼 수 없어야 한다.
+    """
     snapshot: dict[str, str] = {}
     for f in files:
         rel = str(f.get("path", "")).strip().lstrip("/")
@@ -56,20 +59,32 @@ def materialize(workdir: str, files: list[dict]) -> dict[str, str]:
         with open(abspath, "wb") as fh:
             fh.write(data)
         snapshot[rel] = _sha(data)
-    # sandbox 사용자가 어디서든 쓸 수 있어야 한다 (디렉터리 포함)
+    # 이번 실행의 UID 만 접근할 수 있게 소유권과 권한을 좁힌다
+    _own(workdir, uid, gid, 0o700)
     for root, dirs, filenames in os.walk(workdir):
         for d in dirs:
-            os.chmod(os.path.join(root, d), 0o777)
+            _own(os.path.join(root, d), uid, gid, 0o700)
         for name in filenames:
-            os.chmod(os.path.join(root, name), 0o666)
+            _own(os.path.join(root, name), uid, gid, 0o600)
     return snapshot
+
+
+def _own(path: str, uid: int, gid: int, mode: int) -> None:
+    """권한을 먼저 좁히고 소유권을 넘긴다 (순서가 바뀌면 CAP_FOWNER 가 필요해진다)."""
+    try:
+        os.chmod(path, mode)
+        if os.getuid() == 0:
+            os.chown(path, uid, gid)
+    except OSError:
+        pass
 
 
 def collect_changes(workdir: str, before: dict[str, str]) -> list[dict]:
     """실행 후 파일 트리를 훑어 생성/수정/삭제분을 수집 (텍스트 파일만)."""
     changes: list[dict] = []
     seen: set[str] = set()
-    for root, _dirs, filenames in os.walk(workdir):
+    for root, dirs, filenames in os.walk(workdir):
+        dirs[:] = [d for d in dirs if d != ".tmp"]  # 실행용 TMPDIR 은 산출물이 아니다
         for name in filenames:
             abspath = os.path.join(root, name)
             rel = os.path.relpath(abspath, workdir).replace(os.sep, "/")
@@ -108,11 +123,16 @@ def run_job(job: dict) -> dict:
         return {"status": "error", "exit_code": None, "stdout": "", "stderr": "empty command", "changed_files": []}
     timeout_s = min(int(job.get("timeout_s", DEFAULT_TIMEOUT_S) or DEFAULT_TIMEOUT_S), MAX_TIMEOUT_S)
 
+    uid, gid = next_exec_uid()
     workdir = os.path.join(WORK_ROOT, uuid.uuid4().hex)
-    os.makedirs(workdir)
-    os.chmod(workdir, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+    os.makedirs(workdir, mode=0o700)
     try:
-        before = materialize(workdir, job.get("files", []))
+        before = materialize(workdir, job.get("files", []), uid, gid)
+        # TMPDIR 도 작업 폴더 안으로 — /tmp 는 컨테이너가 공유하므로 실행 사이에
+        # 남은 파일이 다음 응시자에게 보인다.
+        tmpdir = os.path.join(workdir, ".tmp")
+        os.makedirs(tmpdir, exist_ok=True)
+        _own(tmpdir, uid, gid, 0o700)
         r = execute(
             ["/bin/bash", "-c", command],
             cwd=workdir,
@@ -120,7 +140,13 @@ def run_job(job: dict) -> dict:
             cpu_s=timeout_s,
             mem_mb=MEM_LIMIT_MB,
             nproc=128,
-            env={"HOME": workdir, "PYTHONDONTWRITEBYTECODE": "1"},
+            env={
+                "HOME": workdir,
+                "TMPDIR": tmpdir,
+                "PYTHONDONTWRITEBYTECODE": "1",
+            },
+            uid=uid,
+            gid=gid,
         )
         changed = collect_changes(workdir, before)
         status = "done" if r.status in ("ok", "timeout") else "error"

@@ -1,5 +1,16 @@
 name: odysseus
 
+# 러너는 응시자 코드를 돌린다. 그래서 외부 인터넷도, 데이터베이스도 닿으면 안 된다.
+#   backplane — 기본 망(외부 egress 가능). api 가 GitHub·검색을 대리 조회하는 통로.
+#   sandbox   — internal: true. 게이트웨이가 없어 컨테이너가 밖으로 나갈 수 없다.
+#               러너는 여기에만 붙으므로 redis(잡 큐)·api(콜백)까지만 닿는다.
+networks:
+  backplane:
+    driver: bridge
+  sandbox:
+    driver: bridge
+    internal: true
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,6 +26,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - backplane
 
   redis:
     image: redis:7-alpine
@@ -24,6 +37,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - backplane
+      - sandbox
 
   api:
     build: ./apps/api
@@ -45,6 +61,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - backplane
+      - sandbox
 
   runner:
     build: ./apps/runner
@@ -55,6 +74,19 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-odysseus-internal-change-me}
       RUNNER_CONCURRENCY: ${RUNNER_CONCURRENCY:-2}
     pids_limit: 1024
+    # 응시자 코드가 커널을 건드리지 못하게 — 새 권한 획득 금지, 능력 최소화
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID   # 실행마다 다른 UID 로 강등
+      - SETGID
+      - CHOWN         # 작업 폴더 소유자를 그 UID 로
+      - DAC_OVERRIDE  # 워커(root)가 0600 산출물을 회수
+      - FOWNER
+    networks:
+      - sandbox
     depends_on:
       redis:
         condition: service_healthy
@@ -66,6 +98,8 @@ services:
     restart: unless-stopped
     environment:
       API_URL: http://api:8000
+    networks:
+      - backplane
     depends_on:
       api:
         condition: service_started
@@ -76,6 +110,8 @@ services:
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-3100}:80"
+    networks:
+      - backplane
     depends_on:
       web:
         condition: service_started
