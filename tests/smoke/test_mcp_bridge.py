@@ -143,6 +143,23 @@ try:
     # 8. ping
     r = rpc(8, "ping")
     check("ping", (r or {}).get("result") == {}, str(r)[:120])
+
+    # 9. 격리 전파 — Claude Code 는 api 컨테이너에서 돌지만, 코드 실행은 이 브리지를
+    #    지나 러너의 격리 sandbox 로 가야 한다. 응시자 터미널과 **같은** 조건인지 본다.
+    def run(cmd):
+        rr = rpc(90, "tools/call", {"name": "run_command", "arguments": {"command": cmd}})
+        return (rr or {}).get("result", {}).get("content", [{}])[0].get("text", "")
+
+    out = run("id; ps aux | wc -l; df -h /tmp | tail -1")
+    check("에이전트 실행도 비특권 UID", "uid=61" in out, out[:90])
+    check("에이전트 실행도 PID 네임스페이스 격리", "worker.py" not in out, out[:120])
+    check("에이전트 실행도 전용 tmpfs", "tmpfs" in out, out[:120])
+    out = run("timeout 6 python3 -c \"import urllib.request;urllib.request.urlopen('https://api.github.com',timeout=4)\" 2>&1 | tail -1")
+    check("에이전트 실행도 네트워크 차단", "200" not in out, out[:90])
+    out = run("ls /work 2>&1 | head -1")
+    check("에이전트도 다른 실행 폴더를 못 본다", "Permission denied" in out, out[:90])
+    out = run("python3 -V; node -v; go version; git --version")
+    check("에이전트도 같은 툴체인", all(t in out for t in ("Python 3", "go1.", "git version")), out[:120])
 finally:
     proc.stdin.close()
     proc.terminate()

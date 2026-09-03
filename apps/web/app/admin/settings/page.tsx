@@ -610,6 +610,8 @@ interface ClaudeLoginState {
   url: string | null;
   token: string | null;
   error: string | null;
+  /** 코드가 거절돼 다시 붙여넣을 수 있는 상태 */
+  can_retry?: boolean;
 }
 
 function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
@@ -650,7 +652,17 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
       setPhase("error");
       return true;
     }
-    if (st.state === "awaiting_code" && st.url) setPhase("awaiting");
+    if (st.state === "awaiting_code" && st.url) {
+      // 코드가 거절되면 CLI 가 다시 물어본다 — 사유를 보여주고 재입력을 받는다
+      // (예전엔 이 경우를 못 잡아 화면이 '확인 중'에서 멈췄다)
+      if (st.error) {
+        stopPoll();
+        setError(st.error);
+        setCode("");
+      }
+      setPhase("awaiting");
+      return Boolean(st.error);
+    }
     return false;
   };
 
@@ -660,7 +672,7 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
     pollRef.current = setInterval(async () => {
       if (Date.now() > deadline) {
         stopPoll();
-        setError("응답 대기 시간이 초과되었습니다. 다시 시도하세요.");
+        setError("응답이 오지 않습니다. [다시 시도]로 로그인을 새로 시작하세요.");
         setPhase("error");
         return;
       }

@@ -33,7 +33,12 @@ __all__ = ["manager", "ClaudeLoginError"]
 _URL_OSC8 = re.compile(rb"\x1b\]8;[^;]*;(https://[^\x1b\x07]+)")
 _URL_PLAIN = re.compile(r"https://[a-zA-Z0-9./?=&_%\-:+]+")
 _TOKEN = re.compile(r"sk-ant-oat[0-9]{2}-[A-Za-z0-9_\-]{40,}")
-_SUCCESS = "token created successfully"
+# CLI 는 커서 이동으로 화면을 그리므로, ANSI 를 걷어내면 단어 사이 공백이 사라진다
+# ("Welcome to Claude Code" → "WelcometoClaudeCode"). 그래서 문구 판정은 반드시
+# **공백을 모두 지운 문자열**로 해야 한다 — 공백을 낀 채로 찾으면 영영 못 만난다.
+_SUCCESS = "tokencreatedsuccessfully"
+_OAUTH_ERROR = re.compile(r"(oautherror|invalidcode|authenticationfailed)", re.I)
+_WS = re.compile(r"\s+")
 
 _ANSI = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;?<>=]*[a-zA-Z]|\x1b[=>()][0-9A-B]?")
 
@@ -65,6 +70,9 @@ class _Session:
         self._buf = b""
         self._lock = threading.Lock()
         self._code_sent = False
+        self._error_shown = False   # 같은 오류를 반복해서 잡지 않도록
+        self._success_seen = False  # 완료 문구는 봤다 (토큰은 곧 뒤따라온다)
+        self._retry_pending = False  # 리더 스레드가 Enter 를 눌러 프롬프트를 되살린다
 
         pid, fd = pty.fork()
         if pid == 0:  # 자식 — PTY 위에서 CLI 실행
@@ -91,8 +99,11 @@ class _Session:
             self._scan_locked()
             if self.state not in ("success", "error"):
                 self.state = "error"
-                tail = _clean(self._buf)[-400:].strip()
-                self.error = f"로그인 프로세스가 종료되었습니다: {tail or '출력 없음'}"
+                if self._success_seen:
+                    self.error = "완료 신호는 받았지만 토큰을 읽지 못했습니다"
+                else:
+                    tail = _clean(self._buf)[-400:].strip()
+                    self.error = f"로그인 프로세스가 종료되었습니다: {tail or '출력 없음'}"
 
     def _read_loop(self) -> None:
         try:
@@ -111,6 +122,14 @@ class _Session:
                     with self._lock:
                         self._buf += chunk
                         self._scan_locked()
+                        retry = self._retry_pending
+                        self._retry_pending = False
+                    if retry:
+                        # 프롬프트를 되살려 다음 코드를 받을 수 있게 한다
+                        try:
+                            os.write(self.fd, b"\r")
+                        except OSError:
+                            pass
                 with self._lock:
                     if self.state in ("success", "error"):
                         break
@@ -148,16 +167,31 @@ class _Session:
                 self._buf += chunk
 
     def _scan_locked(self) -> None:
-        """버퍼에서 URL/코드 프롬프트/토큰을 찾는다 (락 보유 상태에서 호출)."""
+        """버퍼에서 URL/코드 프롬프트/토큰/오류를 찾는다 (락 보유 상태에서 호출)."""
         clean = _clean(self._buf)
         joined = clean.replace("\n", "")  # 랩핑 방어 (토큰이 줄바꿈으로 갈라진 경우)
+        squashed = _WS.sub("", clean).lower()  # 문구 판정용 — 위 _SUCCESS 주석 참조
 
         if self.token is None:
             m = _TOKEN.search(clean) or _TOKEN.search(joined)
-            if m and _SUCCESS in joined.lower():
+            # 토큰이 보이면 성공이다. 완료 문구는 있으면 좋지만 형식이 바뀔 수 있으므로
+            # 토큰 자체를 근거로 삼는다.
+            if m:
                 self.token = m.group(0)
                 self.state = "success"
                 return
+            if _SUCCESS in squashed:
+                # 완료 문구는 토큰보다 **먼저** 도착한다. 여기서 실패로 확정하면
+                # 바로 뒤따라오는 토큰을 놓친다 — 프로세스가 끝날 때까지 기다린다.
+                self._success_seen = True
+
+        # 코드가 틀렸을 때 CLI 는 "Press Enter to retry" 로 다시 물어본다.
+        # 이걸 놓치면 화면이 '확인 중'에서 영영 멈춘다.
+        if self._code_sent and _OAUTH_ERROR.search(squashed) and not self._error_shown:
+            self._error_shown = True
+            self._code_sent = False  # 다시 입력할 수 있게 연다
+            self.error = "코드가 올바르지 않습니다. 전체 코드를 다시 복사해 붙여넣으세요."
+            self._retry_pending = True
 
         if self.url is None:
             m8 = _URL_OSC8.search(self._buf)
@@ -179,6 +213,8 @@ class _Session:
             if self._code_sent:
                 raise ClaudeLoginError(409, "코드가 이미 제출되었습니다")
             self._code_sent = True
+            self._error_shown = False
+            self.error = None
         try:
             os.write(self.fd, (code.strip() + "\r").encode())
         except OSError as e:
@@ -192,6 +228,7 @@ class _Session:
                 "url": self.url,
                 "token": self.token if self.state == "success" else None,
                 "error": self.error,
+                "can_retry": self.state == "awaiting_code" and not self._code_sent,
             }
 
     def kill(self) -> None:
