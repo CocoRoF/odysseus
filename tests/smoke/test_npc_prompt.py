@@ -64,7 +64,12 @@ check("욕설/모욕 대응 조항", "insult" in lower and "profan" in lower)
 check("첫 무례 — 짚고 넘어간다", "first time" in lower)
 check("반복되면 짧고 형식적으로", "shorter and more formal" in lower)
 check("모욕 중에는 본론에 답하지 않는다", "do not answer the substance while being insulted" in lower)
-check("사과하면 정상 복귀", "apolog" in lower and "return to normal" in lower)
+check("사과하면 정상 복귀 (첫 회에 한해)",
+      "apolog" in lower and "return to normal cooperation" in lower and "the first time" in lower)
+check("인내는 회복되지 않는다 (재범 시 다시 차단)", "your patience does not reset" in lower)
+check("재범 시 즉시 응답 중단", "stop answering immediately" in lower)
+check("이후 사과는 협조를 되사지 못한다", "does not buy your cooperation back" in lower)
+check("남은 대화 내내 유지", "hold it for the rest of the conversation" in lower)
 check("무례에 보상하지 않는다 (핵심)", "never reward rudeness" in lower)
 check("메타 훈계 금지", "never lecture about professionalism" in lower)
 
@@ -129,6 +134,9 @@ for path in sorted(SCENARIOS.glob("s0*.py")):
 check("등장인물이 충분히 있다", len(people) >= 15, f"{len(people)}명")
 missing = [f"{f}:{n}" for f, n, p in people if not any(c in p for c in CONDUCT_CUES)]
 check("모든 인물에 태도 반응이 적혀 있다", not missing, str(missing[:4]))
+forgiving = [f"{f}:{n}" for f, n, p in people
+             if "사과하면" in p and "한 번은" not in p and "또 그러면" not in p]
+check("무조건 용서하는 인물이 없다", not forgiving, str(forgiving))
 def conduct_part(persona: str) -> str:
     """성격 문장에서 '태도 반응' 부분만 잘라낸다 (첫 태도 단서부터 끝까지)."""
     idx = min((persona.find(c) for c in CONDUCT_CUES if c in persona), default=-1)
