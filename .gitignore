@@ -4,3 +4,6 @@ __pycache__/
 node_modules/
 .next/
 nohup.out
+
+# DB 백업 — 응시 기록과 자격증명이 들어 있다. 저장소에 올리지 않는다.
+backups/

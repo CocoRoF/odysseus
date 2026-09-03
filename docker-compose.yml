@@ -127,4 +127,7 @@ services:
         condition: service_started
 
 volumes:
+  # 계정·시나리오·응시 기록·워크스페이스 파일, 그리고 AI 공급자 키와 관리자 설정이
+  # 전부 여기 있다. `docker compose down -v` 는 이것을 지운다 — 배포는 반드시
+  # `scripts/deploy.sh`(백업 + 보존 검증) 를 쓸 것.
   pgdata:
