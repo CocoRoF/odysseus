@@ -4,6 +4,9 @@
 
   docker cp tests/smoke/seed_scenarios.py odysseus-api-1:/tmp/
   docker exec -e PYTHONPATH=/app odysseus-api-1 python3 /tmp/seed_scenarios.py
+
+`--refresh-briefings` 를 주면 이미 있는 시나리오의 시작 화면(브리핑)도 패키지
+내용으로 덮어쓴다 (문구를 다듬었을 때 배포 반영용).
 """
 
 import asyncio
@@ -29,9 +32,13 @@ async def main() -> None:
         existing = {
             s.title: s for s in (await db.execute(select(Scenario))).scalars().all()
         }
-        created = 0
+        refresh = "--refresh-briefings" in sys.argv
+        created = refreshed = 0
         for spec in DEFAULT_SCENARIOS:
             if spec["title"] in existing:
+                if refresh and existing[spec["title"]].briefing_md != spec.get("briefing_md", ""):
+                    existing[spec["title"]].briefing_md = spec.get("briefing_md", "")
+                    refreshed += 1
                 continue
             row = scenario_row(spec, admin.id if admin else None)
             db.add(row)
@@ -70,7 +77,11 @@ async def main() -> None:
             made_assessments += 1
 
         await db.commit()
-        print(f"시나리오 {created}개, 시험 {made_assessments}개 추가 (전체 시나리오 {len(existing)}개)")
+        print(
+            f"시나리오 {created}개, 시험 {made_assessments}개 추가"
+            + (f", 브리핑 {refreshed}개 갱신" if refresh else "")
+            + f" (전체 시나리오 {len(existing)}개)"
+        )
 
 
 asyncio.run(main())

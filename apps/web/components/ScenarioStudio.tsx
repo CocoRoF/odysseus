@@ -212,13 +212,14 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
                 className={`${inputCls} min-h-[13rem] font-mono text-xs`}
                 value={briefing}
                 onChange={(e) => setBriefing(e.target.value)}
-                placeholder={"응시자가 문제를 시작할 때 보게 될 화면입니다.\n\n예)\n## 상황\n당신은 추론 플랫폼 팀에 합류한 지 3일째입니다...\n\n### 참고\n- 워크스페이스의 `logs/` 아래에 어제 장애 로그가 있습니다.\n- 관계자: 정하늘(SRE), 박지훈(ML)"}
+                placeholder={"예)\n\n**화요일 오후 4시 20분.**\n\n당신은 ML 플랫폼팀의 엔지니어입니다. 팀은 추론 서비스를 쿠버네티스로 옮기는 중이고, 오늘은 스테이징에 처음 배포하는 날이었습니다.\n\n배포는 성공했다고 나왔습니다. 그런데 아무것도 응답하지 않습니다.\n\n온콜 SRE가 메신저로 당신을 찾았습니다."}
               />
             )}
             <p className="mt-1 text-xs text-slate-400">
-              시작 시 한 번 보여주는 안내입니다. 길이 제한은 넉넉하니(4만 자) 배경 설정·제약·산출물 요구를
-              자세히 써도 됩니다. 다만 <b>정답이나 요구사항 자체는 쓰지 마세요</b> — 그건 대화로 파악하게 하는
-              것이 이 시험의 핵심입니다.
+              문제를 열었을 때 처음 보게 되는 화면입니다. 지시사항을 나열하기보다 <b>소설의 도입부처럼 상황을
+              묘사</b>하세요 — 언제, 어디서, 당신은 누구이며, 방금 무슨 일이 벌어졌는지. 무엇을 해야 하는지는
+              응시자가 대화하며 스스로 알아내야 하므로 <b>요구사항이나 정답은 쓰지 마세요</b>.
+              길이 제한은 넉넉합니다(4만 자).
             </p>
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-600">

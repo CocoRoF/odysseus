@@ -462,15 +462,15 @@ export default function ExamDesktopPage() {
                     <Markdown>{scenario.briefing_md}</Markdown>
                   ) : (
                     <p className="text-sm text-slate-600">
-                      메신저에 새 메시지가 와 있습니다. 대화로 상황을 파악하고, IDE와 폴더에서 작업하세요.
+                      출근했습니다. 메신저에 새 메시지가 와 있습니다.
                     </p>
                   )}
                 </div>
                 <ul className="mt-4 space-y-1 pb-2 text-xs text-slate-500">
-                  <li>· 과제는 지문으로 주어지지 않습니다 — <b>메신저 대화</b>로 파악하세요.</li>
-                  <li>· 워크스페이스의 파일이 곧 산출물입니다. IDE·터미널·AI 에이전트를 활용하세요.</li>
+                  <li>· 과제는 명시적으로 제시되지 않습니다. 주어진 환경에서 파악해야 합니다.</li>
+                  <li>· 워크스페이스에 만들어지는 파일은 모두 산출물이 되고, 그것을 바탕으로 채점됩니다.</li>
                   {attempt.scenarios.length > 1 && (
-                    <li>· 문제는 <b>순서대로</b> 진행합니다. 제출하면 이전 문제로 돌아갈 수 없습니다.</li>
+                    <li>· 문제는 순서대로 진행합니다. 제출하면 이전 문제로 돌아갈 수 없습니다.</li>
                   )}
                   <li>· 모든 활동은 평가 목적으로 기록됩니다.</li>
                 </ul>
