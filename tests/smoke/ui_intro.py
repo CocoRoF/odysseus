@@ -44,10 +44,14 @@ async def main():
     ok = OkList()
     call = call_factory()
 
-    # 기본값 확인
+    # 운영 설정은 건드리지 않는다 — 시작값을 기억해 두고 끝에 그대로 되돌린다.
+    # (한 번 이 테스트가 관리자가 켜 둔 시네마틱 모드를 꺼 버려 "저장이 안 된다"는
+    #  오해를 낳았다.)
+    original = call("GET", "/admin/settings/ui")
+    call("PUT", "/admin/settings/ui", {"gamified_intro": False})
     ui = call("GET", "/admin/settings/ui")
     assert ui["gamified_intro"] is False, ui
-    ok.append("default gamified_intro = false")
+    ok.append("꺼짐 상태로 시작")
 
     async with async_playwright() as p:
         b = await p.chromium.launch()
@@ -112,10 +116,10 @@ async def main():
         ok.append("시작 → 데스크톱 진입 (메신저 오픈)")
         await pg.close()
 
-        # 원복
-        call("PUT", "/admin/settings/ui", {"gamified_intro": False})
-        assert call("GET", "/admin/settings/ui")["gamified_intro"] is False
-        ok.append("toggle off restores")
+        # 원복 — 테스트 전 값으로
+        call("PUT", "/admin/settings/ui", original)
+        assert call("GET", "/admin/settings/ui")["gamified_intro"] is original["gamified_intro"]
+        ok.append("원래 설정으로 복구")
         await b.close()
     print("PASS:", len(ok), "checks")
 

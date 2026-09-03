@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { WebPage, WebSearchResponse } from "@/lib/types";
+import type { WebRender, WebSearchResponse } from "@/lib/types";
 import { useToast } from "@/components/toast";
 import { copyText, selectedText } from "@/lib/clipboard";
 import {
   IconArrowLeft,
   IconArrowRight,
   IconCopy,
+  IconBook,
   IconGlobe,
   IconLock,
   IconRefresh,
@@ -53,7 +54,10 @@ export function BrowserApp() {
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<WebSearchResponse | null>(null);
-  const [page, setPage] = useState<WebPage | null>(null);
+  const [page, setPage] = useState<WebRender | null>(null);
+  // 렌더(정제된 원본 모양) / 읽기(본문 텍스트만)
+  const [mode, setMode] = useState<"render" | "reader">("render");
+  const frameRef = useRef<HTMLIFrameElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -87,8 +91,12 @@ export function BrowserApp() {
           );
           if (alive) setResults(r);
         } else {
-          const p = await api.get<WebPage>(
-            `/reference/web/page?url=${encodeURIComponent(view.url)}&attempt_id=${ws.attemptId}&scenario_id=${ws.scenarioId}`,
+          // 자산 프록시 주소는 우리 오리진으로 — 서버는 어느 도메인 뒤에 있는지 모른다
+          const assetBase = `${window.location.origin}/api/reference/web/asset`;
+          const p = await api.get<WebRender>(
+            `/reference/web/render?url=${encodeURIComponent(view.url)}` +
+              `&asset_base=${encodeURIComponent(assetBase)}` +
+              `&attempt_id=${ws.attemptId}&scenario_id=${ws.scenarioId}`,
           );
           if (alive) setPage(p);
         }
@@ -102,6 +110,59 @@ export function BrowserApp() {
       alive = false;
     };
   }, [view, ws.attemptId, ws.scenarioId]);
+
+  // 샌드박스 iframe 은 스스로 이동하지 못한다 — 링크 클릭·우클릭·복사를 postMessage 로 받는다
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frameRef.current?.contentWindow) return;
+      const msg = e.data || {};
+      if (msg.type === "odysseus:navigate" && typeof msg.url === "string") {
+        go({ kind: "page", url: msg.url });
+      } else if (msg.type === "odysseus:copy" && typeof msg.text === "string") {
+        void copyText(msg.text).then((okCopy) =>
+          toast(okCopy ? "복사했습니다" : "복사에 실패했습니다", okCopy ? "success" : "error"),
+        );
+      } else if (msg.type === "odysseus:contextmenu") {
+        const rect = frameRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const fake = {
+          clientX: rect.left + Number(msg.x || 0),
+          clientY: rect.top + Number(msg.y || 0),
+          preventDefault() {},
+          stopPropagation() {},
+        } as unknown as React.MouseEvent;
+        const sel = String(msg.selection || "");
+        const link = typeof msg.link === "string" ? msg.link : "";
+        const items: MenuEntry[] = [];
+        if (link) {
+          items.push({ label: "링크 열기", onClick: () => go({ kind: "page", url: link }) });
+          items.push({ label: "링크 주소 복사", onClick: () => copyText(link) });
+          items.push("separator");
+        }
+        if (sel) {
+          items.push({ label: "선택 영역 복사", shortcut: "Ctrl+C", onClick: () => copyText(sel) });
+          items.push({
+            label: `'${sel.slice(0, 18)}${sel.length > 18 ? "…" : ""}' 검색`,
+            onClick: () => {
+              setQuery(sel);
+              go({ kind: "search", q: sel });
+            },
+          });
+          items.push("separator");
+        }
+        if (page) {
+          items.push({ label: "페이지 내용 복사", onClick: () => copyText(page.text) });
+          items.push({ label: "페이지 주소 복사", onClick: () => copyText(page.url) });
+          items.push("separator");
+        }
+        items.push({ label: mode === "render" ? "읽기 모드로 보기" : "원본 모양으로 보기", onClick: () => setMode((m) => (m === "render" ? "reader" : "render")) });
+        items.push({ label: "뒤로", disabled: cursor === 0, onClick: () => setCursor((c) => Math.max(0, c - 1)) });
+        openMenu(fake, items);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [go, page, mode, cursor, openMenu, toast]);
 
   const submit = (raw: string) => {
     const q = raw.trim();
@@ -206,7 +267,10 @@ export function BrowserApp() {
         </div>
       )}
 
-      <div ref={scrollRef} className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className={`thin-scroll min-h-0 flex-1 ${view.kind === "page" && mode === "render" ? "overflow-hidden" : "overflow-y-auto"}`}
+      >
         {error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
             <IconGlobe size={40} className="text-slate-300" />
@@ -285,29 +349,67 @@ export function BrowserApp() {
             )}
           </div>
         ) : (
-          /* ── 페이지 (읽기 화면) ── */
+          /* ── 페이지 ── */
           page && (
-            <div className="mx-auto w-full max-w-3xl px-8 py-7">
-              <div className="flex items-start gap-3 border-b border-slate-200 pb-4">
+            <div className="flex h-full flex-col">
+              {/* 페이지 헤더 — 제목·주소·보기 전환 */}
+              <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2">
                 <div className="min-w-0 flex-1">
-                  <h1 className="text-[22px] font-bold leading-snug text-slate-900">{page.title}</h1>
-                  <p className="mt-1 truncate font-mono text-[11.5px] text-slate-400">{page.url}</p>
+                  <p className="truncate text-[13px] font-semibold text-slate-800">{page.title}</p>
+                  <p className="truncate font-mono text-[10.5px] text-slate-400">{page.url}</p>
+                </div>
+                <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white text-[11.5px]">
+                  <button
+                    onClick={() => setMode("render")}
+                    className={`flex items-center gap-1 px-2.5 py-1 transition ${
+                      mode === "render" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    <IconGlobe size={11} /> 원본
+                  </button>
+                  <button
+                    onClick={() => setMode("reader")}
+                    className={`flex items-center gap-1 px-2.5 py-1 transition ${
+                      mode === "reader" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    <IconBook size={11} /> 읽기
+                  </button>
                 </div>
                 <button
                   onClick={async () => {
                     if (await copyText(page.text)) toast("페이지 내용을 복사했습니다", "success");
                   }}
-                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-[11.5px] text-slate-600 transition hover:bg-slate-50"
+                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11.5px] text-slate-600 transition hover:bg-slate-50"
                 >
                   <IconCopy size={11} /> 복사
                 </button>
               </div>
-              <div className="mt-5 whitespace-pre-wrap text-[14px] leading-[1.75] text-slate-700">
-                {page.text}
-              </div>
-              <p className="mt-8 border-t border-slate-200 pt-4 text-[11px] text-slate-400">
-                읽기 화면입니다 — 스크립트와 스타일은 제거되었습니다.
-              </p>
+
+              {mode === "render" ? (
+                /* 정제된 원본 — 스크립트는 우리 브릿지 하나뿐, 자산은 서명된 프록시로만 */
+                <iframe
+                  ref={frameRef}
+                  key={page.url}
+                  title={page.title}
+                  sandbox="allow-scripts"
+                  referrerPolicy="no-referrer"
+                  srcDoc={page.html}
+                  className="min-h-0 flex-1 w-full border-0 bg-white"
+                />
+              ) : (
+                <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+                  <div className="mx-auto w-full max-w-3xl px-8 py-7">
+                    <h1 className="text-[22px] font-bold leading-snug text-slate-900">{page.title}</h1>
+                    <div className="mt-5 whitespace-pre-wrap text-[14px] leading-[1.75] text-slate-700">
+                      {page.text}
+                    </div>
+                    <p className="mt-8 border-t border-slate-200 pt-4 text-[11px] text-slate-400">
+                      읽기 모드 — 본문 텍스트만 보여 줍니다. 원본 모양은 상단 [원본]에서.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )
         )}

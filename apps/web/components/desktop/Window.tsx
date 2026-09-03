@@ -4,7 +4,27 @@ import { ReactNode, useRef } from "react";
 import { IconClose, IconMaximize, IconMinimize } from "@/components/icons";
 import type { AppId, WindowManager, WinState } from "./wm";
 
-/** 데스크톱 창 프레임 — 타이틀바 드래그, 우하단 리사이즈, 최소화/최대화/닫기 */
+const MIN_W = 380;
+const MIN_H = 260;
+const EDGE = 6; // 잡을 수 있는 변 두께(px) — 얇으면 못 잡고, 두꺼우면 내용 클릭을 가린다
+const CORNER = 14;
+
+type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+
+/** 변은 창 테두리에 걸쳐 놓아 바깥에서도 잡히게 한다. (Tailwind 는 계산된 클래스를
+ *  만들지 못하므로 위치는 인라인 스타일로 준다.) */
+const RESIZE_HANDLES: { dir: ResizeDir; cursor: string; style: React.CSSProperties }[] = [
+  { dir: "n", cursor: "ns-resize", style: { left: CORNER, right: CORNER, top: -EDGE / 2, height: EDGE } },
+  { dir: "s", cursor: "ns-resize", style: { left: CORNER, right: CORNER, bottom: -EDGE / 2, height: EDGE } },
+  { dir: "w", cursor: "ew-resize", style: { top: CORNER, bottom: CORNER, left: -EDGE / 2, width: EDGE } },
+  { dir: "e", cursor: "ew-resize", style: { top: CORNER, bottom: CORNER, right: -EDGE / 2, width: EDGE } },
+  { dir: "nw", cursor: "nwse-resize", style: { left: -EDGE / 2, top: -EDGE / 2, width: CORNER, height: CORNER } },
+  { dir: "ne", cursor: "nesw-resize", style: { right: -EDGE / 2, top: -EDGE / 2, width: CORNER, height: CORNER } },
+  { dir: "sw", cursor: "nesw-resize", style: { left: -EDGE / 2, bottom: -EDGE / 2, width: CORNER, height: CORNER } },
+  { dir: "se", cursor: "nwse-resize", style: { right: -EDGE / 2, bottom: -EDGE / 2, width: CORNER, height: CORNER } },
+];
+
+/** 데스크톱 창 프레임 — 타이틀바 드래그, 8방향 리사이즈, 최소화/최대화/닫기 */
 export function Window({
   win,
   wm,
@@ -52,14 +72,30 @@ export function Window({
     el.addEventListener("pointerup", upHandler);
   };
 
-  const startResize = (e: React.PointerEvent) => {
+  /** 8방향 리사이즈 — 변과 모서리 어디를 잡아도 된다. 왼쪽·위를 잡으면 창이 그쪽으로 늘어난다. */
+  const startResize = (e: React.PointerEvent, dir: ResizeDir) => {
     if (win.maximized) return;
     e.stopPropagation();
+    e.preventDefault();
     const el = e.currentTarget as HTMLElement;
     el.setPointerCapture(e.pointerId);
-    const base = { w: win.w, h: win.h, x: e.clientX, y: e.clientY };
+    const base = { x: win.x, y: win.y, w: win.w, h: win.h, px: e.clientX, py: e.clientY };
     const moveHandler = (ev: PointerEvent) => {
-      wm.resize(win.id, base.w + ev.clientX - base.x, base.h + ev.clientY - base.y);
+      const dx = ev.clientX - base.px;
+      const dy = ev.clientY - base.py;
+      let { x, y, w, h } = base;
+      if (dir.includes("e")) w = base.w + dx;
+      if (dir.includes("s")) h = base.h + dy;
+      if (dir.includes("w")) {
+        w = Math.max(MIN_W, base.w - dx);
+        x = base.x + (base.w - w); // 오른쪽 변은 고정
+      }
+      if (dir.includes("n")) {
+        h = Math.max(MIN_H, base.h - dy);
+        y = Math.max(0, base.y + (base.h - h)); // 아래 변은 고정
+      }
+      wm.resize(win.id, w, h);
+      if (dir.includes("w") || dir.includes("n")) wm.move(win.id, x, y);
     };
     const upHandler = (ev: PointerEvent) => {
       el.releasePointerCapture(ev.pointerId);
@@ -84,13 +120,13 @@ export function Window({
   return (
     <div
       data-app={win.id}
-      className={`window-in window-shadow absolute flex flex-col overflow-hidden rounded-xl border ${frameCls}`}
+      className={`window-in window-shadow absolute flex flex-col rounded-xl border ${frameCls}`}
       style={style}
       onPointerDown={() => wm.focus(win.id)}
     >
       {/* 타이틀바 */}
       <div
-        className={`flex h-10 shrink-0 select-none items-center gap-2 border-b px-3 ${titleCls}`}
+        className={`flex h-10 shrink-0 select-none items-center gap-2 rounded-t-xl border-b px-3 ${titleCls}`}
         onPointerDown={startDrag}
         onDoubleClick={() => wm.toggleMaximize(win.id)}
       >
@@ -120,15 +156,19 @@ export function Window({
           </button>
         </div>
       </div>
-      {/* 본문 */}
-      <div className="min-h-0 flex-1">{children}</div>
-      {/* 리사이즈 핸들 */}
-      {!win.maximized && (
-        <div
-          className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
-          onPointerDown={startResize}
-        />
-      )}
+      {/* 본문 — 모서리 둥글기를 따라 잘라낸다 */}
+      <div className="min-h-0 flex-1 overflow-hidden rounded-b-xl">{children}</div>
+      {/* 리사이즈 핸들 — 변 4개 + 모서리 4개. 모서리가 변보다 위에 오도록 뒤에 그린다. */}
+      {!win.maximized &&
+        RESIZE_HANDLES.map(({ dir, cursor, style }) => (
+          <div
+            key={dir}
+            data-resize={dir}
+            className="absolute z-10"
+            style={{ ...style, cursor }}
+            onPointerDown={(e) => startResize(e, dir)}
+          />
+        ))}
     </div>
   );
 }

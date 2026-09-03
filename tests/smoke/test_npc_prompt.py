@@ -67,6 +67,8 @@ check("모욕 중에는 본론에 답하지 않는다", "do not answer the subst
 check("사과하면 정상 복귀 (첫 회에 한해)",
       "apolog" in lower and "return to normal cooperation" in lower and "the first time" in lower)
 check("인내는 회복되지 않는다 (재범 시 다시 차단)", "your patience does not reset" in lower)
+check("사과도 존댓말이어야 사과다", "an apology only counts if it is itself in 존댓말" in lower)
+check("반말 사과('아니 미안')는 무례의 연장", "아니 미안" in prompt and "does not reset anything" in lower)
 check("재범 시 즉시 응답 중단", "stop answering immediately" in lower)
 check("이후 사과는 협조를 되사지 못한다", "does not buy your cooperation back" in lower)
 check("남은 대화 내내 유지", "hold it for the rest of the conversation" in lower)
@@ -94,7 +96,7 @@ print("\n── 출력 ──")
 check("한국어로 답한다", "write in korean" in lower)
 check("마크다운 헤딩 금지", "no markdown headings" in lower)
 hangul = sum(1 for ch in npc_prompt.BASE_RULES if 0xAC00 <= ord(ch) <= 0xD7A3 or 0x3130 <= ord(ch) <= 0x318F)
-check("규칙 본문은 영어다", hangul < 60, f"한글 {hangul}자 (존댓말/반말 등 지목 표현만 허용)")
+check("규칙 본문은 영어다", hangul < 110, f"한글 {hangul}자 (존댓말/반말 등 지목 표현만 허용)")
 
 print("\n── 인물 카드가 빠짐없이 실리는가 ──")
 check("이름·직함이 머리에", prompt.startswith("# You are 김수진 — 프로덕트 매니저"), prompt.split("\n")[0])

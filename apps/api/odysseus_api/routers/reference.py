@@ -22,10 +22,11 @@ import uuid
 from html import unescape
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import workspace as ws
+from ..config import settings as app_settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import AppSetting, Attempt, Event, User
@@ -587,3 +588,155 @@ async def web_page(
         _cache_put(f"page:{url}", cached)
     await _log(db, user, attempt_id, scenario_id, "reference_open", {"source": "web", "url": url[:300]})
     return cached
+
+
+# ── 인터넷: 실제 렌더링 (정제된 HTML + 서명된 자산 프록시) ─────────
+
+_BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+_ASSET_BASE_RE = re.compile(r"^https?://[A-Za-z0-9.\-]+(?::\d+)?(?:/[A-Za-z0-9._\-]+)*/reference/web/asset$")
+_ASSET_TYPES = ("image/", "font/", "text/css", "application/font", "application/x-font", "application/octet-stream")
+_ASSET_MAX = 6 * 1024 * 1024
+_PAGE_MAX = 3 * 1024 * 1024
+_CSS_MAX = 600 * 1024
+
+
+async def _fetch_css_bundle(urls: list[str]) -> dict[str, str]:
+    """외부 스타일시트를 병렬로 받아 온다. 하나가 실패해도 나머지는 살린다."""
+    import asyncio as _aio
+
+    async def one(client: httpx.AsyncClient, url: str) -> tuple[str, str]:
+        try:
+            _is_public_url(url)
+            r = await client.get(url, headers={"User-Agent": _BROWSER_UA})
+            if r.status_code < 400 and "css" in r.headers.get("content-type", "text/css"):
+                return url, r.text[:_CSS_MAX]
+        except Exception:  # noqa: BLE001
+            pass
+        return url, ""
+
+    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+        pairs = await _aio.gather(*(one(client, u) for u in urls))
+    return {u: css for u, css in pairs if css}
+
+
+@router.get("/reference/web/render")
+async def web_render(
+    url: str = Query(min_length=8, max_length=2000),
+    asset_base: str = Query(min_length=16, max_length=400),
+    attempt_id: uuid.UUID | None = None,
+    scenario_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """페이지를 받아 정제·재작성한 완전한 HTML 문서를 돌려준다 (샌드박스 iframe 용).
+
+    asset_base 는 클라이언트가 자기 오리진으로 만든 프록시 주소다 — 서버는 어떤
+    도메인 뒤에 있는지 모르므로 클라이언트가 알려 준다. 형태만 검사한다.
+    """
+    from ..web_render import render_page
+
+    s = await get_reference_settings(db)
+    if not s["web_enabled"]:
+        raise HTTPException(403, "이 시험에서는 웹 열람이 비활성화되어 있습니다")
+    if not _ASSET_BASE_RE.match(asset_base):
+        raise HTTPException(400, "asset_base 형식이 올바르지 않습니다")
+    _is_public_url(url)
+
+    global _LAST_ASSET_BASE
+    _LAST_ASSET_BASE = asset_base
+    cache_key = f"render:{url}:{asset_base}"
+    cached = _cache_get(cache_key)
+    if cached is None:
+        try:
+            async with httpx.AsyncClient(timeout=25, follow_redirects=True, max_redirects=5) as client:
+                resp = await client.get(url, headers={"User-Agent": _BROWSER_UA, "Accept-Language": "ko,en;q=0.8"})
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"페이지를 열 수 없습니다: {e}")
+        ctype = resp.headers.get("content-type", "")
+        if "html" not in ctype and "xml" not in ctype:
+            raise HTTPException(415, f"열 수 없는 형식입니다 ({ctype.split(';')[0] or '알 수 없음'})")
+        final_url = str(resp.url)
+        _is_public_url(final_url)  # 리다이렉트 끝도 검사한다
+        raw = resp.content[:_PAGE_MAX]
+
+        charset = resp.charset_encoding  # Content-Type 헤더의 charset (없으면 None)
+        first = render_page(final_url, raw, asset_base=asset_base, secret=app_settings.jwt_secret, declared_charset=charset)
+        css = await _fetch_css_bundle(first.stylesheets) if first.stylesheets else {}
+        result = render_page(
+            final_url, raw, asset_base=asset_base, secret=app_settings.jwt_secret,
+            inline_css=css, declared_charset=charset,
+        )
+        cached = {
+            "url": final_url,
+            "title": result.title or final_url,
+            "html": result.html,
+            "text": result.text,
+            "stylesheets": len(css),
+            "dropped": result.dropped,
+        }
+        _cache_put(cache_key, cached)
+    await _log(db, user, attempt_id, scenario_id, "reference_open", {"source": "web", "url": url[:300]})
+    return cached
+
+
+_ASSET_CACHE: dict[str, tuple[float, bytes, str]] = {}
+_ASSET_CACHE_MAX = 200
+
+
+@router.get("/reference/web/asset")
+async def web_asset(u: str, exp: str, sig: str):
+    """서명된 자산 프록시 — 이미지·CSS·폰트만. 쿠키가 아니라 서명으로 인증한다.
+
+    샌드박스 iframe 은 출처가 불투명해 쿠키가 실리지 않을 수 있다. 렌더 단계에서
+    서버가 서명해 둔 URL 만 통과시키므로, 임의 주소를 이 프록시로 끌어올 수 없다.
+    """
+    from ..web_render import rewrite_css, verify_asset
+
+    target = verify_asset(u, exp, sig, app_settings.jwt_secret)
+    if not target:
+        raise HTTPException(403, "서명이 맞지 않거나 만료되었습니다")
+    _is_public_url(target)
+
+    hit = _ASSET_CACHE.get(target)
+    if hit and time.time() - hit[0] < _CACHE_TTL_S:
+        body, ctype = hit[1], hit[2]
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=20, follow_redirects=True, max_redirects=5) as client:
+                resp = await client.get(target, headers={"User-Agent": _BROWSER_UA, "Referer": target})
+        except httpx.HTTPError:
+            raise HTTPException(502, "자산을 받지 못했습니다")
+        if resp.status_code >= 400:
+            raise HTTPException(resp.status_code if resp.status_code in (403, 404) else 502, "자산을 받지 못했습니다")
+        ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if not any(ctype.startswith(t) for t in _ASSET_TYPES):
+            raise HTTPException(415, "허용되지 않는 자산 형식입니다")
+        body = resp.content[:_ASSET_MAX]
+        if ctype == "text/css":
+            # CSS 안의 url() 도 프록시를 지나야 한다 — asset_base 는 이 요청의 경로에서 복원
+            base = urllib.parse.urlsplit(target)
+            body = rewrite_css(body.decode("utf-8", errors="replace"), target, _asset_base_hint(), app_settings.jwt_secret).encode()
+        if len(_ASSET_CACHE) >= _ASSET_CACHE_MAX:
+            _ASSET_CACHE.pop(next(iter(_ASSET_CACHE)), None)
+        _ASSET_CACHE[target] = (time.time(), body, ctype)
+
+    return Response(
+        content=body,
+        media_type=ctype or "application/octet-stream",
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+            # 샌드박스 iframe 은 출처가 'null' 이다. 이미지는 괜찮지만 **폰트는 CORS 요청**이라
+            # 이 헤더가 없으면 막힌다. 서명된 URL 로만 열리는 공개 자산이므로 * 가 안전하다.
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+_LAST_ASSET_BASE: str | None = None
+
+
+def _asset_base_hint() -> str:
+    # CSS 안 url() 재작성용 — 마지막 렌더가 쓴 asset_base 를 재사용한다 (단일 배포 전제)
+    return _LAST_ASSET_BASE or "/reference/web/asset"

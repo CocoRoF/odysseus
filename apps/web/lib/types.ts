@@ -561,3 +561,13 @@ export interface AdminResources {
     age_seconds: number;
   }[];
 }
+
+/** 인터넷 앱 — 서버가 정제·재작성한 페이지 (샌드박스 iframe 에 그대로 넣는다) */
+export interface WebRender {
+  url: string;
+  title: string;
+  html: string;
+  text: string;
+  stylesheets: number;
+  dropped: Record<string, number>;
+}
