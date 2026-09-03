@@ -272,7 +272,10 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Field label="성격 · 말투 · 입장 (persona)" hint="NPC의 톤을 결정합니다">
+                <Field
+                  label="성격 · 말투 · 입장 (persona)"
+                  hint="NPC의 톤을 결정합니다. 응시자가 무례하게 굴 때 이 인물이 어떻게 반응하는지도 한 줄 적어 두면 좋습니다 (예: 반말에는 사무적으로만 대한다)."
+                >
                   <textarea
                     className={`${inputCls} min-h-28 text-xs`}
                     value={c.persona}

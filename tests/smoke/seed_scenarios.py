@@ -7,6 +7,10 @@
 
 `--refresh-briefings` 를 주면 이미 있는 시나리오의 시작 화면(브리핑)도 패키지
 내용으로 덮어쓴다 (문구를 다듬었을 때 배포 반영용).
+
+`--refresh-characters` 는 등장인물(성격·지식·직함)을 패키지 내용으로 덮어쓴다.
+NPC 프롬프트 규약이 바뀌었을 때(예: 태도 대응 성향 추가) 이미 배포된 시나리오에
+반영하는 경로다. 진행 중인 응시의 이미 오간 대화는 그대로 남는다.
 """
 
 import asyncio
@@ -33,12 +37,17 @@ async def main() -> None:
             s.title: s for s in (await db.execute(select(Scenario))).scalars().all()
         }
         refresh = "--refresh-briefings" in sys.argv
-        created = refreshed = 0
+        refresh_chars = "--refresh-characters" in sys.argv
+        created = refreshed = recast = 0
         for spec in DEFAULT_SCENARIOS:
             if spec["title"] in existing:
-                if refresh and existing[spec["title"]].briefing_md != spec.get("briefing_md", ""):
-                    existing[spec["title"]].briefing_md = spec.get("briefing_md", "")
+                row = existing[spec["title"]]
+                if refresh and row.briefing_md != spec.get("briefing_md", ""):
+                    row.briefing_md = spec.get("briefing_md", "")
                     refreshed += 1
+                if refresh_chars and row.characters != spec.get("characters", []):
+                    row.characters = spec.get("characters", [])
+                    recast += 1
                 continue
             row = scenario_row(spec, admin.id if admin else None)
             db.add(row)
@@ -80,6 +89,7 @@ async def main() -> None:
         print(
             f"시나리오 {created}개, 시험 {made_assessments}개 추가"
             + (f", 브리핑 {refreshed}개 갱신" if refresh else "")
+            + (f", 등장인물 {recast}개 갱신" if refresh_chars else "")
             + f" (전체 시나리오 {len(existing)}개)"
         )
 
