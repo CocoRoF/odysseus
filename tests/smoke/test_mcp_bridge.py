@@ -57,7 +57,9 @@ _, attempts = call("GET", "/review/attempts")
 for a in attempts or []:
     call("DELETE", f"/attempts/{a['id']}")
 _, assessments = call("GET", "/assessments")
-_, attempt = call("POST", f"/assessments/{assessments[0]['id']}/attempts")
+# 시험 목록 순서에 기대지 않는다 — 이 스위트는 매출 리포트 워크스페이스를 전제한다
+demo = next((a for a in assessments if "매출 리포트" in a["title"]), assessments[0])
+_, attempt = call("POST", f"/assessments/{demo['id']}/attempts")
 attempt_id = attempt["id"]
 scenario_id = attempt["scenarios"][0]["scenario_id"]
 base = f"/attempts/{attempt_id}/scenarios/{scenario_id}"

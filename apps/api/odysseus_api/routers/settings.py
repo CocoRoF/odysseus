@@ -256,6 +256,63 @@ async def write_ui_settings(body: UiSettingsIn, db: AsyncSession = Depends(get_d
     return await get_ui_settings(db)
 
 
+# ── 참고 자료(GitHub · 인터넷) 설정 ──────────────────────────────
+
+
+class ReferenceSettingsIn(BaseModel):
+    github_enabled: bool = True
+    github_token: str | None = None  # None=기존 유지, ""=삭제
+    web_enabled: bool = True
+    search_provider: str = Field(default="duckduckgo", max_length=20)
+    search_api_key: str | None = None
+    search_cx: str | None = None
+
+
+def _key_hint_of(value: str) -> str | None:
+    if not value:
+        return None
+    return f"…{value[-4:]}" if len(value) >= 8 else "설정됨"
+
+
+@router.get("/reference")
+async def read_reference_settings(db: AsyncSession = Depends(get_db)):
+    from .reference import get_reference_settings
+
+    s = await get_reference_settings(db)
+    return {
+        "github_enabled": s["github_enabled"],
+        "web_enabled": s["web_enabled"],
+        "search_provider": s["search_provider"],
+        "search_cx": s["search_cx"],
+        "has_github_token": bool(s["github_token"]),
+        "github_token_hint": _key_hint_of(s["github_token"]),
+        "has_search_api_key": bool(s["search_api_key"]),
+    }
+
+
+@router.put("/reference")
+async def write_reference_settings(body: ReferenceSettingsIn, db: AsyncSession = Depends(get_db)):
+    from .reference import REFERENCE_KEY, get_reference_settings
+
+    current = await get_reference_settings(db)
+    value = {
+        "github_enabled": body.github_enabled,
+        "web_enabled": body.web_enabled,
+        "search_provider": body.search_provider if body.search_provider in ("duckduckgo", "google") else "duckduckgo",
+        # None 이면 기존 비밀값 유지 (화면에 되돌려주지 않으므로)
+        "github_token": current["github_token"] if body.github_token is None else body.github_token.strip(),
+        "search_api_key": current["search_api_key"] if body.search_api_key is None else body.search_api_key.strip(),
+        "search_cx": current["search_cx"] if body.search_cx is None else body.search_cx.strip(),
+    }
+    row = await db.get(AppSetting, REFERENCE_KEY)
+    if row:
+        row.value = value
+    else:
+        db.add(AppSetting(key=REFERENCE_KEY, value=value))
+    await db.commit()
+    return await read_reference_settings(db)
+
+
 class ClaudeLoginCodeIn(BaseModel):
     code: str = Field(min_length=4, max_length=4000)
 

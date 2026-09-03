@@ -141,5 +141,8 @@ export const APP_META: Record<
   ide: { title: "IDE", accent: "bg-slate-100", theme: "dark" },
   agent: { title: "AI 에이전트", accent: "bg-sky-50", theme: "light" },
   files: { title: "폴더", accent: "bg-amber-50", theme: "light" },
+  terminal: { title: "터미널", accent: "bg-slate-100", theme: "dark" },
+  github: { title: "GitHub", accent: "bg-slate-100", theme: "dark" },
+  browser: { title: "인터넷", accent: "bg-sky-50", theme: "light" },
   viewer: { title: "뷰어", accent: "bg-slate-50", theme: "light" },
 };

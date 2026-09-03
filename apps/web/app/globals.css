@@ -131,3 +131,24 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .intro-stage, .intro-fade, .intro-rise, .intro-caret { animation: none; }
 }
+
+/* 참고 자료 앱의 상단 로딩 바 — 진행률을 모르므로 왕복시킨다 */
+@keyframes gh-load {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(160%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* GitHub README — 어두운 배경 위 마크다운 여백/링크 톤 */
+.gh-readme :is(h1, h2) {
+  border-bottom: 1px solid #21262d;
+  padding-bottom: 0.3em;
+}
+.gh-readme a {
+  color: #4493f8;
+}
+.gh-readme img {
+  display: inline-block;
+  max-height: 28px;
+  vertical-align: middle;
+}

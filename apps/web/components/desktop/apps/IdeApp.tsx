@@ -22,6 +22,8 @@ import { buildTree, isKeepPath, languageOf, TreeNode, useWorkspace } from "../wo
 import { FileGlyph, FolderGlyph } from "../fileicons";
 import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
 import { AgentChat } from "../AgentChat";
+import { TerminalView } from "../TerminalView";
+import { useTerminalSession } from "../terminalSession";
 import { useAgentSession } from "../agentSession";
 
 interface Tab {
@@ -74,65 +76,6 @@ function duplicateName(path: string, taken: Set<string>): string {
   return joinPath(dir, `${stem} copy ${Date.now()}${ext}`);
 }
 
-// ── 터미널 ───────────────────────────────────────────────────
-
-type TermLine =
-  | { kind: "cmd"; cwd: string; text: string }
-  | { kind: "out"; text: string }
-  | { kind: "err"; text: string };
-
-const VHOME = "/home/user";
-
-function Ps1({ cwd }: { cwd: string }) {
-  return (
-    <span className="shrink-0 whitespace-pre">
-      <span className="font-bold text-[#3fb950]">user@odysseus</span>
-      <span className="text-[#cccccc]">:</span>
-      <span className="font-bold text-[#58a6ff]">{cwd ? `~/${cwd}` : "~"}</span>
-      <span className="text-[#cccccc]">$ </span>
-    </span>
-  );
-}
-
-/** cd 인자 해석 — 실제 bash와 같은 오류 문구를 낸다. */
-function resolveCd(
-  cwd: string,
-  rawArg: string,
-  dirs: Set<string>,
-  filePaths: Set<string>,
-): { cwd?: string; error?: string } {
-  const arg = rawArg.trim();
-  if (!arg || arg === "~" || arg === "$HOME") return { cwd: "" };
-  let base: string[];
-  let rest = arg;
-  if (arg.startsWith("~/")) {
-    base = [];
-    rest = arg.slice(2);
-  } else if (arg.startsWith("/")) {
-    return { error: `bash: cd: ${arg}: No such file or directory` };
-  } else {
-    base = cwd ? cwd.split("/") : [];
-  }
-  for (const seg of rest.split("/")) {
-    if (!seg || seg === ".") continue;
-    if (seg === "..") {
-      if (base.length === 0) return { error: `bash: cd: ${arg}: No such file or directory` };
-      base.pop();
-      continue;
-    }
-    base.push(seg);
-  }
-  const target = base.join("/");
-  if (!target) return { cwd: "" };
-  if (dirs.has(target)) return { cwd: target };
-  if (filePaths.has(target)) return { error: `bash: cd: ${arg}: Not a directory` };
-  return { error: `bash: cd: ${arg}: No such file or directory` };
-}
-
-function shellQuote(path: string): string {
-  return `'${path.replace(/'/g, `'\\''`)}'`;
-}
-
 // ── IDE 본체 ─────────────────────────────────────────────────
 
 /** VSCode풍 IDE — 액티비티 바 + 탐색기 + 탭/브레드크럼 + Monaco + 터미널 + 상태 바. */
@@ -159,32 +102,14 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
   // 에이전트는 데스크톱 창과 **같은 세션/같은 대화** — 위치만 다르다
   const agent = useAgentSession();
 
-  // 터미널 상태
-  const [lines, setLines] = useState<TermLine[]>([]);
-  const [input, setInput] = useState("");
-  const [cwd, setCwd] = useState("");
-  const [running, setRunning] = useState(false);
-  const historyRef = useRef<string[]>([]);
-  const histPosRef = useRef(-1);
-  const cancelRef = useRef<string | null>(null); // 취소된 실행 id
-  const runIdRef = useRef<string | null>(null);
+  // 터미널은 데스크톱의 [터미널] 앱과 **같은 세션** — 여기서는 패널로 보여줄 뿐이다
+  const term = useTerminalSession();
 
   const rootRef = useRef<HTMLDivElement>(null);
-  const termScrollRef = useRef<HTMLDivElement>(null);
-  const termInputRef = useRef<HTMLInputElement>(null);
 
   const tree = buildTree(ws.files);
   const rows = flattenTree(tree, collapsed);
   const active = tabs.find((t) => t.path === activePath) ?? null;
-  const dirSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const f of ws.files) {
-      const parts = f.path.split("/");
-      for (let i = 1; i < parts.length; i++) set.add(parts.slice(0, i).join("/"));
-    }
-    return set;
-  }, [ws.files]);
-  const fileSet = useMemo(() => new Set(ws.files.map((f) => f.path)), [ws.files]);
 
   // ── 파일 열기/저장 ──
   const openFile = useCallback(
@@ -422,140 +347,34 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
     return items;
   };
 
-  // ── 터미널 ──
-  useEffect(() => {
-    termScrollRef.current?.scrollTo({ top: termScrollRef.current.scrollHeight });
-  }, [lines, running, termOpen]);
+  // ── 터미널 세션 연결 ──
+  // 실행은 서버 파일 기준이다 — 셸이 돌기 전에 더티 탭을 먼저 저장한다.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const saveRef = useRef(save);
+  saveRef.current = save;
 
-  const print = useCallback((entries: TermLine[]) => {
-    setLines((l) => [...l, ...entries]);
-  }, []);
-
-  const runServerCommand = useCallback(
-    async (command: string, atCwd: string) => {
-      // 실행은 서버 파일 기준 — 더티 탭은 먼저 저장
-      for (const t of tabs.filter((x) => x.dirty)) await save(t);
-      setRunning(true);
-      onActivity?.();
-      const wrapped = atCwd ? `cd ${shellQuote(atCwd)} && (${command})` : command;
-      try {
-        const exec = await api.post<Execution>(
-          `/attempts/${ws.attemptId}/scenarios/${ws.scenarioId}/run`,
-          { command: wrapped },
-        );
-        runIdRef.current = exec.id;
-        let done: Execution = exec;
-        for (let i = 0; i < 90; i++) {
-          await new Promise((r) => setTimeout(r, 650));
-          if (cancelRef.current === exec.id) return; // ^C — 결과 무시
-          done = await api.get<Execution>(`/executions/${exec.id}`);
-          if (done.status === "done" || done.status === "error") break;
-        }
-        if (cancelRef.current === exec.id) return;
-        const out: TermLine[] = [];
-        if (done.stdout) out.push(...done.stdout.replace(/\n$/, "").split("\n").map((t) => ({ kind: "out" as const, text: t })));
-        if (done.stderr) out.push(...done.stderr.replace(/\n$/, "").split("\n").map((t) => ({ kind: "err" as const, text: t })));
-        if (done.status !== "done" && done.status !== "error") out.push({ kind: "err", text: "bash: 실행이 완료되지 않았습니다" });
-        print(out);
-        if ((done.changed_files ?? []).length > 0) {
-          await ws.refresh();
-          for (const ch of done.changed_files ?? []) {
-            const tab = tabs.find((t) => t.path === ch.path);
-            if (tab && !tab.dirty) {
-              const fc = await ws.loadContent(ch.path).catch(() => null);
-              if (fc) setTabs((t) => t.map((x) => (x.path === ch.path ? { ...x, content: fc.content } : x)));
-            }
-          }
-        }
-      } catch (e) {
-        print([{ kind: "err", text: e instanceof ApiError ? `bash: ${e.message}` : "bash: 실행 요청 실패" }]);
-      } finally {
-        runIdRef.current = null;
-        setRunning(false);
-      }
-    },
-    [tabs, save, ws, print, onActivity],
+  useEffect(
+    () =>
+      term.registerPreRun(async () => {
+        for (const t of tabsRef.current.filter((x) => x.dirty)) await saveRef.current(t);
+      }),
+    [term],
   );
 
-  const submitCommand = useCallback(
-    async (raw: string) => {
-      const command = raw.trim();
-      print([{ kind: "cmd", cwd, text: raw }]);
-      if (command) {
-        historyRef.current = [...historyRef.current.filter((c) => c !== command), command].slice(-100);
-      }
-      histPosRef.current = -1;
-      if (!command) return;
-
-      if (command === "clear" || command === "reset") {
-        setLines([]);
-        return;
-      }
-      if (command === "pwd") {
-        print([{ kind: "out", text: cwd ? `${VHOME}/${cwd}` : VHOME }]);
-        return;
-      }
-      if (command === "cd" || command.startsWith("cd ")) {
-        const r = resolveCd(cwd, command === "cd" ? "" : command.slice(3), dirSet, fileSet);
-        if (r.error) print([{ kind: "err", text: r.error }]);
-        else setCwd(r.cwd ?? "");
-        return;
-      }
-      await runServerCommand(command, cwd);
-    },
-    [cwd, dirSet, fileSet, print, runServerCommand],
+  // 실행이 파일을 바꿨으면 열려 있는 (수정하지 않은) 탭도 새 내용으로 맞춘다.
+  useEffect(
+    () =>
+      term.registerFilesChanged(async (paths) => {
+        for (const path of paths) {
+          const tab = tabsRef.current.find((t) => t.path === path);
+          if (!tab || tab.dirty) continue;
+          const fc = await ws.loadContent(path).catch(() => null);
+          if (fc) setTabs((t) => t.map((x) => (x.path === path ? { ...x, content: fc.content } : x)));
+        }
+      }),
+    [term, ws],
   );
-
-  const onTermKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
-      e.preventDefault();
-      if (running && runIdRef.current) {
-        cancelRef.current = runIdRef.current;
-        runIdRef.current = null;
-        setRunning(false);
-        print([{ kind: "out", text: "^C" }]);
-      } else {
-        print([{ kind: "cmd", cwd, text: `${input}^C` }]);
-        setInput("");
-        histPosRef.current = -1;
-      }
-      return;
-    }
-    if (e.ctrlKey && (e.key === "l" || e.key === "L")) {
-      e.preventDefault();
-      setLines([]);
-      return;
-    }
-    if (running) return;
-    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-      const v = input;
-      setInput("");
-      submitCommand(v);
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      const h = historyRef.current;
-      if (h.length === 0) return;
-      const pos = histPosRef.current === -1 ? h.length - 1 : Math.max(0, histPosRef.current - 1);
-      histPosRef.current = pos;
-      setInput(h[pos]);
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      const h = historyRef.current;
-      if (histPosRef.current === -1) return;
-      const pos = histPosRef.current + 1;
-      if (pos >= h.length) {
-        histPosRef.current = -1;
-        setInput("");
-      } else {
-        histPosRef.current = pos;
-        setInput(h[pos]);
-      }
-    }
-  };
 
   const crumbs = active ? active.path.split("/") : [];
   const langName = active ? languageOf(active.path) : "";
@@ -916,7 +735,7 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
                     터미널
                   </span>
                   <div className="flex items-center gap-0.5">
-                    <button title="터미널 지우기" onClick={() => setLines([])} className="flex h-6 w-6 items-center justify-center rounded-sm text-[#8a8a8a] hover:bg-white/10 hover:text-white">
+                    <button title="터미널 지우기" onClick={term.clear} className="flex h-6 w-6 items-center justify-center rounded-sm text-[#8a8a8a] hover:bg-white/10 hover:text-white">
                       <IconDelete size={12} />
                     </button>
                     <button title="패널 닫기" onClick={() => setTermOpen(false)} className="flex h-6 w-6 items-center justify-center rounded-sm text-[#8a8a8a] hover:bg-white/10 hover:text-white">
@@ -924,80 +743,8 @@ export function IdeApp({ readOnly = false, onActivity }: { readOnly?: boolean; o
                     </button>
                   </div>
                 </div>
-                <div
-                  ref={termScrollRef}
-                  className="thin-scroll min-h-0 flex-1 cursor-text overflow-y-auto px-2 py-1 font-mono text-[12.5px] leading-[1.45]"
-                  onClick={() => termInputRef.current?.focus()}
-                  onContextMenu={(e) =>
-                    openMenu(
-                      e,
-                      [
-                        {
-                          label: "붙여넣기",
-                          disabled: readOnly || running,
-                          onClick: async () => {
-                            try {
-                              const text = await navigator.clipboard.readText();
-                              if (text) setInput((v) => v + text.replace(/\n/g, " "));
-                              termInputRef.current?.focus();
-                            } catch {
-                              toast("클립보드를 읽을 수 없습니다 (Ctrl+V를 사용하세요)", "info");
-                            }
-                          },
-                        },
-                        {
-                          label: "선택 영역 복사",
-                          disabled: !selectedText(),
-                          onClick: () => copyText(selectedText()),
-                        },
-                        {
-                          label: "출력 복사",
-                          onClick: async () => {
-                            const text = lines
-                              .map((l) => (l.kind === "cmd" ? `$ ${l.text}` : l.text))
-                              .join("\n");
-                            if (await copyText(text)) toast("터미널 출력을 복사했습니다", "success");
-                            else toast("복사에 실패했습니다", "error");
-                          },
-                        },
-                        "separator",
-                        { label: "터미널 지우기", shortcut: "Ctrl+L", onClick: () => setLines([]) },
-                      ],
-                      { dark: true },
-                    )
-                  }
-                >
-                  {lines.map((l, i) =>
-                    l.kind === "cmd" ? (
-                      <div key={i} className="whitespace-pre-wrap break-all">
-                        <Ps1 cwd={l.cwd} />
-                        <span className="text-[#cccccc]">{l.text}</span>
-                      </div>
-                    ) : (
-                      <div key={i} className={`whitespace-pre-wrap break-all ${l.kind === "err" ? "text-[#f48771]" : "text-[#cccccc]"}`}>
-                        {l.text || " "}
-                      </div>
-                    ),
-                  )}
-                  {/* 프롬프트 (실행 중에는 커서만) */}
-                  {!readOnly && (
-                    <div className="flex items-center whitespace-pre">
-                      {!running && <Ps1 cwd={cwd} />}
-                      <input
-                        ref={termInputRef}
-                        className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[12.5px] text-[#cccccc] caret-[#cccccc] outline-none"
-                        value={running ? "" : input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={onTermKey}
-                        autoComplete="off"
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        aria-label="terminal"
-                      />
-                      {running && <span className="animate-pulse text-[#cccccc]">▍</span>}
-                    </div>
-                  )}
+                <div className="thin-scroll min-h-0 flex-1">
+                  <TerminalView readOnly={readOnly} />
                 </div>
               </div>
             </>

@@ -48,6 +48,8 @@ ALLOWED_EVENT_TYPES = {
     "page_exit",
     "net_offline",
     "net_online",
+    "reference_search",
+    "reference_open",
 }
 
 

@@ -2,8 +2,16 @@
 
 import { useCallback, useRef, useState } from "react";
 
-/** 데스크톱 앱 식별자 — 4개 고정 (앱당 창 1개) */
-export type AppId = "messenger" | "ide" | "agent" | "files" | "viewer";
+/** 데스크톱 앱 식별자 — 앱당 창 1개 */
+export type AppId =
+  | "messenger"
+  | "ide"
+  | "agent"
+  | "files"
+  | "terminal"
+  | "github"
+  | "browser"
+  | "viewer";
 
 export interface WinState {
   id: AppId;
@@ -22,6 +30,9 @@ const DEFAULTS: Record<AppId, Omit<WinState, "id" | "z">> = {
   ide: { open: false, minimized: false, maximized: false, x: 200, y: 40, w: 1000, h: 640 },
   agent: { open: false, minimized: false, maximized: false, x: 320, y: 110, w: 620, h: 580 },
   files: { open: false, minimized: false, maximized: false, x: 240, y: 80, w: 940, h: 580 },
+  terminal: { open: false, minimized: false, maximized: false, x: 260, y: 200, w: 760, h: 420 },
+  github: { open: false, minimized: false, maximized: false, x: 150, y: 50, w: 1080, h: 680 },
+  browser: { open: false, minimized: false, maximized: false, x: 180, y: 70, w: 980, h: 660 },
   viewer: { open: false, minimized: false, maximized: false, x: 380, y: 70, w: 760, h: 560 },
 };
 

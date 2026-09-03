@@ -16,6 +16,7 @@ from .routers import (
     files,
     internal,
     messenger,
+    reference,
     review,
     scenarios,
     settings as settings_router,
@@ -68,6 +69,7 @@ app.include_router(attempts.router)
 app.include_router(messenger.router)
 app.include_router(agent.router)
 app.include_router(files.router)
+app.include_router(reference.router)
 app.include_router(executions.router)
 app.include_router(review.router)
 app.include_router(settings_router.router)

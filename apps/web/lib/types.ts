@@ -390,3 +390,86 @@ export interface EvalProviderRef {
   model: string;
   is_eval_default: boolean;
 }
+
+// ── 참고 자료 (GitHub · 인터넷) ───────────────────────────────
+
+export interface ReferenceConfig {
+  github_enabled: boolean;
+  web_enabled: boolean;
+  search_provider: string;
+}
+
+export interface GhRepo {
+  full_name: string;
+  owner: string;
+  name: string;
+  description: string | null;
+  language: string | null;
+  stars: number;
+  forks: number;
+  watchers: number;
+  topics: string[];
+  updated_at: string | null;
+  archived: boolean;
+  default_branch: string;
+  html_url: string;
+  homepage: string | null;
+  license: string | null;
+  avatar: string | null;
+}
+
+export interface GhSearchResult {
+  total: number;
+  items: GhRepo[];
+}
+
+export interface GhEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir" | string;
+  size: number;
+}
+
+export interface GhTree {
+  path: string;
+  entries: GhEntry[];
+  file?: string;
+}
+
+export interface GhFile {
+  path: string;
+  size: number;
+  content: string;
+}
+
+export interface GhRepoView {
+  repo: GhRepo;
+  readme: { path: string; content: string } | null;
+}
+
+export interface WebResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface WebSearchResponse {
+  provider: string;
+  results: WebResult[];
+}
+
+export interface WebPage {
+  url: string;
+  title: string;
+  text: string;
+}
+
+export interface ReferenceSettings {
+  github_enabled: boolean;
+  web_enabled: boolean;
+  search_provider: string;
+  search_cx: string;
+  has_github_token: boolean;
+  github_token_hint: string | null;
+  has_search_api_key: boolean;
+}

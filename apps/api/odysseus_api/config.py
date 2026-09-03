@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # 워크스페이스 제한
     max_file_bytes: int = 400 * 1024  # 파일 1개 상한
-    max_files_per_scenario: int = 200
+    max_files_per_scenario: int = 600  # clone 으로 참고 저장소를 통째로 들여올 수 있게 여유를 둔다
     max_event_batch: int = 50
 
     # 대화/에이전트 제한

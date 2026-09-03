@@ -72,7 +72,8 @@ async def main():
         await adm.goto(f"{BASE}/admin/settings")
         await adm.wait_for_selector("text=시네마틱 인트로", timeout=15000)
         ok.append("admin toggle present")
-        await adm.locator('input[type="checkbox"]').last.check()
+        # 설정 카드가 늘어도 흔들리지 않도록 라벨로 집는다
+        await adm.locator('label:has-text("시네마틱 인트로") input[type="checkbox"]').check()
         await adm.wait_for_selector("text=응시 환경 설정을 저장했습니다", timeout=8000)
         ok.append("toggle saves")
         assert call("GET", "/admin/settings/ui")["gamified_intro"] is True

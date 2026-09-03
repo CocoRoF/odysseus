@@ -3,24 +3,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import type { Attempt, AttemptScenario } from "@/lib/types";
+import type { Attempt, AttemptScenario, ReferenceConfig } from "@/lib/types";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
 import { useUser } from "@/components/useUser";
 import { COPY_EVENT } from "@/lib/clipboard";
 import { Button, Spinner } from "@/components/ui";
-import { IconAgent, IconFile, IconFolder, IconIde, IconMessenger } from "@/components/icons";
+import {
+  IconAgent,
+  IconFile,
+  IconFolder,
+  IconGithub,
+  IconGlobe,
+  IconIde,
+  IconMessenger,
+  IconTerminal,
+} from "@/components/icons";
 import { useWindowManager, AppId } from "@/components/desktop/wm";
 import { Window, APP_META } from "@/components/desktop/Window";
 import { Taskbar } from "@/components/desktop/Taskbar";
 import { WorkspaceProvider } from "@/components/desktop/workspace";
 import { AgentSessionProvider } from "@/components/desktop/agentSession";
+import { TerminalSessionProvider } from "@/components/desktop/terminalSession";
 import { IntroCinematic } from "@/components/desktop/IntroCinematic";
 import { MessengerApp } from "@/components/desktop/apps/MessengerApp";
 import { ViewerApp } from "@/components/desktop/apps/ViewerApp";
 import { IdeApp } from "@/components/desktop/apps/IdeApp";
 import { AgentApp } from "@/components/desktop/apps/AgentApp";
 import { FilesApp } from "@/components/desktop/apps/FilesApp";
+import { TerminalApp } from "@/components/desktop/apps/TerminalApp";
+import { GithubApp } from "@/components/desktop/apps/GithubApp";
+import { BrowserApp } from "@/components/desktop/apps/BrowserApp";
 
 const ICONS: { id: AppId; label: string; icon: React.ReactNode; tile: string; glow: string }[] = [
   {
@@ -50,6 +63,27 @@ const ICONS: { id: AppId; label: string; icon: React.ReactNode; tile: string; gl
     icon: <IconFolder size={30} />,
     tile: "from-amber-400 via-amber-500 to-orange-600",
     glow: "group-hover:shadow-[0_0_26px_rgba(251,191,36,0.55)]",
+  },
+  {
+    id: "terminal",
+    label: "터미널",
+    icon: <IconTerminal size={30} />,
+    tile: "from-neutral-700 via-neutral-800 to-black",
+    glow: "group-hover:shadow-[0_0_26px_rgba(163,163,163,0.4)]",
+  },
+  {
+    id: "github",
+    label: "GitHub",
+    icon: <IconGithub size={30} />,
+    tile: "from-slate-600 via-slate-800 to-slate-950",
+    glow: "group-hover:shadow-[0_0_26px_rgba(148,163,184,0.5)]",
+  },
+  {
+    id: "browser",
+    label: "인터넷",
+    icon: <IconGlobe size={30} />,
+    tile: "from-emerald-400 via-teal-500 to-cyan-600",
+    glow: "group-hover:shadow-[0_0_26px_rgba(45,212,191,0.55)]",
   },
 ];
 
@@ -173,6 +207,8 @@ export default function ExamDesktopPage() {
   const [showBriefing, setShowBriefing] = useState(false);
   const [messengerOpened, setMessengerOpened] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
+  // 참고 자료 앱(GitHub·인터넷)은 관리자 설정으로 끌 수 있다 — 꺼졌으면 아이콘부터 없앤다
+  const [reference, setReference] = useState<ReferenceConfig | null>(null);
   const [viewerPath, setViewerPath] = useState<string | null>(null);
 
   const inProgress = attempt?.status === "in_progress";
@@ -202,6 +238,14 @@ export default function ExamDesktopPage() {
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "불러올 수 없습니다"));
   }, [attemptId]);
+
+  // 참고 자료 앱 가용 여부 — 실패하면 없는 것으로 본다 (fail-closed)
+  useEffect(() => {
+    api
+      .get<ReferenceConfig>("/reference/config")
+      .then(setReference)
+      .catch(() => setReference({ github_enabled: false, web_enabled: false, search_provider: "" }));
+  }, []);
 
   const remainingSeconds = useMemo(() => {
     if (!attempt) return 0;
@@ -319,8 +363,8 @@ export default function ExamDesktopPage() {
         openApp("viewer");
       }}
     >
+      <TerminalSessionProvider key={scenario.scenario_id}>
       <AgentSessionProvider
-        key={scenario.scenario_id}
         attemptId={attemptId}
         scenarioId={scenario.scenario_id}
         enabled={scenario.agent_enabled}
@@ -344,6 +388,8 @@ export default function ExamDesktopPage() {
         >
           {ICONS.map((it) => {
             if (it.id === "agent" && !scenario.agent_enabled) return null;
+            if (it.id === "github" && !reference?.github_enabled) return null;
+            if (it.id === "browser" && !reference?.web_enabled) return null;
             const selected = selectedIcon === it.id;
             return (
               <button
@@ -434,6 +480,40 @@ export default function ExamDesktopPage() {
           <FilesApp key={scenario.scenario_id} />
         </Window>
         <Window
+          win={wm.wins.terminal}
+          wm={wm}
+          title={APP_META.terminal.title}
+          accent={APP_META.terminal.accent}
+          theme={APP_META.terminal.theme}
+          icon={<IconTerminal size={15} />}
+        >
+          <TerminalApp />
+        </Window>
+        {reference?.github_enabled && (
+          <Window
+            win={wm.wins.github}
+            wm={wm}
+            title={APP_META.github.title}
+            accent={APP_META.github.accent}
+            theme={APP_META.github.theme}
+            icon={<IconGithub size={15} />}
+          >
+            <GithubApp key={scenario.scenario_id} />
+          </Window>
+        )}
+        {reference?.web_enabled && (
+          <Window
+            win={wm.wins.browser}
+            wm={wm}
+            title={APP_META.browser.title}
+            accent={APP_META.browser.accent}
+            theme={APP_META.browser.theme}
+            icon={<IconGlobe size={15} />}
+          >
+            <BrowserApp key={scenario.scenario_id} />
+          </Window>
+        )}
+        <Window
           win={wm.wins.viewer}
           wm={wm}
           title={viewerPath ? `뷰어 — ${viewerPath.split("/").pop()}` : "뷰어"}
@@ -461,6 +541,10 @@ export default function ExamDesktopPage() {
           hasNext={hasNext}
           messengerBadge={!messengerOpened}
           agentDisabled={!scenario.agent_enabled}
+          referenceDisabled={{
+            github: !reference?.github_enabled,
+            browser: !reference?.web_enabled,
+          }}
           viewerLabel={viewerPath ? viewerPath.split("/").pop() : null}
         />
 
@@ -518,6 +602,7 @@ export default function ExamDesktopPage() {
           ))}
       </div>
       </AgentSessionProvider>
+      </TerminalSessionProvider>
     </WorkspaceProvider>
   );
 }

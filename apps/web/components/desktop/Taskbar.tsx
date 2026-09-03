@@ -15,6 +15,9 @@ import {
   IconMonitor,
   IconMore,
   IconNext,
+  IconTerminal,
+  IconGithub,
+  IconGlobe,
 } from "@/components/icons";
 import type { AttemptScenario } from "@/lib/types";
 import type { AppId, WindowManager } from "./wm";
@@ -24,6 +27,9 @@ const APPS: { id: AppId; label: string; icon: React.ReactNode }[] = [
   { id: "ide", label: "IDE", icon: <IconIde size={17} /> },
   { id: "agent", label: "AI 에이전트", icon: <IconAgent size={17} /> },
   { id: "files", label: "폴더", icon: <IconFolder size={17} /> },
+  { id: "terminal", label: "터미널", icon: <IconTerminal size={17} /> },
+  { id: "github", label: "GitHub", icon: <IconGithub size={17} /> },
+  { id: "browser", label: "인터넷", icon: <IconGlobe size={17} /> },
 ];
 
 function Clock() {
@@ -155,6 +161,7 @@ export function Taskbar({
   hasNext,
   messengerBadge,
   agentDisabled,
+  referenceDisabled,
   viewerLabel,
 }: {
   wm: WindowManager;
@@ -168,6 +175,8 @@ export function Taskbar({
   hasNext: boolean;
   messengerBadge: boolean;
   agentDisabled: boolean;
+  /** 시험 설정에서 꺼진 참고 자료 앱 — 작업 표시줄에서도 감춘다 */
+  referenceDisabled: Partial<Record<AppId, boolean>>;
   viewerLabel?: string | null;
 }) {
   return (
@@ -189,6 +198,7 @@ export function Taskbar({
       <div className="mx-auto flex items-center gap-1.5">
         {APPS.map((app) => {
           if (app.id === "agent" && agentDisabled) return null;
+          if (referenceDisabled[app.id]) return null;
           const w = wm.wins[app.id];
           const active = w.open && !w.minimized;
           return (

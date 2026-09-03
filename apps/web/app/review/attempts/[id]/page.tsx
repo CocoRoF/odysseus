@@ -234,6 +234,9 @@ export default function ReviewAttemptPage({ params }: { params: Promise<{ id: st
     if (timelineFilter === "away") return events.filter((e) => AWAY_EVENT_TYPES.includes(e.type) || e.type.endsWith("_visible") || e.type.endsWith("_focus"));
     if (timelineFilter === "files") return events.filter((e) => e.type.startsWith("file_") || e.type.startsWith("run_"));
     if (timelineFilter === "chat") return events.filter((e) => e.type.startsWith("msg_") || e.type === "agent_turn");
+    // 무엇을 찾아봤는지는 그 자체로 평가 자료다 — 별도 필터로 모아 본다
+    if (timelineFilter === "reference")
+      return events.filter((e) => e.type.startsWith("reference_") || e.type === "github_clone");
     return events;
   }, [events, timelineFilter]);
 
@@ -458,6 +461,7 @@ export default function ReviewAttemptPage({ params }: { params: Promise<{ id: st
               ["all", "전체"],
               ["chat", "대화/에이전트"],
               ["files", "파일/실행"],
+              ["reference", "참고 자료"],
               ["away", "이탈"],
             ].map(([k, label]) => (
               <button

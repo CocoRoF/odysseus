@@ -73,6 +73,9 @@ export const EVENT_LABEL: Record<string, string> = {
   page_exit: "페이지 이탈",
   net_offline: "네트워크 끊김",
   net_online: "네트워크 복구",
+  reference_search: "자료 검색",
+  reference_open: "자료 열람",
+  github_clone: "저장소 clone",
 };
 
 export const AWAY_EVENT_TYPES = ["focus_lost", "tab_hidden", "window_blur"];

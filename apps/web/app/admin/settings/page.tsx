@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
+  ReferenceSettings,
   UiSettings,
   AiModelInfo,
   AiProviderMeta,
@@ -288,6 +289,7 @@ export default function SettingsPage() {
       </p>
 
       <ExamExperienceCard />
+      <ReferenceCard />
 
       {editing && meta && (
         <ProviderModal
@@ -766,6 +768,169 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
 
 
 // ── 응시 환경 (게이미피케이션) ────────────────────────────────
+
+/** 참고 자료 — 시험장 안에서 열리는 GitHub·인터넷 앱의 가용 범위와 자격증명 */
+function ReferenceCard() {
+  const [ref, setRef] = useState<ReferenceSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [cx, setCx] = useState("");
+  const { toast } = useToast();
+
+  useEffect(() => {
+    api
+      .get<ReferenceSettings>("/admin/settings/reference")
+      .then((r) => {
+        setRef(r);
+        setCx(r.search_cx);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const save = async (patch: Partial<ReferenceSettings>, secrets: Record<string, string> = {}) => {
+    if (!ref) return;
+    setBusy(true);
+    try {
+      const next = await api.put<ReferenceSettings>("/admin/settings/reference", {
+        github_enabled: ref.github_enabled,
+        web_enabled: ref.web_enabled,
+        search_provider: ref.search_provider,
+        ...patch,
+        ...secrets,
+      });
+      setRef(next);
+      setCx(next.search_cx);
+      setToken("");
+      setApiKey("");
+      toast("참고 자료 설정을 저장했습니다", "success");
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "저장 실패", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = (label: string, desc: string, key: "github_enabled" | "web_enabled") => (
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-slate-300">
+      <input
+        type="checkbox"
+        className="mt-0.5"
+        checked={Boolean(ref?.[key])}
+        disabled={!ref || busy}
+        onChange={(e) => save({ [key]: e.target.checked })}
+      />
+      <span className="min-w-0">
+        <span className="text-sm font-semibold text-slate-800">{label}</span>
+        <span className="mt-1 block text-xs text-slate-500">{desc}</span>
+      </span>
+    </label>
+  );
+
+  return (
+    <Card className="mt-8 p-6">
+      <h2 className="font-bold">참고 자료</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        응시자가 시험 데스크톱에서 열 수 있는 GitHub·인터넷 앱입니다. 검색과 열람 기록은 응시 이벤트로
+        남아 평가에 활용됩니다.
+      </p>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {toggle(
+          "GitHub 앱",
+          "저장소 검색·코드 열람과 워크스페이스로의 git clone 을 허용합니다. github.com 외의 주소는 열리지 않습니다.",
+          "github_enabled",
+        )}
+        {toggle(
+          "인터넷 앱",
+          "웹 검색과 읽기 전용 페이지 보기를 허용합니다. 스크립트는 제거되고 내부 주소는 차단됩니다.",
+          "web_enabled",
+        )}
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <Field
+          label="GitHub 토큰 (선택)"
+          hint={
+            ref?.has_github_token
+              ? `저장됨 ${ref.github_token_hint ?? ""} — 새 값을 넣으면 교체됩니다`
+              : "없으면 비인증으로 조회합니다 (시간당 60회 제한). 읽기 전용 토큰을 권장합니다."
+          }
+        >
+          <div className="flex gap-2">
+            <input
+              className={inputCls}
+              type="password"
+              value={token}
+              placeholder="ghp_…"
+              onChange={(e) => setToken(e.target.value)}
+            />
+            <Button
+              variant="secondary"
+              disabled={busy || !token}
+              onClick={() => save({}, { github_token: token })}
+            >
+              저장
+            </Button>
+            {ref?.has_github_token && (
+              <Button variant="ghost" disabled={busy} onClick={() => save({}, { github_token: "" })}>
+                삭제
+              </Button>
+            )}
+          </div>
+        </Field>
+
+        <Field
+          label="검색 공급자"
+          hint="기본은 별도 키가 필요 없는 DuckDuckGo 입니다. Google 을 쓰려면 Custom Search 키와 엔진 ID 가 필요합니다."
+        >
+          <select
+            className={inputCls}
+            value={ref?.search_provider ?? "duckduckgo"}
+            disabled={!ref || busy}
+            onChange={(e) => save({ search_provider: e.target.value })}
+          >
+            <option value="duckduckgo">DuckDuckGo (키 불필요)</option>
+            <option value="google">Google Custom Search</option>
+          </select>
+        </Field>
+      </div>
+
+      {ref?.search_provider === "google" && (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Field
+            label="Google API 키"
+            hint={ref.has_search_api_key ? "저장됨 — 새 값을 넣으면 교체됩니다" : "Custom Search JSON API 키"}
+          >
+            <div className="flex gap-2">
+              <input
+                className={inputCls}
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              <Button
+                variant="secondary"
+                disabled={busy || !apiKey}
+                onClick={() => save({}, { search_api_key: apiKey })}
+              >
+                저장
+              </Button>
+            </div>
+          </Field>
+          <Field label="검색 엔진 ID (cx)" hint="programmablesearchengine.google.com 에서 발급">
+            <div className="flex gap-2">
+              <input className={inputCls} value={cx} onChange={(e) => setCx(e.target.value)} />
+              <Button variant="secondary" disabled={busy} onClick={() => save({}, { search_cx: cx })}>
+                저장
+              </Button>
+            </div>
+          </Field>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function ExamExperienceCard() {
   const [ui, setUi] = useState<UiSettings | null>(null);
