@@ -538,11 +538,6 @@ export default function ExamDesktopPage() {
           scenarios={attempt.scenarios}
           hasNext={hasNext}
           messengerBadge={!messengerOpened}
-          agentDisabled={!scenario.agent_enabled}
-          referenceDisabled={{
-            github: !reference?.github_enabled,
-            browser: !reference?.web_enabled,
-          }}
           viewerLabel={viewerPath ? viewerPath.split("/").pop() : null}
           onOpenSystemInfo={() => setSystemInfoOpen(true)}
         />

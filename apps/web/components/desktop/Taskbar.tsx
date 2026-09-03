@@ -23,7 +23,8 @@ import type { AttemptScenario } from "@/lib/types";
 import { ResourceMeter } from "./ResourceMeter";
 import type { AppId, WindowManager } from "./wm";
 
-// 바탕화면 아이콘과 같은 순서 — 두 곳이 어긋나면 찾는 위치가 달라진다
+// 실행 중인 창만 나타난다 (고정 아이콘이 아니다). 바탕화면과 같은 순서를 쓰므로
+// 여러 개를 띄워도 찾는 위치가 어긋나지 않는다.
 const APPS: { id: AppId; label: string; icon: React.ReactNode }[] = [
   { id: "terminal", label: "터미널", icon: <IconTerminal size={17} /> },
   { id: "files", label: "폴더", icon: <IconFolder size={17} /> },
@@ -32,6 +33,7 @@ const APPS: { id: AppId; label: string; icon: React.ReactNode }[] = [
   { id: "ide", label: "IDE", icon: <IconIde size={17} /> },
   { id: "agent", label: "AI 에이전트", icon: <IconAgent size={17} /> },
   { id: "github", label: "GitHub", icon: <IconGithub size={17} /> },
+  { id: "viewer", label: "뷰어", icon: <IconFile size={17} /> },
 ];
 
 function Clock() {
@@ -162,8 +164,6 @@ export function Taskbar({
   scenarios,
   hasNext,
   messengerBadge,
-  agentDisabled,
-  referenceDisabled,
   viewerLabel,
   onOpenSystemInfo,
 }: {
@@ -177,9 +177,6 @@ export function Taskbar({
   scenarios: AttemptScenario[];
   hasNext: boolean;
   messengerBadge: boolean;
-  agentDisabled: boolean;
-  /** 시험 설정에서 꺼진 참고 자료 앱 — 작업 표시줄에서도 감춘다 */
-  referenceDisabled: Partial<Record<AppId, boolean>>;
   viewerLabel?: string | null;
   onOpenSystemInfo: () => void;
 }) {
@@ -192,7 +189,7 @@ export function Taskbar({
         <button
           onClick={onOpenSystemInfo}
           title="이 컴퓨터에 관하여"
-          className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-white/25 hover:bg-white/10"
+          className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 transition hover:border-white/25 hover:bg-white/10"
         >
           <IconMonitor size={14} className="shrink-0 text-sky-400" />
           <span className="truncate text-xs font-medium text-slate-200">
@@ -205,48 +202,27 @@ export function Taskbar({
 
       <div className="mx-auto flex items-center gap-1.5">
         {APPS.map((app) => {
-          if (app.id === "agent" && agentDisabled) return null;
-          if (referenceDisabled[app.id]) return null;
           const w = wm.wins[app.id];
-          const active = w.open && !w.minimized;
+          if (!w.open) return null; // 실행하지 않은 앱은 작업 표시줄에 없다
+          const active = !w.minimized;
+          const label = app.id === "viewer" && viewerLabel ? `뷰어 — ${viewerLabel}` : app.label;
           return (
             <button
               key={app.id}
-              title={app.label}
-              onClick={() => (w.open && !w.minimized ? wm.minimize(app.id) : (wm.open(app.id), wm.focus(app.id)))}
+              title={label}
+              onClick={() => (active ? wm.minimize(app.id) : (wm.open(app.id), wm.focus(app.id)))}
               className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
-                active
-                  ? "bg-white/15 text-white"
-                  : w.open
-                    ? "text-slate-300 hover:bg-white/10"
-                    : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
+                active ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/10"
               }`}
             >
               {app.icon}
-              {w.open && (
-                <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-sky-400" />
-              )}
+              <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-sky-400" />
               {app.id === "messenger" && messengerBadge && (
                 <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
               )}
             </button>
           );
         })}
-        {/* 뷰어 — 열려 있을 때만 나타나는 실행 창 (아이콘: 파일) */}
-        {wm.wins.viewer.open && (
-          <button
-            title={viewerLabel ? `뷰어 — ${viewerLabel}` : "뷰어"}
-            onClick={() =>
-              wm.wins.viewer.minimized ? (wm.open("viewer"), wm.focus("viewer")) : wm.minimize("viewer")
-            }
-            className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
-              !wm.wins.viewer.minimized ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/10"
-            }`}
-          >
-            <IconFile size={17} />
-            <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-sky-400" />
-          </button>
-        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
