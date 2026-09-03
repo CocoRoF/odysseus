@@ -76,6 +76,7 @@ export const EVENT_LABEL: Record<string, string> = {
   reference_search: "자료 검색",
   reference_open: "자료 열람",
   github_clone: "저장소 clone",
+  exam_leave: "시험장 이탈",
 };
 
 export const AWAY_EVENT_TYPES = ["focus_lost", "tab_hidden", "window_blur"];

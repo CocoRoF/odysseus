@@ -20,6 +20,7 @@ import {
   IconGlobe,
 } from "@/components/icons";
 import type { AttemptScenario } from "@/lib/types";
+import { ContextMenuView, useContextMenu } from "./ContextMenu";
 import { ResourceMeter } from "./ResourceMeter";
 import type { AppId, WindowManager } from "./wm";
 
@@ -157,6 +158,7 @@ export function Taskbar({
   wm,
   remainingSeconds,
   onExpire,
+  onTimeWarning,
   onFinish,
   onNextScenario,
   userName,
@@ -170,6 +172,8 @@ export function Taskbar({
   wm: WindowManager;
   remainingSeconds: number;
   onExpire: () => void;
+  /** 남은 시간이 문턱을 넘을 때 (30·10·5·1분) */
+  onTimeWarning?: (secondsLeft: number) => void;
   onFinish: () => void;
   onNextScenario: () => void;
   userName: string;
@@ -180,8 +184,10 @@ export function Taskbar({
   viewerLabel?: string | null;
   onOpenSystemInfo: () => void;
 }) {
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+
   return (
-    <div className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] select-none items-center gap-3 border-t border-white/10 bg-slate-950/70 px-3 backdrop-blur-xl">
+    <div data-taskbar className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] select-none items-center gap-3 border-t border-white/10 bg-slate-950/70 px-3 backdrop-blur-xl">
       {/* 좌측: [전체화면] [{참여자}의 컴퓨터 — {시험명}] */}
       <div className="flex min-w-0 items-center gap-2">
         {scenarios.length > 1 && <ScenarioListButton scenarios={scenarios} />}
@@ -211,6 +217,14 @@ export function Taskbar({
               key={app.id}
               title={label}
               onClick={() => (active ? wm.minimize(app.id) : (wm.open(app.id), wm.focus(app.id)))}
+              onContextMenu={(e) =>
+                openMenu(e, [
+                  { label: active ? "최소화" : "창 보이기", onClick: () => (active ? wm.minimize(app.id) : (wm.open(app.id), wm.focus(app.id))) },
+                  { label: w.maximized ? "이전 크기로" : "최대화", onClick: () => (wm.open(app.id), wm.toggleMaximize(app.id)) },
+                  "separator",
+                  { label: "닫기", danger: true, onClick: () => wm.close(app.id) },
+                ], { dark: true })
+              }
               className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
                 active ? "bg-white/15 text-white" : "text-slate-300 hover:bg-white/10"
               }`}
@@ -225,9 +239,11 @@ export function Taskbar({
         })}
       </div>
 
+      <ContextMenuView menu={menu} onClose={closeMenu} />
+
       <div className="flex shrink-0 items-center gap-3">
         <Clock />
-        <Timer initialSeconds={remainingSeconds} onExpire={onExpire} />
+        <Timer initialSeconds={remainingSeconds} onExpire={onExpire} onWarn={onTimeWarning} />
         {hasNext ? (
           <button
             onClick={onNextScenario}

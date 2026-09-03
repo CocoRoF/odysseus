@@ -50,6 +50,7 @@ ALLOWED_EVENT_TYPES = {
     "net_online",
     "reference_search",
     "reference_open",
+    "exam_leave",
 }
 
 

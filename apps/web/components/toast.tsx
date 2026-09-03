@@ -92,7 +92,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
 
       {/* 토스트 스택 */}
-      <div className="pointer-events-none fixed bottom-5 right-5 z-[100] flex w-full max-w-sm flex-col gap-2">
+      <div className="pointer-events-none fixed bottom-5 right-5 z-[10050] flex w-full max-w-sm flex-col gap-2">
         {toasts.map((t) => {
           const s = KIND_STYLE[t.kind];
           return (
@@ -113,7 +113,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/* 확인 다이얼로그 */}
       {dialog && (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[10100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
           onClick={() => closeDialog(false)}
           onKeyDown={(e) => {
             if (e.key === "Escape") closeDialog(false);

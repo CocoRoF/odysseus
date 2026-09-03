@@ -7,6 +7,7 @@ import { fmtTime } from "@/lib/format";
 import { Markdown } from "@/components/Markdown";
 import { IconCheck, IconCopy, IconSend } from "@/components/icons";
 import { copyText, selectedText } from "@/lib/clipboard";
+import { useToast } from "@/components/toast";
 import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
 
 function CopyButton({ text, tone = "light" }: { text: string; tone?: "light" | "dark" }) {
@@ -61,12 +62,18 @@ export function MessengerApp({
   const [messages, setMessages] = useState<MessengerMessage[] | null>(null);
   const [activeKey, setActiveKey] = useState<string>(characters[0]?.key ?? "");
   const [input, setInput] = useState("");
-  const [typing, setTyping] = useState(false);
+  // 답장 대기는 **대화별**이다 — 전역 플래그로 두면 다른 사람 방으로 옮겨도
+  // "답장 중"이 따라다니고, 그 사이 다른 사람에게 말을 걸 수도 없다.
+  const [typingKeys, setTypingKeys] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState("");
   const [seen, setSeen] = useState<Record<string, number>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const activeKeyRef = useRef(activeKey);
+  activeKeyRef.current = activeKey;
   const base = `/attempts/${attemptId}/scenarios/${scenarioId}`;
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+  const { toast } = useToast();
 
   const load = useCallback(async () => {
     const rows = await api.get<MessengerMessage[]>(`${base}/messenger`);
@@ -86,15 +93,32 @@ export function MessengerApp({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, typing, activeKey]);
+  }, [messages, typingKeys, activeKey]);
 
   const active = characters.find((c) => c.key === activeKey);
+  const typing = typingKeys.has(activeKey);
   const thread = (messages ?? []).filter((m) => m.character_key === activeKey);
 
   const threadText = () =>
     thread
       .map((m) => `[${m.sender === "candidate" ? "나" : active?.name ?? m.character_key}] ${m.content}`)
       .join("\n\n");
+
+  // 창을 열자마자 단축키가 먹도록 대화 영역에 포커스를 준다
+  useEffect(() => {
+    threadRef.current?.focus({ preventScroll: true });
+  }, [activeKey]);
+
+  const selectThread = () => {
+    const el = threadRef.current;
+    if (!el) return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    el.focus();
+  };
 
   const messageMenu = (text: string): MenuEntry[] => {
     const sel = selectedText();
@@ -109,6 +133,7 @@ export function MessengerApp({
   const send = async () => {
     const content = input.trim();
     if (!content || typing || !active || readOnly) return;
+    const target = activeKey; // 응답을 기다리는 동안 대화를 옮겨도 이 방으로 돌아와야 한다
     setInput("");
     setError("");
     // 낙관적 추가
@@ -117,28 +142,55 @@ export function MessengerApp({
       ...(m ?? []),
       {
         id: tempId,
-        character_key: activeKey,
+        character_key: target,
         sender: "candidate",
         content,
         created_at: new Date().toISOString(),
       },
     ]);
-    setTyping(true);
+    setTypingKeys((s) => new Set(s).add(target));
     onActivity?.();
     try {
-      const pair = await api.post<MessengerMessage[]>(`${base}/messenger/${activeKey}`, { content });
+      const pair = await api.post<MessengerMessage[]>(`${base}/messenger/${target}`, { content });
       setMessages((m) => [...(m ?? []).filter((x) => x.id !== tempId), ...pair]);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "전송에 실패했습니다");
       setMessages((m) => (m ?? []).filter((x) => x.id !== tempId));
-      setInput(content);
+      if (target === activeKeyRef.current) setInput(content);
     } finally {
-      setTyping(false);
+      setTypingKeys((s) => {
+        const next = new Set(s);
+        next.delete(target);
+        return next;
+      });
     }
   };
 
   return (
-    <div className="flex h-full min-h-0">
+    <div
+      className="flex h-full min-h-0"
+      onKeyDown={(e) => {
+        // 메신저 창 어디서든 Ctrl+A 는 **지금 보고 있는 대화만** 선택한다.
+        // 페이지 전체가 잡히면 사이드바·작업 표시줄까지 복사돼 쓸 수 없다.
+        // 입력창 안에서는 원래 동작(입력 내용 전체 선택)을 그대로 둔다.
+        const el = e.target as HTMLElement;
+        if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") return;
+        if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+          e.preventDefault();
+          selectThread();
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
+          const picked = selectedText();
+          if (picked) {
+            e.preventDefault();
+            void copyText(picked).then((okCopy) =>
+              toast(okCopy ? "복사했습니다" : "복사에 실패했습니다", okCopy ? "success" : "error"),
+            );
+          }
+        }
+      }}
+    >
       <ContextMenuView menu={menu} onClose={closeMenu} />
       {/* 대화 상대 목록 */}
       <div className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-slate-50/70">
@@ -168,7 +220,11 @@ export function MessengerApp({
                       </span>
                     )}
                   </div>
-                  <p className="truncate text-xs text-slate-400">{last ? last.content : ch.role}</p>
+                  {typingKeys.has(ch.key) ? (
+                    <p className="truncate text-xs font-medium text-sky-600">답장을 기다리는 중…</p>
+                  ) : (
+                    <p className="truncate text-xs text-slate-400">{last ? last.content : ch.role}</p>
+                  )}
                 </div>
               </button>
             );
@@ -188,12 +244,20 @@ export function MessengerApp({
               </div>
             </div>
             <div
-              ref={scrollRef}
-              className="thin-scroll min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/50 p-4"
+              ref={(el) => {
+                scrollRef.current = el;
+                threadRef.current = el;
+              }}
+              data-thread
+              tabIndex={-1}
+              className="thin-scroll min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/50 p-4 outline-none"
               onContextMenu={(e) => {
                 const sel = selectedText();
                 openMenu(e, [
-                  ...(sel ? ([{ label: "선택 영역 복사", onClick: () => copyText(sel) }] as MenuEntry[]) : []),
+                  ...(sel
+                    ? ([{ label: "선택 영역 복사", shortcut: "Ctrl+C", onClick: () => copyText(sel) }] as MenuEntry[])
+                    : []),
+                  { label: "대화 전체 선택", shortcut: "Ctrl+A", onClick: selectThread },
                   { label: "대화 전체 복사", onClick: () => copyText(threadText()) },
                 ]);
               }}

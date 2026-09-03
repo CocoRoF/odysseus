@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { WebPage, WebSearchResponse } from "@/lib/types";
 import { useToast } from "@/components/toast";
-import { copyText } from "@/lib/clipboard";
+import { copyText, selectedText } from "@/lib/clipboard";
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -14,6 +14,7 @@ import {
   IconRefresh,
   IconSearch,
 } from "@/components/icons";
+import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
 import { useWorkspace } from "../workspace";
 
 /**
@@ -56,6 +57,7 @@ export function BrowserApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
   const go = useCallback(
     (next: View) => {
@@ -139,8 +141,31 @@ export function BrowserApp() {
     </form>
   );
 
+  const pageMenu = (e: React.MouseEvent) => {
+    const sel = selectedText();
+    const items: MenuEntry[] = [];
+    if (sel) {
+      items.push({ label: "선택 영역 복사", shortcut: "Ctrl+C", onClick: () => copyText(sel) });
+      items.push({ label: `'${sel.slice(0, 18)}${sel.length > 18 ? "…" : ""}' 검색`, onClick: () => { setQuery(sel); go({ kind: "search", q: sel }); } });
+    }
+    if (view.kind === "page" && page) {
+      items.push({ label: "페이지 내용 복사", onClick: () => copyText(page.text) });
+      items.push({ label: "페이지 주소 복사", onClick: () => copyText(page.url) });
+    }
+    items.push("separator");
+    items.push({ label: "뒤로", disabled: cursor === 0, onClick: () => setCursor((c) => Math.max(0, c - 1)) });
+    items.push({
+      label: "앞으로",
+      disabled: cursor >= history.length - 1,
+      onClick: () => setCursor((c) => Math.min(history.length - 1, c + 1)),
+    });
+    items.push({ label: "처음으로", onClick: () => setCursor(0) });
+    openMenu(e, items);
+  };
+
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-white" onContextMenu={pageMenu}>
+      <ContextMenuView menu={menu} onClose={closeMenu} />
       {/* 크롬 */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-200 bg-slate-100 px-2.5">
         <div className="flex items-center gap-0.5">

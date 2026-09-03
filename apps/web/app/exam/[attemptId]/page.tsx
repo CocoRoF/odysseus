@@ -27,6 +27,7 @@ import { AgentSessionProvider } from "@/components/desktop/agentSession";
 import { TerminalSessionProvider } from "@/components/desktop/terminalSession";
 import { IntroCinematic } from "@/components/desktop/IntroCinematic";
 import { SystemInfoModal } from "@/components/desktop/SystemInfoModal";
+import { ContextMenuView, MenuEntry, useContextMenu } from "@/components/desktop/ContextMenu";
 import { MessengerApp } from "@/components/desktop/apps/MessengerApp";
 import { ViewerApp } from "@/components/desktop/apps/ViewerApp";
 import { IdeApp } from "@/components/desktop/apps/IdeApp";
@@ -212,6 +213,7 @@ export default function ExamDesktopPage() {
   const [reference, setReference] = useState<ReferenceConfig | null>(null);
   const [viewerPath, setViewerPath] = useState<string | null>(null);
   const [systemInfoOpen, setSystemInfoOpen] = useState(false);
+  const { menu: deskMenu, open: openDeskMenu, close: closeDeskMenu } = useContextMenu();
 
   const inProgress = attempt?.status === "in_progress";
   // 순차 진행 — 현재 문제는 서버의 current_ordinal 이 정한다 (임의 이동 불가)
@@ -226,6 +228,52 @@ export default function ExamDesktopPage() {
   const pushEvent = useActivityTracker(attemptId, Boolean(inProgress), scenarioId);
 
   const wm = useWindowManager((type, app) => pushEvent(type, { app }));
+
+  // ── 시험장 이탈 방지 ────────────────────────────────────────
+  // 응시 중에 뒤로 가기를 누르면 시험 화면이 그냥 사라진다. 브라우저 기본
+  // 확인창은 이 환경에서 뜨지 않거나 막히므로, 히스토리를 되밀어 두고 우리
+  // 확인창으로 묻는다. 새로고침·창 닫기는 브라우저 기본 경고로 막는다.
+  const leaveAskedRef = useRef(false);
+  useEffect(() => {
+    if (!inProgress) return;
+    window.history.pushState({ odysseusExam: true }, "");
+    const onPop = () => {
+      window.history.pushState({ odysseusExam: true }, "");
+      if (leaveAskedRef.current) return;
+      leaveAskedRef.current = true;
+      confirm({
+        title: "시험장을 나갈까요?",
+        message: (
+          <>
+            아직 <b>응시 중</b>입니다. 나가도 시간은 계속 흐르고, 지금까지의 작업은 저장되어
+            있습니다. 다시 들어오면 이어서 진행할 수 있습니다.
+          </>
+        ),
+        confirmLabel: "나가기",
+        cancelLabel: "계속 응시",
+        danger: true,
+      })
+        .then((ok) => {
+          if (ok) {
+            pushEvent("exam_leave", { via: "back" });
+            router.replace("/dashboard");
+          }
+        })
+        .finally(() => {
+          leaveAskedRef.current = false;
+        });
+    };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("popstate", onPop);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [inProgress, confirm, router, pushEvent]);
 
   useEffect(() => {
     api
@@ -375,16 +423,45 @@ export default function ExamDesktopPage() {
         className="desktop-wallpaper relative h-screen w-screen overflow-hidden"
         onClick={() => setSelectedIcon(null)}
         onContextMenu={(e) => {
-          // 시험 환경은 OS처럼 동작한다 — 앱이 자체 메뉴를 열지 않은 경우 브라우저 메뉴는 막는다.
-          // 단, 입력 요소에서는 기본 메뉴(붙여넣기 등)를 남긴다.
+          // 시험 환경은 OS처럼 동작한다 — 입력 요소에서는 붙여넣기 등 기본 메뉴를
+          // 남기고, 앱이 자기 메뉴를 열었으면(기본 동작이 이미 막혔으면) 건드리지
+          // 않는다. 바탕화면 빈 곳에서만 데스크톱 메뉴를 연다.
           const el = e.target as HTMLElement;
           const editable =
             el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
-          if (!editable) e.preventDefault();
+          if (editable || e.defaultPrevented) return;
+          const onWallpaper = !el.closest("[data-app], [data-taskbar], [data-desktop-icons]");
+          if (!onWallpaper) {
+            e.preventDefault();
+            return;
+          }
+          const openWindows = (Object.keys(wm.wins) as AppId[]).filter((id) => wm.wins[id].open);
+          openDeskMenu(e, [
+            {
+              label: "모든 창 최소화",
+              disabled: openWindows.every((id) => wm.wins[id].minimized),
+              onClick: () => openWindows.forEach((id) => wm.minimize(id)),
+            },
+            {
+              label: "모든 창 닫기",
+              disabled: openWindows.length === 0,
+              onClick: () => openWindows.forEach((id) => wm.close(id)),
+            },
+            "separator",
+            {
+              label: document.fullscreenElement ? "전체화면 종료" : "전체화면",
+              onClick: () =>
+                document.fullscreenElement
+                  ? document.exitFullscreen().catch(() => undefined)
+                  : document.documentElement.requestFullscreen().catch(() => undefined),
+            },
+            { label: "이 컴퓨터에 관하여", onClick: () => setSystemInfoOpen(true) },
+          ] as MenuEntry[]);
         }}
       >
         {/* 바탕화면 아이콘 — 클릭=선택, 더블클릭/Enter=열기 (Windows 규약) */}
         <div
+          data-desktop-icons
           className="absolute left-4 top-5 z-10 flex select-none flex-col gap-2"
           onClick={(e) => e.stopPropagation()}
         >
@@ -400,6 +477,10 @@ export default function ExamDesktopPage() {
                 onDoubleClick={() => openApp(it.id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") openApp(it.id);
+                }}
+                onContextMenu={(e) => {
+                  setSelectedIcon(it.id);
+                  openDeskMenu(e, [{ label: "열기", onClick: () => openApp(it.id) }]);
                 }}
                 title={`${it.label} — 더블 클릭으로 열기`}
                 className={`group flex w-[92px] flex-col items-center gap-1.5 rounded-xl border px-2 pb-1.5 pt-2.5 transition ${
@@ -531,6 +612,16 @@ export default function ExamDesktopPage() {
           wm={wm}
           remainingSeconds={remainingSeconds}
           onExpire={() => finish(true)}
+          onTimeWarning={(left) =>
+            toast(
+              left >= 600
+                ? `남은 시간 ${Math.round(left / 60)}분입니다.`
+                : left >= 60
+                  ? `남은 시간 ${Math.round(left / 60)}분 — 마무리하고 제출을 준비하세요.`
+                  : "1분 남았습니다. 시간이 다 되면 지금 상태 그대로 자동 제출됩니다.",
+              left <= 300 ? "error" : "info",
+            )
+          }
           onFinish={() => finish(false)}
           onNextScenario={goNextScenario}
           userName={user?.name ?? ""}
@@ -541,6 +632,8 @@ export default function ExamDesktopPage() {
           viewerLabel={viewerPath ? viewerPath.split("/").pop() : null}
           onOpenSystemInfo={() => setSystemInfoOpen(true)}
         />
+
+        <ContextMenuView menu={deskMenu} onClose={closeDeskMenu} />
 
         <SystemInfoModal
           open={systemInfoOpen}

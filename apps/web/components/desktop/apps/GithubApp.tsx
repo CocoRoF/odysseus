@@ -5,7 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import type { GhEntry, GhFile, GhRepo, GhRepoView, GhSearchResult, GhTree } from "@/lib/types";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
-import { copyText } from "@/lib/clipboard";
+import { copyText, selectedText } from "@/lib/clipboard";
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -23,6 +23,7 @@ import {
   IconSearch,
   IconStar,
 } from "@/components/icons";
+import { ContextMenuView, MenuEntry, useContextMenu } from "../ContextMenu";
 import { useTerminalSession } from "../terminalSession";
 import { useWorkspace } from "../workspace";
 
@@ -120,6 +121,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
   const [error, setError] = useState("");
   const [cloning, setCloning] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
   const go = useCallback(
     (next: View) => {
@@ -721,8 +723,31 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
       </div>
     ) : null;
 
+  const pageMenu = (e: React.MouseEvent) => {
+    const sel = selectedText();
+    const items: MenuEntry[] = [];
+    if (sel) items.push({ label: "선택 영역 복사", shortcut: "Ctrl+C", onClick: () => copyText(sel) });
+    if (view.kind === "file" && file)
+      items.push({ label: "파일 내용 복사", onClick: () => copyText(file.content) });
+    if (view.kind === "repo" && repo) {
+      items.push({ label: "저장소 주소 복사", onClick: () => copyText(repo.repo.html_url) });
+      if (!readOnly)
+        items.push({ label: "워크스페이스로 clone", onClick: () => doClone(repo.repo) });
+    }
+    items.push("separator");
+    items.push({ label: "뒤로", disabled: cursor === 0, onClick: () => setCursor((c) => Math.max(0, c - 1)) });
+    items.push({
+      label: "앞으로",
+      disabled: cursor >= history.length - 1,
+      onClick: () => setCursor((c) => Math.min(history.length - 1, c + 1)),
+    });
+    items.push({ label: "처음으로", onClick: () => setCursor(0) });
+    openMenu(e, items, { dark: true });
+  };
+
   return (
-    <div className="flex h-full flex-col bg-[#0d1117]">
+    <div className="flex h-full flex-col bg-[#0d1117]" onContextMenu={pageMenu}>
+      <ContextMenuView menu={menu} onClose={closeMenu} />
       {chrome}
       <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
         {loading && (
