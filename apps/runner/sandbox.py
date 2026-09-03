@@ -1,16 +1,19 @@
 """제한된 서브프로세스 실행.
 
-컨테이너 안에서 root로 돌면 자식 프로세스를 **실행마다 다른 UID**로 강등하고,
-setrlimit으로 CPU/프로세스 수/파일 크기/(선택) 가상 메모리를 제한한다.
+러너 컨테이너 하나를 모든 응시자가 공유하므로, 실행 한 건을 세 겹으로 가둔다:
 
-UID를 실행마다 나누는 이유: 러너 컨테이너 하나를 모든 응시자가 공유하므로,
-같은 UID로 돌리면 동시에 시험 보는 다른 응시자의 작업 폴더를 읽을 수 있다.
-UID가 다르고 작업 폴더가 0700이면 커널이 그 경로를 막아 준다.
+  1. **네임스페이스** — PID/mount/IPC/UTS 를 분리한다. 새 PID 네임스페이스 안에
+     `/proc` 을 다시 마운트하므로 `ps` 에 자기 프로세스만 보이고, `/tmp` 는
+     실행 전용 tmpfs 라 다른 실행과 공유되지 않는다.
+  2. **UID** — 실행마다 다른 UID 로 강등한다. 작업 폴더가 0700 이므로 UID 가
+     다르면 커널이 그 경로를 막아 준다.
+  3. **rlimit** — CPU/프로세스 수/파일 크기/가상 메모리 상한.
 """
 
 import itertools
 import os
 import resource
+import shutil
 import signal
 import subprocess
 import threading
@@ -24,6 +27,31 @@ UID_BASE = 61000
 UID_SPAN = 2000
 _uid_counter = itertools.count()
 _uid_lock = threading.Lock()
+
+
+# 새 네임스페이스 안에서 할 일: 개인 /tmp 를 깔고, 비특권 UID 로 내려가 명령을 실행.
+# 사용자 명령은 인자($3)로 넘어오므로 셸 이스케이프가 끼어들 여지가 없다.
+_BOOTSTRAP = (
+    'mount -t tmpfs -o size=256m,mode=1777,nosuid,nodev tmpfs /tmp 2>/dev/null; '
+    'exec setpriv --reuid="$1" --regid="$2" --clear-groups --no-new-privs '
+    '/bin/bash -c "$3"'
+)
+
+
+def isolation_available() -> bool:
+    """네임스페이스 분리를 쓸 수 있는가 (root + unshare/setpriv 존재)."""
+    if os.getuid() != 0:
+        return False
+    return all(shutil.which(b) for b in ("unshare", "setpriv"))
+
+
+def wrap_isolated(command: str, uid: int, gid: int) -> list[str]:
+    return [
+        "unshare",
+        "--pid", "--mount", "--ipc", "--uts",
+        "--fork", "--mount-proc", "--kill-child",
+        "/bin/bash", "-c", _BOOTSTRAP, "odysseus-sandbox", str(uid), str(gid), command,
+    ]
 
 
 def next_exec_uid() -> tuple[int, int]:
@@ -45,7 +73,7 @@ class ExecResult:
         self.time_ms = time_ms
 
 
-def _make_preexec(cpu_s: int, mem_mb: int | None, nproc: int, uid: int | None, gid: int | None):
+def _make_preexec(cpu_s: int, nproc: int, uid: int | None, gid: int | None):
     def preexec():
         os.setsid()
         # 만드는 파일은 소유자 전용. /tmp 처럼 컨테이너가 공유하는 경로에 무언가를
@@ -55,9 +83,9 @@ def _make_preexec(cpu_s: int, mem_mb: int | None, nproc: int, uid: int | None, g
         resource.setrlimit(resource.RLIMIT_FSIZE, (64 * 1024 * 1024, 64 * 1024 * 1024))
         resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
         resource.setrlimit(resource.RLIMIT_NPROC, (nproc, nproc))
-        if mem_mb:
-            limit = mem_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+        # RLIMIT_AS(가상 메모리)는 쓰지 않는다 — Go 런타임과 JVM 은 시작할 때
+        # 거대한 주소 공간을 **예약**만 하므로, 실제 사용량과 무관하게 죽는다.
+        # 메모리 폭주는 컨테이너 단위 상한(compose mem_limit)과 실행 시간으로 막는다.
         if uid is not None and os.getuid() == 0:
             os.setgroups([])
             os.setgid(gid)
@@ -72,7 +100,6 @@ def execute(
     stdin_data: str = "",
     wall_s: float = 10.0,
     cpu_s: int = 10,
-    mem_mb: int | None = None,
     nproc: int = 256,
     env: dict | None = None,
     uid: int | None = None,
@@ -97,7 +124,7 @@ def execute(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=full_env,
-            preexec_fn=_make_preexec(cpu_s, mem_mb, nproc, uid, gid),
+            preexec_fn=_make_preexec(cpu_s, nproc, uid, gid),
         )
     except OSError as e:
         return ExecResult("error", -1, "", f"spawn failed: {e}", 0)
@@ -107,7 +134,15 @@ def execute(
         elapsed = int((time.monotonic() - start) * 1000)
     except subprocess.TimeoutExpired:
         _kill_group(proc)
-        out, err = proc.communicate()
+        # 파이프를 물고 있는 자손이 남으면 communicate 가 영영 돌아오지 않는다 —
+        # 슬롯을 잃지 않도록 회수 자체에도 상한을 둔다.
+        out = err = b""
+        for _ in range(2):
+            try:
+                out, err = proc.communicate(timeout=5)
+                break
+            except subprocess.TimeoutExpired:
+                proc.kill()
         return ExecResult("timeout", -1, _decode(out), _decode(err, STDERR_LIMIT), int(wall_s * 1000))
 
     stdout = _decode(out)
@@ -134,4 +169,6 @@ def _decode(data: bytes, limit: int = OUTPUT_LIMIT) -> str:
         return ""
     if len(data) > limit:
         data = data[:limit]
-    return data.decode(errors="replace")
+    # NUL 은 걸러야 한다 — Postgres 의 text 는 저장하지 못해서, 바이너리를 출력한
+    # 명령(`cat /bin/ls`, `cat /proc/*/environ`)의 결과 보고가 통째로 실패한다.
+    return data.decode(errors="replace").replace("\x00", "")

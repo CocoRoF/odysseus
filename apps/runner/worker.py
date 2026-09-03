@@ -21,7 +21,7 @@ import uuid
 import redis
 import requests
 
-from sandbox import execute, next_exec_uid
+from sandbox import execute, isolation_available, next_exec_uid, wrap_isolated
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
@@ -35,7 +35,8 @@ MAX_CHANGED_FILES = 60
 MAX_CHANGED_FILE_BYTES = 400 * 1024
 DEFAULT_TIMEOUT_S = 30
 MAX_TIMEOUT_S = 60
-MEM_LIMIT_MB = 512
+# 메모리는 컨테이너 단위(compose mem_limit)로 묶는다 — 아래 limits 표시에 쓴다
+CONTAINER_MEM_MB = int(os.environ.get("RUNNER_MEM_MB", "4096"))
 
 
 def _sha(data: bytes) -> str:
@@ -128,25 +129,34 @@ def run_job(job: dict) -> dict:
     os.makedirs(workdir, mode=0o700)
     try:
         before = materialize(workdir, job.get("files", []), uid, gid)
-        # TMPDIR 도 작업 폴더 안으로 — /tmp 는 컨테이너가 공유하므로 실행 사이에
-        # 남은 파일이 다음 응시자에게 보인다.
-        tmpdir = os.path.join(workdir, ".tmp")
-        os.makedirs(tmpdir, exist_ok=True)
-        _own(tmpdir, uid, gid, 0o700)
+        # 네임스페이스가 되면 /tmp 는 이 실행 전용 tmpfs 다. 안 되면(개발 환경 등)
+        # 공유 /tmp 를 피해 작업 폴더 안 임시 폴더로 떨어뜨린다.
+        isolated = isolation_available()
+        if isolated:
+            argv = wrap_isolated(command, uid, gid)
+            exec_uid = exec_gid = None  # 강등은 네임스페이스 안에서 setpriv 가 한다
+            tmp_env = {}
+        else:
+            argv = ["/bin/bash", "-c", command]
+            exec_uid, exec_gid = uid, gid
+            tmpdir = os.path.join(workdir, ".tmp")
+            os.makedirs(tmpdir, exist_ok=True)
+            _own(tmpdir, uid, gid, 0o700)
+            tmp_env = {"TMPDIR": tmpdir}
         r = execute(
-            ["/bin/bash", "-c", command],
+            argv,
             cwd=workdir,
             wall_s=float(timeout_s),
             cpu_s=timeout_s,
-            mem_mb=MEM_LIMIT_MB,
             nproc=128,
             env={
                 "HOME": workdir,
-                "TMPDIR": tmpdir,
                 "PYTHONDONTWRITEBYTECODE": "1",
+                "GIT_CONFIG_NOSYSTEM": "0",
+                **tmp_env,
             },
-            uid=uid,
-            gid=gid,
+            uid=exec_uid,
+            gid=exec_gid,
         )
         changed = collect_changes(workdir, before)
         status = "done" if r.status in ("ok", "timeout") else "error"
@@ -213,9 +223,39 @@ def handle(raw: str) -> None:
         )
 
 
+ENV_KEY = "odysseus:runner:env"
+
+
+def publish_environment(conn) -> None:
+    """실행 환경 스펙을 조사해 Redis 에 게시.
+
+    응시자에게 보여줄 정보이므로 러너 자신이 조사해야 정확하다. 이미지가 바뀌면
+    러너가 다시 뜨면서 갱신된다.
+    """
+    try:
+        from probe import probe_environment
+
+        spec = probe_environment()
+        spec["isolated"] = isolation_available()
+        spec["limits"] = {
+            "timeout_s": DEFAULT_TIMEOUT_S,
+            "max_timeout_s": MAX_TIMEOUT_S,
+            "memory_mb": CONTAINER_MEM_MB,
+            "max_file_bytes": MAX_CHANGED_FILE_BYTES,
+            "max_changed_files": MAX_CHANGED_FILES,
+            "network": False,
+        }
+        conn.set(ENV_KEY, json.dumps(spec, ensure_ascii=False))
+        langs = len(spec.get("languages", []))
+        print(f"[runner] environment published ({langs} runtimes, isolated={spec['isolated']})", flush=True)
+    except Exception:
+        traceback.print_exc()
+
+
 def main() -> None:
     print(f"[runner] starting, concurrency={CONCURRENCY}", flush=True)
     conn = redis.from_url(REDIS_URL, decode_responses=True)
+    publish_environment(conn)
     slots = threading.Semaphore(CONCURRENCY)
 
     while True:

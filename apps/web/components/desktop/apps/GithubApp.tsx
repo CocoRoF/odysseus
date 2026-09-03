@@ -11,6 +11,7 @@ import {
   IconArrowRight,
   IconBook,
   IconBranch,
+  IconChevronLeft,
   IconChevronRight,
   IconCopy,
   IconDownload,
@@ -36,7 +37,7 @@ import { useWorkspace } from "../workspace";
 
 type View =
   | { kind: "home" }
-  | { kind: "search"; q: string }
+  | { kind: "search"; q: string; page: number }
   | { kind: "repo"; owner: string; name: string; path: string }
   | { kind: "file"; owner: string; name: string; path: string };
 
@@ -130,7 +131,8 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
 
   const address = useMemo(() => {
     if (view.kind === "home") return "github.com";
-    if (view.kind === "search") return `github.com/search?q=${encodeURIComponent(view.q)}`;
+    if (view.kind === "search")
+      return `github.com/search?q=${encodeURIComponent(view.q)}${view.page > 1 ? `&p=${view.page}` : ""}`;
     if (view.kind === "repo")
       return `github.com/${view.owner}/${view.name}${view.path ? `/tree/${view.path}` : ""}`;
     return `github.com/${view.owner}/${view.name}/blob/${view.path}`;
@@ -147,7 +149,8 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
       try {
         if (view.kind === "search") {
           const r = await api.get<GhSearchResult>(
-            `/reference/github/search?q=${encodeURIComponent(view.q)}&attempt_id=${ws.attemptId}&scenario_id=${ws.scenarioId}`,
+            `/reference/github/search?q=${encodeURIComponent(view.q)}&page=${view.page}` +
+              `&attempt_id=${ws.attemptId}&scenario_id=${ws.scenarioId}`,
           );
           if (alive) setResults(r);
         } else if (view.kind === "repo") {
@@ -194,7 +197,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
       go({ kind: "repo", owner: slug[1], name: slug[2], path: "" });
       return;
     }
-    go({ kind: "search", q });
+    go({ kind: "search", q, page: 1 });
   };
 
   const doClone = async (r: GhRepo) => {
@@ -322,7 +325,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
               key={t.label}
               onClick={() => {
                 setQuery(t.q);
-                go({ kind: "search", q: t.q });
+                go({ kind: "search", q: t.q, page: 1 });
               }}
               className="rounded-full border border-[#30363d] bg-[#161b22] px-3 py-1.5 text-[12px] text-[#7d8590] transition hover:border-[#2f81f7] hover:text-[#e6edf3]"
             >
@@ -338,12 +341,37 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
   );
 
   // ── 검색 결과 ──
+  // GitHub 검색 API 는 1,000건(20건 × 10페이지)까지만 돌려준다
+  const PER_PAGE = 20;
+  const API_PAGE_CAP = 10;
+  const totalPages =
+    view.kind === "search" && results
+      ? Math.min(API_PAGE_CAP, Math.max(1, Math.ceil(results.total / PER_PAGE)))
+      : 1;
+  const pageWindow: (number | null)[] = [];
+  if (view.kind === "search" && totalPages > 1) {
+    const cur = view.page;
+    const nums = new Set<number>([1, totalPages, cur, cur - 1, cur + 1]);
+    const sorted = [...nums].filter((n) => n >= 1 && n <= totalPages).sort((a, b) => a - b);
+    sorted.forEach((n, i) => {
+      if (i > 0 && n - sorted[i - 1] > 1) pageWindow.push(null);
+      pageWindow.push(n);
+    });
+  }
+
   const searchView =
     view.kind === "search" ? (
       <div className="mx-auto w-full max-w-4xl px-6 py-5">
-        <p className="border-b border-[#21262d] pb-3 text-[15px] font-semibold text-[#e6edf3]">
-          저장소 결과 {results ? `${results.total.toLocaleString()}건` : ""}
-        </p>
+        <div className="flex items-baseline justify-between gap-3 border-b border-[#21262d] pb-3">
+          <p className="text-[15px] font-semibold text-[#e6edf3]">
+            저장소 결과 {results ? `${results.total.toLocaleString()}건` : ""}
+          </p>
+          {results && totalPages > 1 && (
+            <span className="shrink-0 text-[12px] text-[#7d8590]">
+              {view.page} / {totalPages} 페이지
+            </span>
+          )}
+        </div>
         <ul className="divide-y divide-[#21262d]">
           {(results?.items ?? []).map((r) => (
             <li key={r.full_name} className="py-4">
@@ -401,6 +429,46 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
         {results && results.items.length === 0 && !loading && (
           <p className="py-16 text-center text-sm text-[#7d8590]">일치하는 저장소가 없습니다.</p>
         )}
+
+        {/* 페이지 이동 — GitHub 검색 API 는 최대 10 페이지(1,000건)까지 돌려준다 */}
+        {results && totalPages > 1 && (
+          <nav className="flex items-center justify-center gap-1 py-6">
+            <button
+              disabled={view.page <= 1}
+              onClick={() => go({ kind: "search", q: view.q, page: view.page - 1 })}
+              className="flex h-8 items-center gap-1 rounded-md border border-[#30363d] px-2.5 text-[12.5px] text-[#e6edf3] transition enabled:hover:bg-[#21262d] disabled:opacity-35"
+            >
+              <IconChevronLeft size={13} /> 이전
+            </button>
+            {pageWindow.map((p, i) =>
+              p === null ? (
+                <span key={`gap-${i}`} className="px-1.5 text-[12.5px] text-[#6e7681]">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={p}
+                  onClick={() => go({ kind: "search", q: view.q, page: p })}
+                  aria-current={p === view.page ? "page" : undefined}
+                  className={`h-8 min-w-8 rounded-md border px-2 text-[12.5px] transition ${
+                    p === view.page
+                      ? "border-[#2f81f7] bg-[#2f81f7] font-semibold text-white"
+                      : "border-[#30363d] text-[#e6edf3] hover:bg-[#21262d]"
+                  }`}
+                >
+                  {p}
+                </button>
+              ),
+            )}
+            <button
+              disabled={view.page >= totalPages}
+              onClick={() => go({ kind: "search", q: view.q, page: view.page + 1 })}
+              className="flex h-8 items-center gap-1 rounded-md border border-[#30363d] px-2.5 text-[12.5px] text-[#e6edf3] transition enabled:hover:bg-[#21262d] disabled:opacity-35"
+            >
+              다음 <IconChevronRight size={13} />
+            </button>
+          </nav>
+        )}
       </div>
     ) : null;
 
@@ -417,7 +485,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
           <IconBook size={16} className="text-[#7d8590]" />
           <h2 className="text-[19px] text-[#e6edf3]">
             <button
-              onClick={() => go({ kind: "search", q: repo.repo.owner })}
+              onClick={() => go({ kind: "search", q: repo.repo.owner, page: 1 })}
               className="text-[#2f81f7] hover:underline"
             >
               {repo.repo.owner}
@@ -556,7 +624,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
                 {repo.repo.topics.slice(0, 12).map((t) => (
                   <button
                     key={t}
-                    onClick={() => go({ kind: "search", q: t })}
+                    onClick={() => go({ kind: "search", q: t, page: 1 })}
                     className="rounded-full bg-[#121d2f] px-2 py-0.5 text-[11px] text-[#4493f8] transition hover:bg-[#173054]"
                   >
                     {t}

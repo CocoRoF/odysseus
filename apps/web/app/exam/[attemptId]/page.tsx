@@ -26,6 +26,7 @@ import { WorkspaceProvider } from "@/components/desktop/workspace";
 import { AgentSessionProvider } from "@/components/desktop/agentSession";
 import { TerminalSessionProvider } from "@/components/desktop/terminalSession";
 import { IntroCinematic } from "@/components/desktop/IntroCinematic";
+import { SystemInfoModal } from "@/components/desktop/SystemInfoModal";
 import { MessengerApp } from "@/components/desktop/apps/MessengerApp";
 import { ViewerApp } from "@/components/desktop/apps/ViewerApp";
 import { IdeApp } from "@/components/desktop/apps/IdeApp";
@@ -37,11 +38,32 @@ import { BrowserApp } from "@/components/desktop/apps/BrowserApp";
 
 const ICONS: { id: AppId; label: string; icon: React.ReactNode; tile: string; glow: string }[] = [
   {
+    id: "terminal",
+    label: "터미널",
+    icon: <IconTerminal size={30} />,
+    tile: "from-neutral-700 via-neutral-800 to-black",
+    glow: "group-hover:shadow-[0_0_26px_rgba(163,163,163,0.4)]",
+  },
+  {
+    id: "files",
+    label: "폴더",
+    icon: <IconFolder size={30} />,
+    tile: "from-amber-400 via-amber-500 to-orange-600",
+    glow: "group-hover:shadow-[0_0_26px_rgba(251,191,36,0.55)]",
+  },
+  {
     id: "messenger",
     label: "메신저",
     icon: <IconMessenger size={30} />,
     tile: "from-violet-400 via-violet-500 to-fuchsia-600",
     glow: "group-hover:shadow-[0_0_26px_rgba(167,139,250,0.55)]",
+  },
+  {
+    id: "browser",
+    label: "인터넷",
+    icon: <IconGlobe size={30} />,
+    tile: "from-emerald-400 via-teal-500 to-cyan-600",
+    glow: "group-hover:shadow-[0_0_26px_rgba(45,212,191,0.55)]",
   },
   {
     id: "ide",
@@ -58,32 +80,11 @@ const ICONS: { id: AppId; label: string; icon: React.ReactNode; tile: string; gl
     glow: "group-hover:shadow-[0_0_26px_rgba(56,189,248,0.55)]",
   },
   {
-    id: "files",
-    label: "폴더",
-    icon: <IconFolder size={30} />,
-    tile: "from-amber-400 via-amber-500 to-orange-600",
-    glow: "group-hover:shadow-[0_0_26px_rgba(251,191,36,0.55)]",
-  },
-  {
-    id: "terminal",
-    label: "터미널",
-    icon: <IconTerminal size={30} />,
-    tile: "from-neutral-700 via-neutral-800 to-black",
-    glow: "group-hover:shadow-[0_0_26px_rgba(163,163,163,0.4)]",
-  },
-  {
     id: "github",
     label: "GitHub",
     icon: <IconGithub size={30} />,
     tile: "from-slate-600 via-slate-800 to-slate-950",
     glow: "group-hover:shadow-[0_0_26px_rgba(148,163,184,0.5)]",
-  },
-  {
-    id: "browser",
-    label: "인터넷",
-    icon: <IconGlobe size={30} />,
-    tile: "from-emerald-400 via-teal-500 to-cyan-600",
-    glow: "group-hover:shadow-[0_0_26px_rgba(45,212,191,0.55)]",
   },
 ];
 
@@ -210,6 +211,7 @@ export default function ExamDesktopPage() {
   // 참고 자료 앱(GitHub·인터넷)은 관리자 설정으로 끌 수 있다 — 꺼졌으면 아이콘부터 없앤다
   const [reference, setReference] = useState<ReferenceConfig | null>(null);
   const [viewerPath, setViewerPath] = useState<string | null>(null);
+  const [systemInfoOpen, setSystemInfoOpen] = useState(false);
 
   const inProgress = attempt?.status === "in_progress";
   // 순차 진행 — 현재 문제는 서버의 current_ordinal 이 정한다 (임의 이동 불가)
@@ -546,6 +548,14 @@ export default function ExamDesktopPage() {
             browser: !reference?.web_enabled,
           }}
           viewerLabel={viewerPath ? viewerPath.split("/").pop() : null}
+          onOpenSystemInfo={() => setSystemInfoOpen(true)}
+        />
+
+        <SystemInfoModal
+          open={systemInfoOpen}
+          onClose={() => setSystemInfoOpen(false)}
+          userName={user?.name ?? ""}
+          assessmentTitle={attempt.assessment_title}
         />
 
         {/* 시작 브리핑 — 설정에 따라 시네마틱 인트로 또는 기본 카드 */}

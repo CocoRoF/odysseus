@@ -61,6 +61,10 @@ async def mark_running(execution_id: uuid.UUID, db: AsyncSession = Depends(get_d
     return {"ok": True}
 
 
+def _pg_safe(text: str) -> str:
+    return text.replace("\x00", "") if text else ""
+
+
 @router.post("/executions/{execution_id}/result", dependencies=[Depends(verify_internal)])
 async def report_result(
     execution_id: uuid.UUID, body: InternalRunResultIn, db: AsyncSession = Depends(get_db)
@@ -73,8 +77,10 @@ async def report_result(
 
     execution.status = body.status
     execution.exit_code = body.exit_code
-    execution.stdout = body.stdout[: 4 * 1024 * 1024]
-    execution.stderr = body.stderr[: 64 * 1024]
+    # NUL 은 Postgres text 가 저장하지 못한다 — 여기서 걸러야 바이너리를 출력한
+    # 명령 때문에 결과 보고 전체가 실패하고 실행이 영영 '실행 중'으로 남지 않는다.
+    execution.stdout = _pg_safe(body.stdout)[: 4 * 1024 * 1024]
+    execution.stderr = _pg_safe(body.stderr)[: 64 * 1024]
     execution.time_ms = body.time_ms
     execution.finished_at = utcnow()
 
@@ -91,7 +97,7 @@ async def report_result(
                     if ok:
                         applied.append({"path": path, "action": "deleted"})
                 else:
-                    content = str(change.get("content", ""))
+                    content = _pg_safe(str(change.get("content", "")))
                     _row, created = await ws.save_file(
                         db,
                         execution.attempt_id,

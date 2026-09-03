@@ -73,14 +73,21 @@ services:
       API_BASE_URL: http://api:8000
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-odysseus-internal-change-me}
       RUNNER_CONCURRENCY: ${RUNNER_CONCURRENCY:-2}
+      RUNNER_MEM_MB: ${RUNNER_MEM_MB:-4096}
+    # 메모리는 여기서 묶는다 — 실행별 RLIMIT_AS 는 Go/JVM 을 시작조차 못 하게 한다
+    mem_limit: ${RUNNER_MEM_MB:-4096}m
     pids_limit: 1024
-    # 응시자 코드가 커널을 건드리지 못하게 — 새 권한 획득 금지, 능력 최소화
+    # 실행 한 건을 자기 PID/mount/IPC 네임스페이스에 가둔다 — `ps` 에 남의 프로세스가
+    # 보이지 않고 /tmp 도 실행 전용 tmpfs 가 된다. 네임스페이스 생성과 mount 에
+    # SYS_ADMIN 이 필요하고, 기본 AppArmor 프로필이 mount 전파 변경을 막으므로 푼다.
+    # 응시자 코드 자체는 그 안에서 비특권 UID 로 강등되어 능력을 갖지 않는다.
     security_opt:
-      - no-new-privileges:true
+      - apparmor=unconfined
     cap_drop:
       - ALL
     cap_add:
-      - SETUID   # 실행마다 다른 UID 로 강등
+      - SYS_ADMIN     # 네임스페이스 분리 + 개인 /tmp 마운트
+      - SETUID        # 실행마다 다른 UID 로 강등
       - SETGID
       - CHOWN         # 작업 폴더 소유자를 그 UID 로
       - DAC_OVERRIDE  # 워커(root)가 0600 산출물을 회수

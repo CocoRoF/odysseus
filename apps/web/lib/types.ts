@@ -473,3 +473,30 @@ export interface ReferenceSettings {
   github_token_hint: string | null;
   has_search_api_key: boolean;
 }
+
+export interface RuntimeEntry {
+  name: string;
+  version: string;
+  command: string;
+}
+
+export interface SystemInfo {
+  os: string;
+  kernel: string;
+  arch: string;
+  cpu_count: number | null;
+  memory_total_mb: number | null;
+  languages: RuntimeEntry[];
+  shells: RuntimeEntry[];
+  tools: RuntimeEntry[];
+  python_packages: { name: string; version: string }[];
+  isolated: boolean;
+  limits: {
+    timeout_s: number;
+    max_timeout_s: number;
+    memory_mb: number;
+    max_file_bytes: number;
+    max_changed_files: number;
+    network: boolean;
+  };
+}

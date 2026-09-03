@@ -22,14 +22,15 @@ import {
 import type { AttemptScenario } from "@/lib/types";
 import type { AppId, WindowManager } from "./wm";
 
+// 바탕화면 아이콘과 같은 순서 — 두 곳이 어긋나면 찾는 위치가 달라진다
 const APPS: { id: AppId; label: string; icon: React.ReactNode }[] = [
+  { id: "terminal", label: "터미널", icon: <IconTerminal size={17} /> },
+  { id: "files", label: "폴더", icon: <IconFolder size={17} /> },
   { id: "messenger", label: "메신저", icon: <IconMessenger size={17} /> },
+  { id: "browser", label: "인터넷", icon: <IconGlobe size={17} /> },
   { id: "ide", label: "IDE", icon: <IconIde size={17} /> },
   { id: "agent", label: "AI 에이전트", icon: <IconAgent size={17} /> },
-  { id: "files", label: "폴더", icon: <IconFolder size={17} /> },
-  { id: "terminal", label: "터미널", icon: <IconTerminal size={17} /> },
   { id: "github", label: "GitHub", icon: <IconGithub size={17} /> },
-  { id: "browser", label: "인터넷", icon: <IconGlobe size={17} /> },
 ];
 
 function Clock() {
@@ -163,6 +164,7 @@ export function Taskbar({
   agentDisabled,
   referenceDisabled,
   viewerLabel,
+  onOpenSystemInfo,
 }: {
   wm: WindowManager;
   remainingSeconds: number;
@@ -178,6 +180,7 @@ export function Taskbar({
   /** 시험 설정에서 꺼진 참고 자료 앱 — 작업 표시줄에서도 감춘다 */
   referenceDisabled: Partial<Record<AppId, boolean>>;
   viewerLabel?: string | null;
+  onOpenSystemInfo: () => void;
 }) {
   return (
     <div className="absolute inset-x-0 bottom-0 z-[9000] flex h-[58px] select-none items-center gap-3 border-t border-white/10 bg-slate-950/70 px-3 backdrop-blur-xl">
@@ -185,14 +188,18 @@ export function Taskbar({
       <div className="flex min-w-0 items-center gap-2">
         {scenarios.length > 1 && <ScenarioListButton scenarios={scenarios} />}
         <FullscreenButton />
-        <div className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+        <button
+          onClick={onOpenSystemInfo}
+          title="이 컴퓨터에 관하여"
+          className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 transition hover:border-white/25 hover:bg-white/10"
+        >
           <IconMonitor size={14} className="shrink-0 text-sky-400" />
           <span className="truncate text-xs font-medium text-slate-200">
             {userName ? `${userName}의 컴퓨터` : "내 컴퓨터"}
             <span className="mx-1.5 text-slate-500">—</span>
             <span className="text-slate-400">{assessmentTitle}</span>
           </span>
-        </div>
+        </button>
       </div>
 
       <div className="mx-auto flex items-center gap-1.5">

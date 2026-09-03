@@ -133,6 +133,30 @@ async def _log(
     await db.commit()
 
 
+# ── 실행 환경 스펙 ([컴퓨터 정보] 화면) ─────────────────────────
+
+RUNNER_ENV_KEY = "odysseus:runner:env"
+
+
+@router.get("/reference/system")
+async def system_info(_: User = Depends(get_current_user)):
+    """워크스테이션 사양 — 러너가 뜰 때 스스로 조사해 Redis 에 올려 둔 것을 읽는다.
+
+    설치 목록을 여기에 적어 두면 이미지와 어긋난다. 실제로 조사한 값만 보여준다.
+    """
+    from ..runqueue import get_redis
+
+    try:
+        raw = await get_redis().get(RUNNER_ENV_KEY)
+    except Exception:
+        raw = None
+    if not raw:
+        raise HTTPException(503, "실행 환경 정보를 아직 수집하지 못했습니다")
+    import json as _json
+
+    return _json.loads(raw)
+
+
 # ── 설정 조회 (응시자도 필요) ────────────────────────────────────
 
 
