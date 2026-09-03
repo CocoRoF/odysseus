@@ -40,10 +40,14 @@ check(
 st2 = manager.submit_code(st["session_id"], "goodcode", wait_s=15)
 check("token captured", st2["state"] == "success" and (st2["token"] or "").startswith("sk-ant-oat01-"), str(st2))
 check("공백 없는 출력에서도 성공 판정", st2["state"] == "success", str(st2))
+# 회귀: 코드와 Enter 를 한 번에 쓰면 ink 가 paste 로 보고 Enter 를 놓쳐 제출 자체가
+# 안 된다. 가짜 CLI 도 그렇게 동작하므로, 이 검사가 통과한다는 것은 Enter 를 분리해
+# 보냈다는 뜻이다 (xgen-workflow 가 실측으로 잡아 둔 함정).
+check("긴 코드도 제출된다 (Enter 분리 전송)", st2["token"] is not None, str(st2)[:120])
 
 # 2) 실패 경로 (잘못된 코드로 프로세스가 끝나는 경우)
 st = manager.start(binary_override=BIN, wait_s=10)
-st2 = manager.submit_code(st["session_id"], "badcode", wait_s=15)
+st2 = manager.submit_code(st["session_id"], "badcode", wait_s=20)
 check("bad code -> error state", st2["state"] == "error", str(st2))
 
 # 3) 중복 제출 거부
@@ -68,17 +72,18 @@ os.environ["FAKE_CLAUDE_MODE"] = "retry"
 try:
     st = manager.start(binary_override=BIN, wait_s=10)
     sid = st["session_id"]
-    bad = manager.submit_code(sid, "wrong-code", wait_s=12)
-    check("틀린 코드는 매달리지 않고 사유를 알려 준다", bool(bad.get("error")), str(bad))
-    check("다시 입력할 수 있다", bad.get("can_retry") is True, str(bad))
-    final = manager.submit_code(sid, "goodcode", wait_s=15)
-    check(
-        "재시도로 성공한다",
-        final["state"] == "success" and (final["token"] or "").startswith("sk-ant-oat01-"),
-        str(final),
-    )
+    bad = manager.submit_code(sid, "wrong-code", wait_s=20)
+    check("틀린 코드는 매달리지 않고 사유를 알려 준다",
+          bad["state"] == "error" and bool(bad.get("error")), str(bad))
+    check("사유가 '코드가 올바르지 않다' 로 특정된다", "코드" in (bad.get("error") or ""), str(bad.get("error")))
 finally:
     os.environ.pop("FAKE_CLAUDE_MODE", None)
+
+# 6) 실제 인증 코드 길이(100자+)에서도 제출이 성립하는가 — 짧은 코드는 우연히 됐다
+st = manager.start(binary_override=BIN, wait_s=10)
+long_bad = "X" * 120
+st2 = manager.submit_code(st["session_id"], long_bad, wait_s=20)
+check("100자 넘는 코드도 CLI 에 닿는다", st2["state"] == "error", str(st2)[:140])
 
 print(f"\n=== {ok} passed, {fail} failed ===")
 exit(1 if fail else 0)

@@ -606,12 +606,12 @@ function ProviderModal({
 
 interface ClaudeLoginState {
   session_id: string;
-  state: "starting" | "awaiting_code" | "success" | "error";
+  state: "starting" | "awaiting_code" | "verifying" | "success" | "error";
   url: string | null;
   token: string | null;
   error: string | null;
-  /** 코드가 거절돼 다시 붙여넣을 수 있는 상태 */
-  can_retry?: boolean;
+  /** 실패했을 때 CLI 의 실제 출력 (토큰은 가려져 있다) */
+  diagnostic?: string | null;
 }
 
 function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
@@ -619,6 +619,7 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
   const [session, setSession] = useState<ClaudeLoginState | null>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [diagnostic, setDiagnostic] = useState("");
   const sessionRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -649,20 +650,12 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
     if (st.state === "error") {
       stopPoll();
       setError(st.error || "로그인에 실패했습니다");
+      setDiagnostic(st.diagnostic || "");
       setPhase("error");
       return true;
     }
-    if (st.state === "awaiting_code" && st.url) {
-      // 코드가 거절되면 CLI 가 다시 물어본다 — 사유를 보여주고 재입력을 받는다
-      // (예전엔 이 경우를 못 잡아 화면이 '확인 중'에서 멈췄다)
-      if (st.error) {
-        stopPoll();
-        setError(st.error);
-        setCode("");
-      }
-      setPhase("awaiting");
-      return Boolean(st.error);
-    }
+    if (st.state === "awaiting_code" && st.url) setPhase("awaiting");
+    if (st.state === "verifying") setPhase("verifying");
     return false;
   };
 
@@ -690,6 +683,7 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
   const start = async () => {
     setPhase("starting");
     setError("");
+    setDiagnostic("");
     setCode("");
     try {
       const st = await api.post<ClaudeLoginState>("/admin/settings/ai/claude-login");
@@ -710,7 +704,7 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
         `/admin/settings/ai/claude-login/${session.session_id}/code`,
         { code: code.trim() },
       );
-      if (!applyState(st)) pollUntilSettled(session.session_id, 60_000);
+      if (!applyState(st)) pollUntilSettled(session.session_id, 150_000);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "코드 제출 실패");
       setPhase("error");
@@ -760,7 +754,7 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
               disabled={phase === "verifying"}
             />
             <Button className="shrink-0 whitespace-nowrap" onClick={submitCode} disabled={!code.trim() || phase === "verifying"}>
-              {phase === "verifying" ? "확인 중..." : "코드 제출"}
+              {phase === "verifying" ? "확인 중…" : "코드 제출"}
             </Button>
           </div>
         </div>
@@ -772,7 +766,17 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
         </p>
       )}
       {phase === "error" && error && (
-        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
+        <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+          <p>{error}</p>
+          {diagnostic && (
+            <details className="mt-1.5">
+              <summary className="cursor-pointer text-red-500/80">CLI 출력 보기</summary>
+              <pre className="dark-scroll mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-white/70 p-2 font-mono text-[10.5px] leading-relaxed text-slate-600">
+                {diagnostic}
+              </pre>
+            </details>
+          )}
+        </div>
       )}
     </div>
   );
