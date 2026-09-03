@@ -3,6 +3,7 @@
 #
 #   sudo ./scripts/deploy.sh            # 전체
 #   sudo ./scripts/deploy.sh api web    # 일부 서비스만
+#   sudo ./scripts/deploy.sh --yes      # 확인 없이 (자동화용)
 #
 # 순서: 상태 스냅샷 → DB 백업 → 이미지 빌드 → 기동 → 헬스체크 → 보존 검증.
 # 보존 검증이 실패하면 백업 파일 위치와 복원 방법을 알려 준다.
@@ -13,7 +14,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SERVICES=("$@")
+ASSUME_YES=0
+SERVICES=()
+for arg in "$@"; do
+  case "${arg}" in
+    -y|--yes) ASSUME_YES=1 ;;
+    *) SERVICES+=("${arg}") ;;
+  esac
+done
 STAMP="$(date +%Y%m%d-%H%M%S)"
 SNAP="/tmp/odysseus-snapshot-${STAMP}.json"
 
@@ -43,8 +51,12 @@ PY
     say "주의: 진행 중인 응시 ${IN_PROGRESS}건, 실행 중인 명령 ${RUNNING}건"
     echo "  응시 기록과 파일은 보존되지만, 지금 돌고 있는 명령은 끊깁니다."
     echo "  (응시자는 다시 실행하면 됩니다.)"
-    read -rp "  계속할까요? [y/N] " GO
-    [[ "${GO}" == "y" || "${GO}" == "Y" ]] || { echo "취소했습니다."; exit 1; }
+    if [[ "${ASSUME_YES}" == "1" ]]; then
+      echo "  (--yes) 계속합니다."
+    else
+      read -rp "  계속할까요? [y/N] " GO
+      [[ "${GO}" == "y" || "${GO}" == "Y" ]] || { echo "취소했습니다."; exit 1; }
+    fi
   fi
 
   say "배포 전 상태 기록"
@@ -61,15 +73,15 @@ fi
 
 # ── 1. 빌드 & 기동 (볼륨은 건드리지 않는다) ────────────────────
 say "이미지 빌드"
-docker compose build "${SERVICES[@]}"
+docker compose build ${SERVICES[@]+"${SERVICES[@]}"}
 
 say "서비스 기동"
-docker compose up -d "${SERVICES[@]}"
+docker compose up -d ${SERVICES[@]+"${SERVICES[@]}"}
 
 # ── 2. 헬스체크 ────────────────────────────────────────────────
 say "기동 대기"
 for i in $(seq 1 60); do
-  if curl -fsS -o /dev/null "http://localhost:8100/health" 2>/dev/null; then
+  if curl -fsS -o /dev/null "http://localhost:8100/healthz" 2>/dev/null; then
     echo "  api 준비됨 (${i}초)"
     break
   fi
