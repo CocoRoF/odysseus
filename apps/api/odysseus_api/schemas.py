@@ -232,6 +232,8 @@ class AttemptOut(BaseModel):
     submitted_at: datetime | None
     agent_max_turns: int
     current_ordinal: int = 0
+    # 시네마틱 인트로(게이미피케이션) 사용 여부 — 플랫폼 전역 설정
+    gamified_intro: bool = False
     scenarios: list[AttemptScenarioOut]
 
 

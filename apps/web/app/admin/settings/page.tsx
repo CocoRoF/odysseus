@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
+  UiSettings,
   AiModelInfo,
   AiProviderMeta,
   AiProviderRow,
@@ -285,6 +286,8 @@ export default function SettingsPage() {
         API 키는 서버에만 저장되며 화면에는 마지막 4자리만 표시됩니다. 시험 편집 화면에서 NPC/에이전트
         공급자를 따로 지정할 수 있습니다 (미지정 시 기본 채팅 공급자 사용).
       </p>
+
+      <ExamExperienceCard />
 
       {editing && meta && (
         <ProviderModal
@@ -758,5 +761,62 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
         <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
       )}
     </div>
+  );
+}
+
+
+// ── 응시 환경 (게이미피케이션) ────────────────────────────────
+
+function ExamExperienceCard() {
+  const [ui, setUi] = useState<UiSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    api.get<UiSettings>("/admin/settings/ui").then(setUi).catch(() => undefined);
+  }, []);
+
+  const update = async (next: UiSettings) => {
+    setBusy(true);
+    const prev = ui;
+    setUi(next);
+    try {
+      setUi(await api.put<UiSettings>("/admin/settings/ui", next));
+      toast("응시 환경 설정을 저장했습니다", "success");
+    } catch (e) {
+      setUi(prev);
+      toast(e instanceof ApiError ? e.message : "저장 실패", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="mt-8 p-6">
+      <h2 className="font-bold">응시 환경</h2>
+      <p className="mt-1 text-sm text-slate-500">응시자가 보는 시험 화면의 연출을 조정합니다.</p>
+
+      <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-slate-300">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={Boolean(ui?.gamified_intro)}
+          disabled={!ui || busy}
+          onChange={(e) => ui && update({ ...ui, gamified_intro: e.target.checked })}
+        />
+        <span className="min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-800">시네마틱 인트로</span>
+            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+              게이미피케이션
+            </span>
+          </span>
+          <span className="mt-1 block text-xs text-slate-500">
+            문제를 시작할 때 검은 화면에서 도입부를 한 문단씩 타이핑해 보여주고, 낭독이 끝나면 시작 버튼이
+            나타납니다. 끄면 지금처럼 카드 형태로 한 번에 보여줍니다. (기본: 꺼짐)
+          </span>
+        </span>
+      </label>
+    </Card>
   );
 }

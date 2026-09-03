@@ -15,6 +15,7 @@ import { Window, APP_META } from "@/components/desktop/Window";
 import { Taskbar } from "@/components/desktop/Taskbar";
 import { WorkspaceProvider } from "@/components/desktop/workspace";
 import { AgentSessionProvider } from "@/components/desktop/agentSession";
+import { IntroCinematic } from "@/components/desktop/IntroCinematic";
 import { MessengerApp } from "@/components/desktop/apps/MessengerApp";
 import { ViewerApp } from "@/components/desktop/apps/ViewerApp";
 import { IdeApp } from "@/components/desktop/apps/IdeApp";
@@ -206,6 +207,28 @@ export default function ExamDesktopPage() {
     if (!attempt) return 0;
     return Math.max(0, Math.round((new Date(attempt.deadline_at).getTime() - Date.now()) / 1000));
   }, [attempt]);
+
+  /** 브리핑/인트로를 닫고 업무 시작 — 메신저부터 열어 준다 */
+  const startWork = useCallback(() => {
+    if (!attempt || !scenario) return;
+    localStorage.setItem(`odysseus:briefing:${attempt.id}:${scenario.scenario_id}`, "1");
+    setShowBriefing(false);
+    setMessengerOpened(true);
+    wm.open("messenger");
+    wm.focus("messenger");
+  }, [attempt, scenario, wm]);
+
+  const introNotes = useMemo(
+    () => [
+      "과제는 명시적으로 제시되지 않습니다. 주어진 환경에서 파악해야 합니다.",
+      "워크스페이스에 만들어지는 파일은 모두 산출물이 되고, 그것을 바탕으로 채점됩니다.",
+      ...(attempt && attempt.scenarios.length > 1
+        ? ["문제는 순서대로 진행합니다. 제출하면 이전 문제로 돌아갈 수 없습니다."]
+        : []),
+      "모든 활동은 평가 목적으로 기록됩니다.",
+    ],
+    [attempt],
+  );
 
   const goNextScenario = useCallback(async () => {
     if (!attempt || !scenario) return;
@@ -441,55 +464,58 @@ export default function ExamDesktopPage() {
           viewerLabel={viewerPath ? viewerPath.split("/").pop() : null}
         />
 
-        {/* 시작 브리핑 */}
-        {showBriefing && (
-          <div className="absolute inset-0 z-[9500] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-            <div className="window-shadow flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-white">
-              <div className="shrink-0 px-7 pb-4 pt-7">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold uppercase tracking-widest text-sky-500">Odysseus</p>
-                  {attempt.scenarios.length > 1 && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-                      문제 {attempt.current_ordinal + 1} / {attempt.scenarios.length}
-                    </span>
-                  )}
+        {/* 시작 브리핑 — 설정에 따라 시네마틱 인트로 또는 기본 카드 */}
+        {showBriefing &&
+          (attempt.gamified_intro ? (
+            <IntroCinematic
+              title={attempt.assessment_title}
+              chapter={
+                attempt.scenarios.length > 1
+                  ? `문제 ${attempt.current_ordinal + 1} / ${attempt.scenarios.length}`
+                  : null
+              }
+              briefing={scenario.briefing_md || "출근했습니다. 메신저에 새 메시지가 와 있습니다."}
+              notes={introNotes}
+              onStart={startWork}
+            />
+          ) : (
+            <div className="absolute inset-0 z-[9500] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+              <div className="window-shadow flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-white">
+                <div className="shrink-0 px-7 pb-4 pt-7">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-bold uppercase tracking-widest text-sky-500">Odysseus</p>
+                    {attempt.scenarios.length > 1 && (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                        문제 {attempt.current_ordinal + 1} / {attempt.scenarios.length}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="mt-1 text-xl font-bold">{attempt.assessment_title}</h2>
                 </div>
-                <h2 className="mt-1 text-xl font-bold">{attempt.assessment_title}</h2>
-              </div>
-              <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-7">
-                <div className="rounded-xl bg-slate-50 p-5">
-                  {scenario.briefing_md ? (
-                    <Markdown>{scenario.briefing_md}</Markdown>
-                  ) : (
-                    <p className="text-sm text-slate-600">
-                      출근했습니다. 메신저에 새 메시지가 와 있습니다.
-                    </p>
-                  )}
+                <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-7">
+                  <div className="rounded-xl bg-slate-50 p-5">
+                    {scenario.briefing_md ? (
+                      <Markdown>{scenario.briefing_md}</Markdown>
+                    ) : (
+                      <p className="text-sm text-slate-600">
+                        출근했습니다. 메신저에 새 메시지가 와 있습니다.
+                      </p>
+                    )}
+                  </div>
+                  <ul className="mt-4 space-y-1 pb-2 text-xs text-slate-500">
+                    {introNotes.map((n, i) => (
+                      <li key={i}>· {n}</li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="mt-4 space-y-1 pb-2 text-xs text-slate-500">
-                  <li>· 과제는 명시적으로 제시되지 않습니다. 주어진 환경에서 파악해야 합니다.</li>
-                  <li>· 워크스페이스에 만들어지는 파일은 모두 산출물이 되고, 그것을 바탕으로 채점됩니다.</li>
-                  {attempt.scenarios.length > 1 && (
-                    <li>· 문제는 순서대로 진행합니다. 제출하면 이전 문제로 돌아갈 수 없습니다.</li>
-                  )}
-                  <li>· 모든 활동은 평가 목적으로 기록됩니다.</li>
-                </ul>
-              </div>
-              <div className="shrink-0 px-7 pb-7 pt-4">
-                <Button
-                  className="w-full"
-                  onClick={() => {
-                    localStorage.setItem(`odysseus:briefing:${attempt.id}:${scenario.scenario_id}`, "1");
-                    setShowBriefing(false);
-                    openApp("messenger");
-                  }}
-                >
-                  업무 시작하기
-                </Button>
+                <div className="shrink-0 px-7 pb-7 pt-4">
+                  <Button className="w-full" onClick={startWork}>
+                    업무 시작하기
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          ))}
       </div>
       </AgentSessionProvider>
     </WorkspaceProvider>

@@ -223,6 +223,39 @@ async def discover(body: AiTestIn, db: AsyncSession = Depends(get_db)):
 # 채널(CLAUDE_CODE_OAUTH_TOKEN)로 흐른다.
 
 
+# ── 응시 환경(UI) 설정 ───────────────────────────────────────────
+#
+# 플랫폼 전역 설정. 지금은 시네마틱 인트로(게이미피케이션) 하나뿐이며 기본은 꺼짐.
+
+UI_SETTING_KEY = "ui"
+UI_DEFAULTS: dict = {"gamified_intro": False}
+
+
+class UiSettingsIn(BaseModel):
+    gamified_intro: bool = False
+
+
+async def get_ui_settings(db: AsyncSession) -> dict:
+    row = await db.get(AppSetting, UI_SETTING_KEY)
+    return {**UI_DEFAULTS, **(row.value if row else {})}
+
+
+@router.get("/ui")
+async def read_ui_settings(db: AsyncSession = Depends(get_db)):
+    return await get_ui_settings(db)
+
+
+@router.put("/ui")
+async def write_ui_settings(body: UiSettingsIn, db: AsyncSession = Depends(get_db)):
+    row = await db.get(AppSetting, UI_SETTING_KEY)
+    if row:
+        row.value = body.model_dump()
+    else:
+        db.add(AppSetting(key=UI_SETTING_KEY, value=body.model_dump()))
+    await db.commit()
+    return await get_ui_settings(db)
+
+
 class ClaudeLoginCodeIn(BaseModel):
     code: str = Field(min_length=4, max_length=4000)
 

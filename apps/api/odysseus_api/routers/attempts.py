@@ -142,7 +142,10 @@ def _scenario_status(attempt: Attempt, ordinal: int) -> str:
 
 
 async def _attempt_out(attempt: Attempt, db: AsyncSession) -> AttemptOut:
+    from .settings import get_ui_settings
+
     assessment = await db.get(Assessment, attempt.assessment_id)
+    ui = await get_ui_settings(db)
     links = (
         await db.execute(
             select(AssessmentScenario)
@@ -185,6 +188,7 @@ async def _attempt_out(attempt: Attempt, db: AsyncSession) -> AttemptOut:
         submitted_at=attempt.submitted_at,
         agent_max_turns=assessment.agent_max_turns,
         current_ordinal=attempt.current_ordinal,
+        gamified_intro=bool(ui.get("gamified_intro")),
         scenarios=scenarios,
     )
 

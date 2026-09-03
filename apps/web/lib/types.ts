@@ -173,6 +173,8 @@ export interface Attempt {
   submitted_at: string | null;
   agent_max_turns: number;
   current_ordinal: number;
+  /** 시네마틱 인트로(게이미피케이션) 사용 여부 */
+  gamified_intro: boolean;
   scenarios: AttemptScenario[];
 }
 
@@ -361,6 +363,10 @@ export interface AiProviderRow {
   key_hint: string | null;
   supports_host_tools: boolean;
   created_at: string;
+}
+
+export interface UiSettings {
+  gamified_intro: boolean;
 }
 
 export interface AiModelInfo {
