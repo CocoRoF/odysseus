@@ -20,7 +20,12 @@ export function Shell({ user, children }: { user: User; children: React.ReactNod
         ]
       : []),
     { href: "/review", label: "응시 리뷰" },
-    ...(user.role === "admin" ? [{ href: "/admin/settings", label: "설정" }] : []),
+    ...(user.role === "admin"
+      ? [
+          { href: "/admin/resources", label: "자원 관리" },
+          { href: "/admin/settings", label: "설정" },
+        ]
+      : []),
   ];
 
   return (

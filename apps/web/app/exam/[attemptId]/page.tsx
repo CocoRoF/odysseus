@@ -534,11 +534,7 @@ export default function ExamDesktopPage() {
           onFinish={() => finish(false)}
           onNextScenario={goNextScenario}
           userName={user?.name ?? ""}
-          assessmentTitle={
-            attempt.scenarios.length > 1
-              ? `${attempt.assessment_title} · ${attempt.current_ordinal + 1}. ${scenario.title}`
-              : attempt.assessment_title
-          }
+          attemptId={attemptId}
           scenarios={attempt.scenarios}
           hasNext={hasNext}
           messengerBadge={!messengerOpened}
@@ -555,7 +551,6 @@ export default function ExamDesktopPage() {
           open={systemInfoOpen}
           onClose={() => setSystemInfoOpen(false)}
           userName={user?.name ?? ""}
-          assessmentTitle={attempt.assessment_title}
         />
 
         {/* 시작 브리핑 — 설정에 따라 시네마틱 인트로 또는 기본 카드 */}

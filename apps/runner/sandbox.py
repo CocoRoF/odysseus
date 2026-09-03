@@ -104,6 +104,7 @@ def execute(
     env: dict | None = None,
     uid: int | None = None,
     gid: int | None = None,
+    on_start=None,
 ) -> ExecResult:
     import time
 
@@ -129,11 +130,14 @@ def execute(
     except OSError as e:
         return ExecResult("error", -1, "", f"spawn failed: {e}", 0)
 
+    if on_start:
+        on_start(proc)  # 샘플러가 이 트리의 자원을 재고, 종료 요청을 집행한다
+
     try:
         out, err = proc.communicate(stdin_data.encode(), timeout=wall_s)
         elapsed = int((time.monotonic() - start) * 1000)
     except subprocess.TimeoutExpired:
-        _kill_group(proc)
+        kill_tree(proc)
         # 파이프를 물고 있는 자손이 남으면 communicate 가 영영 돌아오지 않는다 —
         # 슬롯을 잃지 않도록 회수 자체에도 상한을 둔다.
         out = err = b""
@@ -154,14 +158,27 @@ def execute(
     return ExecResult("ok", proc.returncode, stdout, stderr, elapsed)
 
 
-def _kill_group(proc: subprocess.Popen) -> None:
+def kill_tree(proc: subprocess.Popen) -> None:
+    """실행을 확실히 끝낸다 — 프로세스 그룹과 자손 트리를 모두 친다.
+
+    그룹만으로는 부족하다: `unshare --fork` 가 만든 자식은 새 PID 네임스페이스의
+    init 이고, 부모가 SIGKILL 로 즉사하면 --kill-child 를 돌릴 틈이 없다.
+    """
+    from resources import descendants
+
     try:
         os.killpg(proc.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    for pid in descendants(proc.pid):
         try:
-            proc.kill()
-        except ProcessLookupError:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
             pass
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        pass
 
 
 def _decode(data: bytes, limit: int = OUTPUT_LIMIT) -> str:

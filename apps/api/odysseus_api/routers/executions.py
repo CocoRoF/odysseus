@@ -54,7 +54,15 @@ async def run_command(
     await db.refresh(execution)
 
     rows = await ws.list_files(db, attempt_id, scenario_id)
-    await enqueue_run(str(execution.id), command, ws.files_payload(rows), settings.run_timeout_s)
+    await enqueue_run(
+        str(execution.id),
+        command,
+        ws.files_payload(rows),
+        settings.run_timeout_s,
+        attempt_id=str(execution.attempt_id),
+        scenario_id=str(execution.scenario_id),
+        source=execution.source,
+    )
     return execution
 
 

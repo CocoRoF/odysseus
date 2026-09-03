@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import threading
 import time
 import traceback
@@ -21,7 +22,14 @@ import uuid
 import redis
 import requests
 
-from sandbox import execute, isolation_available, next_exec_uid, wrap_isolated
+from resources import (
+    CpuMeter,
+    container_cpu_usec,
+    container_memory,
+    ticks_to_seconds,
+    tree_usage,
+)
+from sandbox import execute, isolation_available, kill_tree, next_exec_uid, wrap_isolated
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
@@ -118,7 +126,7 @@ def collect_changes(workdir: str, before: dict[str, str]) -> list[dict]:
     return changes
 
 
-def run_job(job: dict) -> dict:
+def run_job(job: dict, execution_id: str = "") -> dict:
     command = str(job.get("command", "")).strip()
     if not command:
         return {"status": "error", "exit_code": None, "stdout": "", "stderr": "empty command", "changed_files": []}
@@ -157,6 +165,7 @@ def run_job(job: dict) -> dict:
             },
             uid=exec_uid,
             gid=exec_gid,
+            on_start=(lambda p: register_active(execution_id, job, p)) if execution_id else None,
         )
         changed = collect_changes(workdir, before)
         status = "done" if r.status in ("ok", "timeout") else "error"
@@ -172,6 +181,8 @@ def run_job(job: dict) -> dict:
             "changed_files": changed,
         }
     finally:
+        if execution_id:
+            unregister_active(execution_id)
         shutil.rmtree(workdir, ignore_errors=True)
 
 
@@ -207,7 +218,7 @@ def handle(raw: str) -> None:
         execution_id = job["execution_id"]
         mark_running(execution_id)
         started = time.monotonic()
-        result = run_job(job)
+        result = run_job(job, execution_id)
         print(
             f"[runner] {execution_id} `{str(job.get('command'))[:60]}` -> "
             f"exit={result.get('exit_code')} changed={len(result.get('changed_files', []))} "
@@ -224,6 +235,115 @@ def handle(raw: str) -> None:
 
 
 ENV_KEY = "odysseus:runner:env"
+STATS_KEY = "odysseus:runner:stats"
+CANCEL_KEY = "odysseus:runner:cancel"
+SAMPLE_INTERVAL_S = 1.0
+
+# 지금 돌고 있는 실행들 — 샘플러가 자원을 재고, 관리자의 종료 요청이 여기에 닿는다
+_active: dict[str, dict] = {}
+_active_lock = threading.Lock()
+
+
+def register_active(execution_id: str, job: dict, proc) -> None:
+    with _active_lock:
+        _active[execution_id] = {
+            "execution_id": execution_id,
+            "attempt_id": job.get("attempt_id"),
+            "scenario_id": job.get("scenario_id"),
+            "source": job.get("source"),
+            "command": str(job.get("command", ""))[:200],
+            "started_at": time.time(),
+            "proc": proc,
+            "cpu_percent": 0.0,
+            "memory_bytes": 0,
+            "processes": 0,
+        }
+
+
+def unregister_active(execution_id: str) -> None:
+    with _active_lock:
+        _active.pop(execution_id, None)
+
+
+def _kill_execution(execution_id: str) -> bool:
+    """관리자 종료 — 프로세스 그룹째 죽인다 (PID 네임스페이스 init 이 죽으면 전부 정리된다)."""
+    with _active_lock:
+        entry = _active.get(execution_id)
+        proc = entry.get("proc") if entry else None
+    if not proc:
+        return False
+    kill_tree(proc)
+    return True
+
+
+def sampler_loop(conn) -> None:
+    """1초마다 자원을 재서 Redis 에 게시하고, 종료 요청을 집행한다."""
+    meter = CpuMeter()
+    while True:
+        try:
+            with _active_lock:
+                snapshot = [dict(e) for e in _active.values()]
+            pid_map = {e["execution_id"]: e["proc"].pid for e in snapshot if e.get("proc")}
+            usage = tree_usage(set(pid_map.values())) if pid_map else {}
+
+            rows = []
+            for entry in snapshot:
+                eid = entry["execution_id"]
+                pid = pid_map.get(eid)
+                u = usage.get(pid, {}) if pid else {}
+                cpu = meter.percent(eid, ticks_to_seconds(u.get("cpu_ticks", 0)))
+                row = {
+                    "execution_id": eid,
+                    "attempt_id": entry["attempt_id"],
+                    "scenario_id": entry["scenario_id"],
+                    "source": entry["source"],
+                    "command": entry["command"],
+                    "elapsed_s": round(time.time() - entry["started_at"], 1),
+                    "cpu_percent": cpu,
+                    "memory_bytes": u.get("rss", 0),
+                    "processes": u.get("procs", 0),
+                }
+                rows.append(row)
+                with _active_lock:
+                    if eid in _active:
+                        _active[eid].update(
+                            cpu_percent=cpu, memory_bytes=row["memory_bytes"], processes=row["processes"]
+                        )
+
+            live = {r["execution_id"] for r in rows}
+            for stale in [k for k in list(meter._last) if k not in live and isinstance(k, str)]:
+                meter.forget(stale)
+
+            mem_used, mem_limit = container_memory()
+            cpu_usec = container_cpu_usec()
+            payload = {
+                "updated_at": time.time(),
+                "concurrency": CONCURRENCY,
+                "active": rows,
+                "queue_depth": _queue_depth(conn),
+                "container": {
+                    "cpu_percent": meter.percent("__container__", (cpu_usec or 0) / 1_000_000),
+                    "memory_bytes": mem_used,
+                    "memory_limit_bytes": mem_limit,
+                    "cpu_count": os.cpu_count(),
+                },
+            }
+            conn.set(STATS_KEY, json.dumps(payload), ex=30)
+
+            for eid in conn.smembers(CANCEL_KEY) or []:
+                if _kill_execution(eid):
+                    print(f"[runner] killed {eid} by request", flush=True)
+                conn.srem(CANCEL_KEY, eid)
+        except Exception:
+            traceback.print_exc()
+        time.sleep(SAMPLE_INTERVAL_S)
+
+
+def _queue_depth(conn) -> int:
+    try:
+        return int(conn.llen(QUEUE_KEY) or 0)
+    except Exception:
+        return 0
 
 
 def publish_environment(conn) -> None:
@@ -256,6 +376,7 @@ def main() -> None:
     print(f"[runner] starting, concurrency={CONCURRENCY}", flush=True)
     conn = redis.from_url(REDIS_URL, decode_responses=True)
     publish_environment(conn)
+    threading.Thread(target=sampler_loop, args=(conn,), daemon=True).start()
     slots = threading.Semaphore(CONCURRENCY)
 
     while True:

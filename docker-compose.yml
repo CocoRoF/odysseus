@@ -89,6 +89,7 @@ services:
       - SYS_ADMIN     # 네임스페이스 분리 + 개인 /tmp 마운트
       - SETUID        # 실행마다 다른 UID 로 강등
       - SETGID
+      - KILL          # 강등된 UID 의 프로세스를 끝낸다 (없으면 root 라도 EPERM)
       - CHOWN         # 작업 폴더 소유자를 그 UID 로
       - DAC_OVERRIDE  # 워커(root)가 0600 산출물을 회수
       - FOWNER

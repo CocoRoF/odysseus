@@ -500,3 +500,64 @@ export interface SystemInfo {
     network: boolean;
   };
 }
+
+export interface MyResources {
+  online: boolean;
+  running: number;
+  cpu_percent: number;
+  cpu_capacity_percent: number;
+  memory_bytes: number;
+  memory_limit_bytes: number | null;
+  commands: { command: string; elapsed_s: number; source: string | null }[];
+}
+
+export interface AdminResourceRow {
+  execution_id: string;
+  attempt_id: string;
+  scenario_id: string | null;
+  source: string | null;
+  command: string;
+  elapsed_s: number;
+  cpu_percent: number;
+  memory_bytes: number;
+  processes: number;
+}
+
+export interface AdminSessionRow {
+  attempt_id: string;
+  user_name: string;
+  user_email: string;
+  assessment_title: string;
+  started_at: string;
+  deadline_at: string | null;
+  last_seen_at: string | null;
+  idle_seconds: number | null;
+  expired: boolean;
+  orphan: boolean;
+  workspace_files: number;
+  running: number;
+}
+
+export interface AdminResources {
+  online: boolean;
+  updated_at: number | null;
+  concurrency: number | null;
+  queue_depth: number;
+  container: {
+    cpu_percent: number;
+    memory_bytes: number;
+    memory_limit_bytes: number | null;
+    cpu_count: number | null;
+  };
+  active: AdminResourceRow[];
+  sessions: AdminSessionRow[];
+  stuck_executions: {
+    execution_id: string;
+    attempt_id: string;
+    status: string;
+    source: string | null;
+    command: string;
+    created_at: string;
+    age_seconds: number;
+  }[];
+}

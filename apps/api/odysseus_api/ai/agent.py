@@ -249,7 +249,15 @@ async def execute_agent_tool(
             )
             await db.commit()
             rows = await ws.list_files(db, attempt_id, scenario_id)
-            await enqueue_run(str(execution.id), command, ws.files_payload(rows), settings.run_timeout_s)
+            await enqueue_run(
+                str(execution.id),
+                command,
+                ws.files_payload(rows),
+                settings.run_timeout_s,
+                attempt_id=str(attempt_id),
+                scenario_id=str(scenario_id),
+                source="agent",
+            )
             done = await _wait_execution(db, execution.id)
             if not done or done.status not in ("done", "error"):
                 return "실행이 제한 시간 안에 끝나지 않았습니다", command[:60]

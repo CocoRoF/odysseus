@@ -119,7 +119,13 @@ async def run_checks(
                 db.add(execution)
                 await db.commit()
                 await enqueue_run(
-                    str(execution.id), command, ws.files_payload(files), settings.run_timeout_s
+                    str(execution.id),
+                    command,
+                    ws.files_payload(files),
+                    settings.run_timeout_s,
+                    attempt_id=str(attempt.id),
+                    scenario_id=str(execution.scenario_id),
+                    source="check",
                 )
                 deadline = asyncio.get_event_loop().time() + CHECK_WAIT_S
                 done = None

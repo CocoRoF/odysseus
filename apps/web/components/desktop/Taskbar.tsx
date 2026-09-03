@@ -20,6 +20,7 @@ import {
   IconGlobe,
 } from "@/components/icons";
 import type { AttemptScenario } from "@/lib/types";
+import { ResourceMeter } from "./ResourceMeter";
 import type { AppId, WindowManager } from "./wm";
 
 // 바탕화면 아이콘과 같은 순서 — 두 곳이 어긋나면 찾는 위치가 달라진다
@@ -157,7 +158,7 @@ export function Taskbar({
   onFinish,
   onNextScenario,
   userName,
-  assessmentTitle,
+  attemptId,
   scenarios,
   hasNext,
   messengerBadge,
@@ -172,7 +173,7 @@ export function Taskbar({
   onFinish: () => void;
   onNextScenario: () => void;
   userName: string;
-  assessmentTitle: string;
+  attemptId: string;
   scenarios: AttemptScenario[];
   hasNext: boolean;
   messengerBadge: boolean;
@@ -196,10 +197,10 @@ export function Taskbar({
           <IconMonitor size={14} className="shrink-0 text-sky-400" />
           <span className="truncate text-xs font-medium text-slate-200">
             {userName ? `${userName}의 컴퓨터` : "내 컴퓨터"}
-            <span className="mx-1.5 text-slate-500">—</span>
-            <span className="text-slate-400">{assessmentTitle}</span>
           </span>
         </button>
+        {/* 이 샌드박스가 지금 쓰고 있는 자원 */}
+        <ResourceMeter attemptId={attemptId} />
       </div>
 
       <div className="mx-auto flex items-center gap-1.5">

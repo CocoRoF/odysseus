@@ -154,7 +154,18 @@ async def system_info(_: User = Depends(get_current_user)):
         raise HTTPException(503, "실행 환경 정보를 아직 수집하지 못했습니다")
     import json as _json
 
-    return _json.loads(raw)
+    spec = _json.loads(raw)
+    # 응시자에게는 **자기 작업 공간**의 사양만 보여준다. 호스트의 커널·코어 수·
+    # 총 메모리는 시험과 무관한 서버 내부 정보이므로 내보내지 않는다.
+    return {
+        "os": spec.get("os"),
+        "isolated": spec.get("isolated", False),
+        "languages": spec.get("languages", []),
+        "shells": spec.get("shells", []),
+        "tools": spec.get("tools", []),
+        "python_packages": spec.get("python_packages", []),
+        "limits": spec.get("limits", {}),
+    }
 
 
 # ── 설정 조회 (응시자도 필요) ────────────────────────────────────
