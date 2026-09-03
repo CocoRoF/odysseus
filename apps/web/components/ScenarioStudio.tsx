@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import type { Character, Check, CheckType, InitialFile, OpeningMessage, Rubric, Scenario } from "@/lib/types";
+import type { Character, Check, CheckType, InitialFile, OpeningMessage, Rubric, Scenario, ScenarioDraft } from "@/lib/types";
+import { ScenarioAuthorPanel } from "@/components/ScenarioAuthorPanel";
 import { CodeEditor } from "@/components/CodeEditor";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
@@ -73,6 +74,19 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
 
   const activeFileObj = useMemo(() => files.find((f) => f.path === activeFile) ?? null, [files, activeFile]);
 
+  // AI 작성 패널이 폼 전체를 읽고 쓰는 통로
+  const getDraft = (): ScenarioDraft => ({
+    title, summary, difficulty, briefing_md: briefing, characters, opening_messages: opening,
+    initial_files: files, objectives_md: objectives, checks, rubric, agent_enabled: agentEnabled,
+  });
+  const applyDraft = (d: ScenarioDraft) => {
+    setTitle(d.title); setSummary(d.summary); setDifficulty(d.difficulty); setBriefing(d.briefing_md);
+    setCharacters(d.characters); setOpening(d.opening_messages); setFiles(d.initial_files);
+    setActiveFile(d.initial_files[0]?.path ?? null); setObjectives(d.objectives_md); setChecks(d.checks);
+    setRubric(d.rubric); setAgentEnabled(d.agent_enabled); setTab("basic");
+  };
+  const hasContent = Boolean(title.trim() || characters.length || files.length || objectives.trim());
+
   const save = async () => {
     if (!title.trim()) return toast("제목을 입력하세요", "info");
     if (characters.length === 0) return toast("등장인물을 1명 이상 추가하세요", "info");
@@ -134,6 +148,8 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
           </Button>
         </div>
       </div>
+
+      <ScenarioAuthorPanel hasContent={hasContent} getDraft={getDraft} apply={applyDraft} />
 
       {/* 탭 */}
       <div className="mb-5 flex gap-1 border-b border-slate-200">

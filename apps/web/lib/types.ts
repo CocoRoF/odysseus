@@ -571,3 +571,25 @@ export interface WebRender {
   stylesheets: number;
   dropped: Record<string, number>;
 }
+
+/** 시나리오 스튜디오 저장 형식 — AI 작성 결과도 이 모양으로 온다 */
+export interface ScenarioDraft {
+  title: string;
+  summary: string;
+  difficulty: string;
+  briefing_md: string;
+  characters: Character[];
+  opening_messages: OpeningMessage[];
+  initial_files: InitialFile[];
+  objectives_md: string;
+  checks: Check[];
+  rubric: Rubric | null;
+  agent_enabled: boolean;
+}
+
+export interface AuthorResult {
+  scenario: ScenarioDraft;
+  notes: string;
+  warnings: string[];
+  provider: string;
+}

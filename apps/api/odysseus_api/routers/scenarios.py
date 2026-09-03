@@ -11,6 +11,16 @@ from ..db import get_db
 from ..deps import require_admin, require_staff
 from ..models import AssessmentScenario, Scenario, User
 from ..schemas import ScenarioIn, ScenarioOut, ScenarioSummary
+from pydantic import BaseModel, Field
+
+
+class AuthorIn(BaseModel):
+    """AI 작성 요청 — brief 로 새로 만들거나, draft + instruction 으로 다듬는다."""
+
+    brief: str = Field(default="", max_length=6000)
+    draft: ScenarioIn | None = None
+    instruction: str | None = Field(default=None, max_length=4000)
+    provider_id: uuid.UUID | None = None
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 
@@ -68,6 +78,33 @@ async def list_scenarios(db: AsyncSession = Depends(get_db), _=Depends(require_s
         )
         for r in rows
     ]
+
+
+@router.post("/author")
+async def author_with_ai(
+    body: AuthorIn, db: AsyncSession = Depends(get_db), _=Depends(require_admin)
+):
+    """시나리오 전체를 AI 가 설계한다. 저장은 하지 않는다 — 스튜디오에 채워 주고 사람이 확인한다."""
+    from ..ai import provider as ai_provider
+    from ..ai.scenario_author import author_scenario
+
+    if not body.brief.strip() and body.draft is None:
+        raise HTTPException(400, "어떤 시나리오를 만들지 한 줄이라도 적어 주세요")
+    res = await ai_provider.resolve_ai(db, "chat", override_provider_id=body.provider_id)
+    if not res:
+        raise HTTPException(503, "LLM 공급자가 설정되어 있지 않습니다 — [설정]에서 먼저 등록하세요")
+    try:
+        scenario, notes, warnings = await author_scenario(
+            res,
+            brief=body.brief,
+            draft=body.draft.model_dump() if body.draft else None,
+            instruction=body.instruction,
+        )
+    except ValueError as e:
+        raise HTTPException(502, f"AI 응답을 해석하지 못했습니다: {e}")
+    except Exception as e:  # noqa: BLE001 — 공급자 오류를 그대로 보여 준다
+        raise HTTPException(502, f"AI 호출 실패: {str(e)[:300]}")
+    return {"scenario": scenario, "notes": notes, "warnings": warnings, "provider": res.name}
 
 
 @router.get("/rubric-default")

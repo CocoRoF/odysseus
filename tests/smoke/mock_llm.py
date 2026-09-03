@@ -13,6 +13,42 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 REPLY = "정상 — 모의 LLM 응답입니다."
 
 
+def canned_scenario(refining: bool) -> str:
+    """작성 에이전트용 고정 시나리오 — 일부러 지저분하게(중복 키·깨진 정규식·잘못된 발신자)
+    만들어 정규화가 실제로 일하는지 보게 한다. 앞뒤 잡담과 코드 펜스도 붙인다."""
+    scenario = {
+        "title": "재고 스냅샷 불일치" + (" (다듬음)" if refining else ""),
+        "summary": "창고 재고 스냅샷과 주문 반영 규칙 사이의 불일치",
+        "difficulty": "hard-ish",
+        "briefing_md": "**화요일 오전 10시 4분.**\n\n당신은 물류팀에 합류한 지 2주째다.\n\n메신저에 새 메시지가 와 있다.",
+        "characters": [
+            {"key": "Ops Lead!", "name": "한지우", "role": "물류 운영 리드", "persona": "급하고 요점만. 반말에는 사무적으로.", "knowledge": "오늘 오후까지 output/stock.csv 가 필요하다. 규칙은 김도윤이 안다."},
+            {"key": "ops_lead", "name": "김도윤", "role": "재고 시스템 개발자", "persona": "정확하다.", "knowledge": "data/orders.csv 의 status=shipped 만 재고에서 차감한다. cancelled 는 무시."},
+            {"key": "", "name": "", "role": "유령", "persona": "", "knowledge": ""},
+        ],
+        "opening_messages": [
+            {"character_key": "nobody", "content": "안녕하세요! 재고 숫자가 안 맞는다는데 봐주실 수 있을까요?"},
+        ],
+        "initial_files": [
+            {"path": "/data/orders.csv", "content": "order_id,sku,qty,status\n1,A,2,shipped\n2,A,1,cancelled\n3,B,5,shipped\n"},
+            {"path": "data/orders.csv", "content": "dup"},
+            {"path": "stock.py", "content": "print('todo')\n"},
+        ],
+        "objectives_md": "shipped 만 차감. A: 2, B: 5.",
+        "checks": [
+            {"label": "산출물", "type": "file_exists", "path": "output/stock.csv", "points": 10},
+            {"label": "A 수량", "type": "file_contains", "path": "output/stock.csv", "pattern": "^A,2$", "points": 20},
+            {"label": "깨진 정규식", "type": "file_contains", "path": "output/stock.csv", "pattern": "^B,(5$", "points": 20},
+            {"label": "실행", "type": "command", "command": "python3 stock.py", "points": 10},
+            {"label": "모르는 종류", "type": "llm_judge", "points": 999},
+        ],
+        "rubric": {"process": "이상한 값"},
+        "agent_enabled": True,
+        "design_notes": "리드는 마감만 알고 규칙은 개발자에게 있다. cancelled 가 함정.",
+    }
+    return "설계했습니다.\n```json\n" + json.dumps(scenario, ensure_ascii=False) + "\n```\n끝."
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -38,6 +74,12 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         req = json.loads(self.rfile.read(length) or b"{}")
         model = req.get("model", "mock-model")
+        # 시나리오 작성 에이전트 — 시스템 프롬프트의 표식으로 구분한다
+        all_text = json.dumps(req, ensure_ascii=False)  # system 이 어떤 필드로 오든 잡는다
+        if "odysseus-scenario-author" in all_text:
+            last_user = [m for m in req.get("messages", []) if m.get("role") == "user"][-1]
+            refining = "[draft]" in str(last_user.get("content", ""))
+            return self._json(self._text(model, time.time(), canned_scenario(refining)))
         now = int(time.time())
         msgs = req.get("messages", [])
         last = msgs[-1] if msgs else {}
