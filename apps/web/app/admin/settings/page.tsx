@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
+  BlockedIp,
+  GuestPolicy,
+  GuestStats,
   ReferenceSettings,
   UiSettings,
   AiModelInfo,
@@ -13,7 +16,10 @@ import type {
 } from "@/lib/types";
 import { useUser } from "@/components/useUser";
 import { Shell } from "@/components/Shell";
-import { Button, Card, EmptyState, Field, inputCls, Modal, Spinner } from "@/components/ui";
+import { Button, Card, EmptyState, Field, IconButton, inputCls, Modal, Spinner } from "@/components/ui";
+import { DataTable } from "@/components/DataTable";
+import { IconDelete } from "@/components/icons";
+import { fmtDateTime } from "@/lib/format";
 import { useToast } from "@/components/toast";
 
 interface ProviderForm {
@@ -289,6 +295,7 @@ export default function SettingsPage() {
       </p>
 
       <ExamExperienceCard />
+      <GuestAccessCard />
       <ReferenceCard />
 
       {editing && meta && (
@@ -945,6 +952,266 @@ function ReferenceCard() {
         </div>
       )}
     </Card>
+  );
+}
+
+// ── 게스트 접속 ───────────────────────────────────────────────
+
+/** 게스트 접속 — 열고 닫는 스위치, 남용 한도, 주소 차단.
+ *
+ *  스위치와 한도가 한 카드에 있는 이유: "켜기"와 "얼마나 허용할지"는 같은
+ *  결정의 두 면이다. 켜는 화면과 한도를 정하는 화면이 떨어져 있으면 한도를
+ *  보지 않은 채 켜게 된다.
+ *
+ *  저장 방식은 이 페이지의 관례를 따른다 — 체크박스는 즉시 저장(끄고 켜는 것은
+ *  되돌리기 쉽다), 숫자는 다 입력한 뒤 [한도 저장](입력 중간값이 저장되면 안 된다).
+ */
+function GuestAccessCard() {
+  const [saved, setSaved] = useState<GuestPolicy | null>(null); // 서버에 저장된 값
+  const [draft, setDraft] = useState<GuestPolicy | null>(null); // 편집 중인 값
+  const [stats, setStats] = useState<GuestStats | null>(null);
+  const [busy, setBusy] = useState(false);
+  const { toast } = useToast();
+
+  const loadStats = useCallback(() => {
+    api.get<GuestStats>("/admin/access/guest/stats").then(setStats).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    api
+      .get<GuestPolicy>("/admin/access/guest")
+      .then((p) => {
+        setSaved(p);
+        setDraft(p);
+      })
+      .catch(() => undefined);
+    loadStats();
+  }, [loadStats]);
+
+  const put = async (next: GuestPolicy, message: string) => {
+    setBusy(true);
+    const prev = saved;
+    setSaved(next);
+    setDraft(next);
+    try {
+      const applied = await api.put<GuestPolicy>("/admin/access/guest", next);
+      setSaved(applied);
+      setDraft(applied); // 서버가 잘라낸 값(범위 밖 입력)이 화면에 그대로 보이게
+      toast(message, "success");
+      loadStats();
+    } catch (e) {
+      setSaved(prev);
+      setDraft(prev);
+      toast(e instanceof ApiError ? e.message : "저장 실패", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const limitsDirty =
+    !!saved &&
+    !!draft &&
+    (saved.max_new_per_hour_per_ip !== draft.max_new_per_hour_per_ip ||
+      saved.chat_per_min !== draft.chat_per_min ||
+      saved.chat_total_per_attempt !== draft.chat_total_per_attempt);
+
+  // 범위는 입력하는 동안이 아니라 손을 뗄 때 맞춘다. 타이핑 중에 고치면
+  // "120" 을 넣으려고 "1" 을 친 순간 최솟값으로 튀어 글자를 못 이어 붙인다.
+  // (min/max 속성은 브라우저가 강제하지 않는다 — 서버는 범위 밖을 422 로 거절하므로
+  //  화면에서 먼저 맞춰 두지 않으면 사용자는 원인 모를 저장 실패만 본다.)
+  const clamp = (key: keyof GuestPolicy, min: number, max: number) => {
+    if (!draft) return;
+    const raw = Number(draft[key]);
+    const fixed = Number.isFinite(raw) ? Math.min(max, Math.max(min, Math.round(raw))) : min;
+    if (fixed !== draft[key]) setDraft({ ...draft, [key]: fixed });
+  };
+
+  const num = (key: keyof GuestPolicy, label: string, hint: string, min: number, max: number) => (
+    <Field label={label} hint={hint}>
+      <input
+        className={inputCls}
+        type="number"
+        min={min}
+        max={max}
+        disabled={!draft || busy}
+        value={draft ? String(draft[key]) : ""}
+        onChange={(e) => draft && setDraft({ ...draft, [key]: Number(e.target.value) })}
+        onBlur={() => clamp(key, min, max)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          clamp(key, min, max);
+          if (draft && limitsDirty) put(draft, "게스트 한도를 저장했습니다");
+        }}
+      />
+    </Field>
+  );
+
+  return (
+    <Card className="mt-8 p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-bold">게스트 접속</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            계정 없이 로그인 화면에서 바로 응시하게 합니다. 게스트는 관리자 메뉴에 들어올 수 없고, 열려 있는
+            모든 시험에 응시할 수 있습니다.
+          </p>
+        </div>
+        {stats && (
+          <p className="shrink-0 pt-1 text-xs text-slate-400">
+            전체 {stats.total} · 활성 {stats.active} · 최근 24시간 {stats.last_24h}
+          </p>
+        )}
+      </div>
+
+      <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-slate-300">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={Boolean(saved?.enabled)}
+          disabled={!saved || busy}
+          onChange={(e) =>
+            saved && put({ ...saved, enabled: e.target.checked }, e.target.checked ? "게스트 접속을 켰습니다" : "게스트 접속을 껐습니다")
+          }
+        />
+        <span className="min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-800">게스트 로그인 허용</span>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+              계정 없이 응시
+            </span>
+          </span>
+          <span className="mt-1 block text-xs text-slate-500">
+            켜면 로그인 화면에 [게스트로 둘러보기] 버튼이 나타납니다. 끄면 버튼이 사라지고 새 게스트도 받지
+            않지만, 이미 들어온 게스트의 세션은 유지됩니다 — 즉시 끊으려면 [사용자] 화면에서 그 계정을
+            정지하세요. (기본: 꺼짐)
+          </span>
+        </span>
+      </label>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        {num("max_new_per_hour_per_ip", "주소당 시간당 생성", "0 이면 새 게스트를 받지 않습니다", 0, 1000)}
+        {num("chat_per_min", "분당 대화 수", "순간적인 폭주를 막습니다", 1, 120)}
+        {num("chat_total_per_attempt", "응시당 대화 총량", "0 이면 총량 제한 없음", 0, 100000)}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-4">
+        <p className="text-xs text-slate-400">
+          대화 한도는 메신저(NPC)와 AI 에이전트를 합쳐서 셉니다 — 한쪽만 막으면 다른 쪽으로 흘러갑니다.
+        </p>
+        {/* 라벨은 고정한다 — 비활성 상태가 이미 '저장할 것이 없다'를 말한다.
+            버튼 글자가 상태에 따라 바뀌면 누를 것을 찾는 눈이 한 번 더 멈춘다. */}
+        <Button onClick={() => draft && put(draft, "게스트 한도를 저장했습니다")} disabled={!limitsDirty || busy}>
+          {busy ? "저장 중..." : "한도 저장"}
+        </Button>
+      </div>
+
+      <IpBlockSection onChanged={loadStats} />
+    </Card>
+  );
+}
+
+/** 주소 차단 — 계정 정지의 짝. 정지시킨 게스트가 새 계정으로 돌아오는 것을 막는다. */
+function IpBlockSection({ onChanged }: { onChanged: () => void }) {
+  const [rows, setRows] = useState<BlockedIp[] | null>(null);
+  const [cidr, setCidr] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const { toast, confirm } = useToast();
+
+  const load = useCallback(() => {
+    api.get<BlockedIp[]>("/admin/access/ip-blocks").then(setRows).catch(() => undefined);
+  }, []);
+
+  useEffect(load, [load]);
+
+  const add = async () => {
+    if (!cidr.trim()) return;
+    setBusy(true);
+    try {
+      await api.post("/admin/access/ip-blocks", { cidr: cidr.trim(), reason: reason.trim() });
+      setCidr("");
+      setReason("");
+      load();
+      onChanged();
+      toast("주소를 차단했습니다", "success");
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "차단 실패", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (b: BlockedIp) => {
+    if (!(await confirm({ title: "차단을 해제할까요?", message: b.cidr, confirmLabel: "해제" }))) return;
+    await api.del(`/admin/access/ip-blocks/${b.id}`);
+    load();
+    onChanged();
+  };
+
+  return (
+    <div className="mt-8 border-t border-slate-100 pt-6">
+      <h3 className="font-bold">주소 차단</h3>
+      <p className="mt-1 text-sm text-slate-500">
+        차단된 주소에서는 로그인도 게스트 접속도 되지 않고, 그 주소에서 열려 있던 세션은 차단하는 즉시
+        끊깁니다. 관리자 계정은 차단의 영향을 받지 않습니다 — 자기 대역을 잘못 넣어도 들어와서 풀 수 있게.
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-end gap-2">
+        <div className="w-56">
+          <Field label="주소 또는 대역" hint="예: 203.0.113.7 또는 203.0.113.0/24">
+            <input
+              className={inputCls}
+              value={cidr}
+              onChange={(e) => setCidr(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+              placeholder="203.0.113.0/24"
+            />
+          </Field>
+        </div>
+        <div className="min-w-48 flex-1">
+          <Field label="사유">
+            <input
+              className={inputCls}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+              placeholder="선택 사항"
+            />
+          </Field>
+        </div>
+        <Button onClick={add} disabled={busy || !cidr.trim()}>
+          {busy ? "차단 중..." : "차단"}
+        </Button>
+      </div>
+
+      {rows && rows.length > 0 && (
+        <div className="mt-4">
+          <DataTable
+            rows={rows}
+            rowKey={(b) => b.id}
+            empty="차단된 주소가 없습니다."
+            columns={[
+              {
+                key: "cidr",
+                header: "주소 / 대역",
+                render: (b) => <span className="font-mono text-sm font-medium">{b.cidr}</span>,
+              },
+              { key: "reason", header: "사유", className: "text-slate-500", render: (b) => b.reason || "—" },
+              {
+                key: "created",
+                header: "차단일",
+                className: "text-slate-500",
+                render: (b) => fmtDateTime(b.created_at),
+              },
+            ]}
+            actions={(b) => (
+              <IconButton title="차단 해제" tone="danger" onClick={() => remove(b)}>
+                <IconDelete />
+              </IconButton>
+            )}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

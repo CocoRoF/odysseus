@@ -16,7 +16,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = res.statusText;
     try {
       const body = await res.json();
-      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
+      if (typeof body.detail === "string") {
+        detail = body.detail;
+      } else if (Array.isArray(body.detail)) {
+        // FastAPI 검증 실패(422) — 원본은 {loc, msg, type} 목록이라 그대로 보여주면
+        // 사용자가 읽을 수 없는 덩어리가 된다. 필드 이름과 사유만 남긴다.
+        detail = body.detail
+          .map((d: { loc?: unknown[]; msg?: string }) => {
+            const field = Array.isArray(d.loc) ? String(d.loc[d.loc.length - 1] ?? "") : "";
+            return field ? `${field}: ${d.msg ?? ""}` : (d.msg ?? "");
+          })
+          .filter(Boolean)
+          .join(", ") || JSON.stringify(body.detail);
+      } else {
+        detail = JSON.stringify(body.detail ?? body);
+      }
     } catch {
       /* ignore */
     }

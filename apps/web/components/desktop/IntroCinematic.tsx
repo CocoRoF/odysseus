@@ -102,10 +102,13 @@ export function IntroCinematic({
     return () => clearTimeout(t);
   }, [stage, para, chars, lengths, paragraphs.length]);
 
-  // 새 줄이 나올 때마다 아래로
+  // 글자가 늘어나는 내내 바닥에 붙여 둔다. 한 글자씩 자라므로 즉시 맞춰도
+  // 부드럽게 흐르고, 부드러운 스크롤(smooth)로 하면 26ms 마다 애니메이션이
+  // 다시 시작돼 오히려 떨린다.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [para, stage]);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [para, chars, stage]);
 
   // 클릭/스페이스/엔터로 건너뛰기, 완료 후에는 시작
   useEffect(() => {
@@ -171,7 +174,7 @@ export function IntroCinematic({
         </div>
 
         {/* 낭독 */}
-        <div ref={scrollRef} className="thin-scroll mt-8 min-h-0 flex-1 overflow-y-auto px-1">
+        <div ref={scrollRef} className="intro-read mt-8 min-h-0 flex-1 overflow-y-auto px-1">
           <div className="space-y-5 text-[15px] leading-[1.9] text-slate-300 md:text-base">
             {paragraphs.map((segs, i) => {
               if (stage === "title") return null;

@@ -102,6 +102,18 @@ body {
 
 
 /* ── 시네마틱 인트로 ────────────────────────────────────── */
+
+/* 낭독 영역: 스크롤은 되지만 막대는 그리지 않는다.
+   글자가 한 자씩 늘어나는 연출이라 막대가 나타나는 순간 내용 폭이 줄고,
+   그 한 번의 폭 변화가 줄바꿈을 다시 계산시켜 문장 전체가 흔들린다.
+   막대를 없애면 깜빡임과 그 흔들림이 함께 사라진다. */
+.intro-read {
+  scrollbar-width: none; /* Firefox */
+}
+.intro-read::-webkit-scrollbar {
+  display: none;
+}
+
 .intro-stage {
   animation: intro-in 0.5s ease-out;
 }
