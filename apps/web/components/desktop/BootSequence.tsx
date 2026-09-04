@@ -276,15 +276,17 @@ export function BootSequence({
         ))}
         {phase === "run" && <span className="boot-cursor inline-block h-[15px] w-[9px] bg-[#c8d3c8] align-middle" />}
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          finish();
-        }}
-        className="absolute bottom-5 right-6 rounded-md border border-white/15 px-3 py-1.5 font-mono text-[11px] text-white/40 transition hover:border-white/40 hover:text-white/80"
-      >
-        건너뛰기  [Esc]
-      </button>
+      {(phase === "logo" || phase === "run") && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            finish();
+          }}
+          className="absolute bottom-5 right-6 rounded-md border border-white/15 px-3 py-1.5 font-mono text-[11px] text-white/40 transition hover:border-white/40 hover:text-white/80"
+        >
+          건너뛰기  [Esc]
+        </button>
+      )}
     </div>
   );
 }
