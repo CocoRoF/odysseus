@@ -96,7 +96,7 @@ export function TerminalView({ readOnly = false }: { readOnly?: boolean }) {
             <input
               ref={inputRef}
               className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[12.5px] text-[#cccccc] caret-[#cccccc] outline-none"
-              value={term.running ? "" : term.input}
+              value={term.input}
               onChange={(e) => term.setInput(e.target.value)}
               onKeyDown={term.handleKey}
               autoComplete="off"

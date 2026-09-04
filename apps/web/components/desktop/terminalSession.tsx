@@ -137,7 +137,9 @@ export function interactiveHint(command: string): { lines?: string[]; rewrite?: 
   const cmd = (tokens[i] ?? "").split("/").pop() ?? "";
   const args = tokens.slice(i + 1);
   const positional = args.filter((a) => !a.startsWith("-"));
-  if (cmd in REPL_HINT && positional.length === 0 && !args.includes("-c") && !args.includes("-e") && !args.includes("-m"))
+  // `python --version` 은 대화형이 아니다 — 인자가 없거나 대화형 플래그뿐일 때만 안내
+  const INTERACTIVE_FLAGS = new Set(["-i", "-q", "-u", "-B", "-E", "-s", "-S"]);
+  if (cmd in REPL_HINT && args.every((a) => INTERACTIVE_FLAGS.has(a)))
     return {
       lines: [
         `${cmd}: 이 터미널은 대화형 프롬프트를 열 수 없습니다 (입력을 받을 수 없습니다).`,
@@ -349,6 +351,9 @@ export function TerminalSessionProvider({
   }, [historyKey]);
   const histPosRef = useRef(-1);
   const cancelRef = useRef<string | null>(null);
+  /** 실행 중에 Enter 로 넘긴 줄들 — 끝나면 순서대로 실행한다 (bash 처럼 미리 입력을 받아 둔다) */
+  const queueRef = useRef<string[]>([]);
+  const [queued, setQueued] = useState(0);
   const runIdRef = useRef<string | null>(null);
   const preRunRef = useRef<Set<() => Promise<void>>>(new Set());
   const filesChangedRef = useRef<Set<(paths: string[]) => void>>(new Set());
@@ -578,6 +583,13 @@ export function TerminalSessionProvider({
     [cwd, pending, historyKey, dirSet, fileSet, print, runServerCommand, cloneRepo, printCloneResult],
   );
 
+  useEffect(() => {
+    if (running || queueRef.current.length === 0) return;
+    const next = queueRef.current.shift()!;
+    setQueued(queueRef.current.length);
+    void submit(next);
+  }, [running, queued, submit]);
+
   const handleKey = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
@@ -585,6 +597,8 @@ export function TerminalSessionProvider({
         if (running && runIdRef.current) {
           cancelRef.current = runIdRef.current;
           runIdRef.current = null;
+          queueRef.current = [];
+          setQueued(0);
           setRunning(false);
           print([{ kind: "out", text: "^C" }]);
         } else {
@@ -614,13 +628,18 @@ export function TerminalSessionProvider({
         setLines([]);
         return;
       }
-      if (running) return;
       if (e.key === "Enter" && !e.nativeEvent.isComposing) {
         const v = input;
         setInput("");
+        if (running) {
+          queueRef.current.push(v);
+          setQueued(queueRef.current.length);
+          return;
+        }
         void submit(v);
         return;
       }
+      if (running) return;
       if (e.key === "ArrowUp") {
         e.preventDefault();
         const h = historyRef.current;
