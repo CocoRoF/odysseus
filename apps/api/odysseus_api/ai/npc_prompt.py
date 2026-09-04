@@ -114,12 +114,15 @@ def build_system_prompt(
     role: str,
     persona: str,
     knowledge: str,
-    objectives: str,
     colleagues: list[dict],
 ) -> str:
     """인물 카드 + 기본 규칙 → 시스템 프롬프트.
 
     인물 고유 정보는 한국어(작성자가 쓴 그대로), 행동 규칙은 영어다.
+
+    시나리오의 숨은 목표(objectives_md)는 **여기 들어오지 않는다** (ODY-008). 응시자와 직접
+    대화하는 모델에 정답을 쥐여 주고 "말하지 말라" 고 지시하는 것은 경계가 아니다. 인물이
+    말할 수 있는 것은 인물 카드의 knowledge 가 전부이고, 정답은 평가기만 본다.
     """
     others = "\n".join(
         f"- {c.get('name')} ({c.get('role') or '동료'})" for c in colleagues
@@ -132,9 +135,6 @@ def build_system_prompt(
             BASE_RULES,
             "",
             "---",
-            "",
-            "[전체 상황 — 당신 머릿속의 배경 지식. 그대로 발설하지 말고, 무엇을 아는지 판단하는 데만 쓰세요]",
-            (objectives or "").strip() or "(없음)",
             "",
             "[당신의 성격과 입장 — 말투와 반응(무례한 상대를 대하는 방식 포함)은 여기에 맞추세요]",
             (persona or "").strip() or "(평범한 동료)",

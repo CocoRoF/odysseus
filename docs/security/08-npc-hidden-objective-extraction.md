@@ -36,3 +36,11 @@
 5. 모델 출력에서 exact secret 패턴을 차단하는 DLP를 보조 방어로 사용하되 근본 해결로 간주하지 않는다.
 6. 이미 사용된 시험은 대화 기록을 분석해 정답 추출 시도가 있었는지 확인하고 문항을 교체한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **비밀을 주지 않는다:** NPC 시스템 프롬프트에서 `[전체 상황]`(objectives_md) 섹션을 제거했다. `build_system_prompt()` 는 더 이상 `objectives` 인자를 받지 않으므로 실수로 다시 넣을 수 없다 (`ai/npc_prompt.py`, `ai/npc.py`). NPC 가 아는 것은 인물별 `knowledge` 뿐이며, 모델이 "지시를 잘 지키는가" 에 기대지 않는다.
+- **objectives 는 평가기에만:** `autoeval.build_scenario_context` 만 숨은 목표를 읽는다. 응시자 화면(`AttemptScenarioOut`)에는 원래 없었고, `ScenarioOut`/`/scenarios/*` 는 스태프 전용이다.
+- **보조 방어(DLP):** `npc.leak_guard()` 가 응답을 내보내기 전에 objectives 의 문장 조각(공백·대소문자 정규화, 18자 이상)이 그대로 들어 있으면 응답을 인물답게 얼버무리는 문장으로 바꾸고 `odysseus.npc` 로거에 남긴다. 근본 방어가 아니라 회귀 감지용이다.
+- **검증:** `tests/security/test_npc_leak.py` — canary 문장·정답 숫자·objectives 의 어떤 줄도 프롬프트에 없음, knowledge 는 유지, `objectives` 인자 부재, 가드가 canary/정답 줄/공백·대소문자 변형을 차단하고 knowledge 범위 답변·짧은 공통 어구는 통과. 기존 `tests/smoke/test_npc_prompt.py` 도 새 계약에 맞췄다.
+- **참고:** 시나리오 작성 가이드(`scenario_author`)는 그대로다 — "NPC 가 말해도 되는 것은 knowledge 에, 숨은 진실은 objectives 에" 라는 구분이 이제 코드로 강제된다.

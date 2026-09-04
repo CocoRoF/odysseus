@@ -46,7 +46,6 @@ prompt = npc_prompt.build_system_prompt(
     role=CHARACTER["role"],
     persona=CHARACTER["persona"],
     knowledge=CHARACTER["knowledge"],
-    objectives=OBJECTIVES,
     colleagues=COLLEAGUES,
 )
 # 프롬프트는 읽기 좋게 줄바꿈되어 있다 — 문구 검사는 공백을 눌러서 한다
@@ -102,16 +101,16 @@ print("\n── 인물 카드가 빠짐없이 실리는가 ──")
 check("이름·직함이 머리에", prompt.startswith("# You are 김수진 — 프로덕트 매니저"), prompt.split("\n")[0])
 check("성격 포함", CHARACTER["persona"] in prompt)
 check("지식 포함", CHARACTER["knowledge"] in prompt)
-check("배경(숨은 진실) 포함", OBJECTIVES in prompt)
+check("배경(숨은 진실) 미포함 — NPC 에게 정답을 주지 않는다 (ODY-008)", OBJECTIVES not in prompt)
 check("동료 목록 포함", "박민호 (데이터 엔지니어)" in prompt and "이지은 (QA 엔지니어)" in prompt)
 check("자기 자신은 동료 목록에 없다", prompt.count("김수진") == 1, f"{prompt.count('김수진')}회")
 check("성격이 태도 대응에 연결된다", "무례한 상대를 대하는 방식 포함" in prompt)
 
 print("\n── 빈 값에도 무너지지 않는가 ──")
-bare = npc_prompt.build_system_prompt(name="", role="", persona="", knowledge="", objectives="", colleagues=[])
+bare = npc_prompt.build_system_prompt(name="", role="", persona="", knowledge="", colleagues=[])
 bare_lower = " ".join(bare.split()).lower()
 check("이름/직함이 없어도 조립된다", "동료" in bare.split("\n")[0], bare.split("\n")[0])
-check("빈 항목은 자리표시로 채운다", bare.count("(없음)") >= 2 and "(평범한 동료)" in bare)
+check("빈 항목은 자리표시로 채운다", "(평범한 동료)" in bare and "(특별히 아는 것 없음)" in bare)
 check("규칙은 그대로 실린다", "never reward rudeness" in bare_lower)
 
 print("\n── 기본 시나리오 인물이 태도 성향을 갖췄는가 ──")
