@@ -9,7 +9,7 @@ export default function NewScenarioPage() {
   const { user, loading } = useUser(["admin"]);
   if (loading || !user) return <Spinner />;
   return (
-    <Shell user={user}>
+    <Shell user={user} wide>
       <ScenarioStudio />
     </Shell>
   );

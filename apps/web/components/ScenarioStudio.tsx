@@ -685,7 +685,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
     </div>
 
     {/* 우측: 설계 대화 — 화면에 붙어 따라온다 */}
-    <aside className="sticky top-[72px] h-[calc(100vh-96px)] w-[400px] shrink-0">
+    <aside className="sticky top-[72px] h-[calc(100vh-96px)] w-[440px] shrink-0">
       <ScenarioAuthorChat
         hasContent={hasContent}
         getDraft={getDraft}

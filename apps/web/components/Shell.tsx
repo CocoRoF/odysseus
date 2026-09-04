@@ -7,7 +7,7 @@ import { logout } from "./useUser";
 import { Badge } from "./ui";
 
 /** 관리자/평가자 공통 상단 내비게이션 셸 */
-export function Shell({ user, children }: { user: User; children: React.ReactNode }) {
+export function Shell({ user, children, wide = false }: { user: User; children: React.ReactNode; wide?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -72,7 +72,8 @@ export function Shell({ user, children }: { user: User; children: React.ReactNod
           </div>
         </div>
       </nav>
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+      {/* 스튜디오처럼 두 칸(편집기 | 대화)을 쓰는 화면은 넓게 — 나머지는 읽기 좋은 폭을 유지 */}
+      <main className={`mx-auto px-4 py-8 ${wide ? "max-w-[1720px] px-6" : "max-w-6xl"}`}>{children}</main>
     </div>
   );
 }

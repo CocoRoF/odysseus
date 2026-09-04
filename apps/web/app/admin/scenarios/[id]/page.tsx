@@ -19,7 +19,7 @@ export default function EditScenarioPage({ params }: { params: Promise<{ id: str
 
   if (loading || !user || !scenario) return <Spinner />;
   return (
-    <Shell user={user}>
+    <Shell user={user} wide>
       <ScenarioStudio initial={scenario} scenarioId={id} />
     </Shell>
   );
