@@ -26,6 +26,7 @@ import { WorkspaceProvider } from "@/components/desktop/workspace";
 import { AgentSessionProvider } from "@/components/desktop/agentSession";
 import { TerminalSessionProvider } from "@/components/desktop/terminalSession";
 import { IntroCinematic } from "@/components/desktop/IntroCinematic";
+import { BootSequence } from "@/components/desktop/BootSequence";
 import { SystemInfoModal } from "@/components/desktop/SystemInfoModal";
 import { ContextMenuView, MenuEntry, useContextMenu } from "@/components/desktop/ContextMenu";
 import { MessengerApp } from "@/components/desktop/apps/MessengerApp";
@@ -207,6 +208,8 @@ export default function ExamDesktopPage() {
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [error, setError] = useState("");
   const [showBriefing, setShowBriefing] = useState(false);
+  // 시네마틱 모드: [임무 시작] → 부팅 연출 → 데스크톱
+  const [booting, setBooting] = useState(false);
   const [messengerOpened, setMessengerOpened] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
   // 참고 자료 앱(GitHub·인터넷)은 관리자 설정으로 끌 수 있다 — 꺼졌으면 아이콘부터 없앤다
@@ -641,8 +644,24 @@ export default function ExamDesktopPage() {
           userName={user?.name ?? ""}
         />
 
+        {/* 부팅 연출 — 임무 시작 뒤, 옛 기계가 켜지듯 실제 사양이 흐른다 */}
+        {showBriefing && booting && (
+          <BootSequence
+            userName={user?.name ?? ""}
+            assessmentTitle={attempt.assessment_title}
+            chapter={attempt.scenarios.length > 1 ? `문제 ${attempt.current_ordinal + 1} / ${attempt.scenarios.length}` : null}
+            characters={scenario.characters.map((c) => ({ name: c.name, role: c.role }))}
+            agentEnabled={scenario.agent_enabled}
+            durationMin={Math.max(1, Math.round(remainingSeconds / 60))}
+            onDone={() => {
+              setBooting(false);
+              startWork();
+            }}
+          />
+        )}
+
         {/* 시작 브리핑 — 설정에 따라 시네마틱 인트로 또는 기본 카드 */}
-        {showBriefing &&
+        {showBriefing && !booting &&
           (attempt.gamified_intro ? (
             <IntroCinematic
               title={attempt.assessment_title}
@@ -653,7 +672,7 @@ export default function ExamDesktopPage() {
               }
               briefing={scenario.briefing_md || "출근했습니다. 메신저에 새 메시지가 와 있습니다."}
               notes={introNotes}
-              onStart={startWork}
+              onStart={() => setBooting(true)}
             />
           ) : (
             <div className="absolute inset-0 z-[9500] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">

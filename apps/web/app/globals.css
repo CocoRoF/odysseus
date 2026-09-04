@@ -170,3 +170,31 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .ai-editing, .ai-caret, .ai-chip-live { animation: none; }
 }
+
+/* ── 부팅 연출: 옛 CRT 모니터 ── */
+.boot-screen { animation: none; }
+.boot-on .boot-text { animation: boot-power-on 0.55s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+.boot-off { animation: boot-power-off 0.42s ease-in forwards; }
+@keyframes boot-power-on {
+  0% { transform: scaleY(0.004) scaleX(1.1); filter: brightness(6); opacity: 0.9; }
+  45% { transform: scaleY(0.02) scaleX(1.02); filter: brightness(3); }
+  100% { transform: scale(1); filter: brightness(1); opacity: 1; }
+}
+@keyframes boot-power-off {
+  0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+  55% { transform: scaleY(0.01) scaleX(1.05); opacity: 1; filter: brightness(4); }
+  100% { transform: scaleY(0) scaleX(0.2); opacity: 0; }
+}
+.boot-text { text-shadow: 0 0 6px rgba(200, 211, 200, 0.35), 0 0 1px rgba(255, 255, 255, 0.6); }
+.boot-crt {
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, 0.22) 2px 3px),
+    radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.55) 100%);
+  mix-blend-mode: multiply;
+  animation: boot-flicker 2.6s steps(1) infinite;
+}
+@keyframes boot-flicker { 0%, 100% { opacity: 1; } 47% { opacity: 0.93; } 49% { opacity: 1; } 91% { opacity: 0.96; } }
+.boot-cursor { animation: ai-caret-blink 0.7s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .boot-on .boot-text, .boot-off, .boot-crt, .boot-cursor { animation: none; }
+}

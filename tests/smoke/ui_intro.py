@@ -95,13 +95,13 @@ async def main():
         # 타이핑 도중에는 시작 버튼이 없다
         await pg.wait_for_timeout(1800)
         mid = await pg.locator(".intro-stage").inner_text()
-        assert "업무 시작하기" not in mid, "낭독 중에 시작 버튼이 이미 보임"
+        assert "임무 시작" not in mid, "낭독 중에 시작 버튼이 이미 보임"
         assert await pg.locator(".intro-caret").count() >= 1, "타이핑 커서 없음"
         ok.append("타이핑 진행 중 (커서 O, 시작 버튼 X)")
         await pg.screenshot(path=f"{SHOT}/intro-typing.png")
         # 건너뛰기
         await pg.click("text=건너뛰기")
-        await pg.wait_for_selector(".intro-stage >> text=업무 시작하기", timeout=8000)
+        await pg.wait_for_selector(".intro-stage >> text=임무 시작", timeout=8000)
         full = await pg.locator(".intro-stage").inner_text()
         assert "월요일 오전 9시 12분" in full and "메신저에 새 메시지가 와 있습니다" in full, full[:200]
         assert "**" not in full
@@ -110,8 +110,17 @@ async def main():
         ok.append("안내 문구 표시")
         await pg.screenshot(path=f"{SHOT}/intro-done.png")
         # 시작 → 데스크톱
-        await pg.click(".intro-stage >> text=업무 시작하기")
-        await pg.wait_for_selector("text=의 컴퓨터", timeout=15000)
+        await pg.click(".intro-stage >> text=임무 시작")
+        # 임무 시작 → 부팅 연출(실제 사양이 흐른다) → 데스크톱
+        await pg.wait_for_selector("[data-boot]", timeout=8000)
+        await pg.wait_for_selector("[data-boot] >> text=ODYSSEUS BIOS", timeout=8000)
+        await pg.wait_for_selector("[data-boot] >> text=Started messenger daemon", timeout=20000)
+        boot = await pg.locator("[data-boot]").inner_text()
+        assert "김수진" in boot, boot[-300:]
+        ok.append("부팅 연출 — BIOS → 서비스 기동에 실제 등장인물이 흐른다")
+        # 작업 표시줄은 부팅 화면 아래에 이미 있으므로, 부팅 화면이 **사라지는 것**을 기다린다
+        await pg.wait_for_selector("[data-boot]", state="detached", timeout=40000)
+        await pg.wait_for_selector("text=의 컴퓨터", timeout=10000)
         assert await pg.locator(".intro-stage").count() == 0
         ok.append("시작 → 데스크톱 진입 (메신저 오픈)")
         await pg.close()

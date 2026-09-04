@@ -200,7 +200,7 @@ export function IntroCinematic({
               onClick={onStart}
               className="mt-5 w-full rounded-xl border border-sky-400/30 bg-sky-500/10 py-3.5 text-sm font-bold tracking-wide text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 hover:text-white"
             >
-              업무 시작하기
+              임무 시작
             </button>
           </div>
         )}
