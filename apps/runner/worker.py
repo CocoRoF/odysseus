@@ -10,6 +10,7 @@ Redis 큐(odysseus:run:queue)에서 워크스페이스 실행 잡을 꺼내:
 """
 
 import hashlib
+import hmac
 import json
 import os
 import sys
@@ -225,12 +226,27 @@ def mark_running(execution_id: str, callback_token: str = "") -> None:
         pass
 
 
+def canonical_job(job: dict) -> bytes:
+    # api/runqueue.py 와 같은 규칙
+    return json.dumps({k: v for k, v in job.items() if k != "sig"}, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def job_is_signed(job: dict) -> bool:
+    """API 가 INTERNAL_TOKEN 으로 서명한 작업만 실행한다 — 큐에 직접 끼워 넣은 작업은 버린다."""
+    sig = str(job.get("sig", ""))
+    expected = hmac.new(INTERNAL_TOKEN.encode("utf-8"), canonical_job(job), hashlib.sha256).hexdigest()
+    return bool(sig) and hmac.compare_digest(sig, expected)
+
+
 def handle(raw: str) -> None:
     execution_id = "?"
     callback_token = ""
     try:
         job = json.loads(raw)
         execution_id = job["execution_id"]
+        if not job_is_signed(job):
+            print(f"[runner] DROPPED unsigned/forged job execution={str(execution_id)[:40]}", flush=True)
+            return
         callback_token = str(job.get("callback_token", ""))
         mark_running(execution_id, callback_token)
         started = time.monotonic()

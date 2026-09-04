@@ -69,6 +69,7 @@ sudo ./scripts/restore.sh backups/<file>.sql.gz  # 되돌릴 수 없으므로 �
 | `JWT_SECRET` / `INTERNAL_TOKEN` | **필수.** 각각 `openssl rand -hex 32`. 운영 모드에서는 자리표시자·32자 미만이면 기동 거부, 개발 모드는 경고 |
 | `POSTGRES_PASSWORD` | 기존 볼륨에 묶인 값 — 바꾸지 말 것 |
 | `RUNNER_CONCURRENCY` / `RUNNER_MEM_MB` | 동시 실행 수 / 러너 메모리 상한 (기본 2 / 4096) |
+| `REDIS_API_PASSWORD` / `REDIS_RUNNER_PASSWORD` | **필수.** Redis ACL 계정(api=전체, runner=큐 소비·자기 통계만) |
 | `ODYSSEUS_ENV` | `production`(기본) 또는 `development` |
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | 빈 DB 최초 기동 시 만들 관리자. 비밀번호를 비우면 무작위 생성 후 api 로그에 한 번 출력 |
 | `SEED_DEMO_DATA` | **개발 전용.** 고정 비밀번호의 데모 계정 3개를 만든다. `ODYSSEUS_ENV=development` 가 아니면 기동 거부 (기본 false) |

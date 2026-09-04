@@ -47,3 +47,11 @@ PY
 5. 큐 payload에서 전체 파일 내용을 분리해 일회용 객체 저장소나 API fetch 방식으로 전달한다.
 6. Redis 명령 감사, 비정상 키 증가, 큐 깊이 급증에 대한 경보를 추가한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **응시자 프로세스에 네트워크가 없다:** 실행마다 `unshare --net` 으로 빈 네트워크 네임스페이스를 만들고 루프백만 올린다 (`apps/runner/sandbox.py`, `iproute2` + `NET_ADMIN`). 응시자 코드는 `redis`·`api` 호스트 이름을 풀지도, 연결하지도 못한다. 로컬 서버(`127.0.0.1`)는 여전히 띄울 수 있다.
+- **Redis 인증·ACL:** `default` 사용자는 끄고 서비스별 계정만 둔다 (`docker-compose.yml`). `api` 는 전체 권한, `runner` 는 `odysseus:run:queue`·`odysseus:runner:*`·`odysseus:attempt:*` 키에 `BRPOP/LLEN/SET/HINCRBY/HINCRBYFLOAT/EXPIRE/SMEMBERS/SREM` 만 — 큐 적재(`LPUSH`), `KEYS`, `FLUSH*`, 다른 키 접근이 불가능하다. 비밀번호는 `REDIS_API_PASSWORD`/`REDIS_RUNNER_PASSWORD` 로 필수.
+- **큐 작업 서명:** API 가 작업 JSON 을 `INTERNAL_TOKEN` 으로 HMAC-SHA256 서명(`sig`)하고, 러너는 서명이 맞는 작업만 실행하며 나머지는 로그를 남기고 버린다 (`runqueue.sign_job`, `worker.job_is_signed`). 실행별 콜백 토큰(ODY-002)과 합쳐, 큐에 끼워 넣은 작업으로는 실행도 결과 위조도 되지 않는다.
+- **검증:** `tests/security/test_sandbox_network.py` (응시자 명령으로 redis/api/DNS 도달 실패, 루프백 정상, 인터페이스 lo 뿐) + `tests/security/test_redis_acl.py` (무인증 거부, runner 계정의 LPUSH/KEYS/FLUSHALL 거부와 BRPOP 허용, api 계정 정상) + 위조 작업 투입 시 러너가 버리는지 로그 확인.
+- **미완:** 큐 payload 에서 파일 본문을 분리해 fetch 방식으로 바꾸는 것(#5)과 Redis 감사·경보(#6)는 네트워크 분리로 위험이 사라진 뒤라 우선순위를 낮춰 두었다. TLS 는 내부 브리지 망에서만 오가므로 보류.

@@ -32,8 +32,24 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # 인증 없는 접근은 없다 (ODY-003). default 사용자는 끄고, 서비스별 ACL 계정만 둔다:
+    #   api    — 모든 키·명령 (큐 적재, 통계 조회, 취소 요청)
+    #   runner — 큐 소비와 자기 통계 키만, 명령도 필요한 것만 (LPUSH/KEYS/FLUSH* 불가)
+    environment:
+      REDIS_API_PASSWORD: ${REDIS_API_PASSWORD:?REDIS_API_PASSWORD 가 필요합니다 — .env 에 `openssl rand -hex 32` 값을 넣으세요}
+      REDIS_RUNNER_PASSWORD: ${REDIS_RUNNER_PASSWORD:?REDIS_RUNNER_PASSWORD 가 필요합니다 — .env 에 `openssl rand -hex 32` 값을 넣으세요}
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        printf 'user default off\n' > /tmp/users.acl
+        printf 'user api on >%s ~* &* +@all\n' "$$REDIS_API_PASSWORD" >> /tmp/users.acl
+        printf 'user runner on >%s ~odysseus:run:queue ~odysseus:runner:* ~odysseus:attempt:* -@all +brpop +llen +set +hincrby +hincrbyfloat +expire +smembers +srem +ping +multi +exec +client|setinfo\n' "$$REDIS_RUNNER_PASSWORD" >> /tmp/users.acl
+        chmod 600 /tmp/users.acl
+        exec redis-server --aclfile /tmp/users.acl --save "" --appendonly no
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --user api --pass \"$$REDIS_API_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -46,7 +62,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://odysseus:${POSTGRES_PASSWORD:-odysseus}@postgres:5432/odysseus
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://api:${REDIS_API_PASSWORD:?}@redis:6379/0
       # 시크릿에 기본값을 두지 않는다 — 없으면 compose 가 여기서 멈춘다 (openssl rand -hex 32)
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 이 필요합니다 — .env 에 `openssl rand -hex 32` 값을 넣으세요}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:?INTERNAL_TOKEN 이 필요합니다 — .env 에 `openssl rand -hex 32` 값을 넣으세요}
@@ -76,7 +92,7 @@ services:
     build: ./apps/runner
     restart: unless-stopped
     environment:
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://runner:${REDIS_RUNNER_PASSWORD:?}@redis:6379/0
       API_BASE_URL: http://api:8000
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:?INTERNAL_TOKEN 이 필요합니다}
       RUNNER_CONCURRENCY: ${RUNNER_CONCURRENCY:-2}
@@ -94,6 +110,7 @@ services:
       - ALL
     cap_add:
       - SYS_ADMIN     # 네임스페이스 분리 + 개인 /tmp 마운트
+      - NET_ADMIN     # 실행 전용 네트워크 네임스페이스에서 루프백만 올린다 (밖으로 나가는 인터페이스 없음)
       - SETUID        # 실행마다 다른 UID 로 강등
       - SETGID
       - KILL          # 강등된 UID 의 프로세스를 끝낸다 (없으면 root 라도 EPERM)

@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # 않으므로(docker-compose.yml 참조), 필요한 것은 전부 미리 깔아 둔다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         # 셸·기본 유틸
-        bash coreutils findutils grep sed gawk diffutils procps util-linux \
+        bash coreutils findutils grep sed gawk diffutils procps util-linux iproute2 \
         less vim-tiny nano file tree bc unzip zip xz-utils time \
         ca-certificates locales tini \
         # 버전 관리

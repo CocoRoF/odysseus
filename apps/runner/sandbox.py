@@ -2,9 +2,10 @@
 
 러너 컨테이너 하나를 모든 응시자가 공유하므로, 실행 한 건을 세 겹으로 가둔다:
 
-  1. **네임스페이스** — PID/mount/IPC/UTS 를 분리한다. 새 PID 네임스페이스 안에
+  1. **네임스페이스** — PID/mount/IPC/UTS/**net** 을 분리한다. 새 PID 네임스페이스 안에
      `/proc` 을 다시 마운트하므로 `ps` 에 자기 프로세스만 보이고, `/tmp` 는
-     실행 전용 tmpfs 라 다른 실행과 공유되지 않는다.
+     실행 전용 tmpfs 라 다른 실행과 공유되지 않는다. 네트워크 네임스페이스에는
+     루프백만 있다 — 러너가 붙어 있는 redis/api 에 응시자 코드는 닿을 수 없다 (ODY-003).
   2. **UID** — 실행마다 다른 UID 로 강등한다. 작업 폴더가 0700 이므로 UID 가
      다르면 커널이 그 경로를 막아 준다.
   3. **rlimit** — CPU/프로세스 수/파일 크기/가상 메모리 상한.
@@ -32,6 +33,7 @@ _uid_lock = threading.Lock()
 # 새 네임스페이스 안에서 할 일: 개인 /tmp 를 깔고, 비특권 UID 로 내려가 명령을 실행.
 # 사용자 명령은 인자($3)로 넘어오므로 셸 이스케이프가 끼어들 여지가 없다.
 _BOOTSTRAP = (
+    'ip link set lo up 2>/dev/null; '
     'mount -t tmpfs -o size=256m,mode=1777,nosuid,nodev tmpfs /tmp 2>/dev/null; '
     'exec setpriv --reuid="$1" --regid="$2" --clear-groups --no-new-privs '
     '/bin/bash -c "$3"'
@@ -48,7 +50,7 @@ def isolation_available() -> bool:
 def wrap_isolated(command: str, uid: int, gid: int) -> list[str]:
     return [
         "unshare",
-        "--pid", "--mount", "--ipc", "--uts",
+        "--pid", "--mount", "--ipc", "--uts", "--net",
         "--fork", "--mount-proc", "--kill-child",
         "/bin/bash", "-c", _BOOTSTRAP, "odysseus-sandbox", str(uid), str(gid), command,
     ]

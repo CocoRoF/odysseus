@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import secrets
 
@@ -15,6 +17,16 @@ def get_redis() -> aioredis.Redis:
     if _redis is None:
         _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     return _redis
+
+
+def canonical_job(job: dict) -> bytes:
+    """서명 대상 — 키 정렬·공백 없음. 러너(worker.py)와 같은 규칙이어야 한다."""
+    return json.dumps({k: v for k, v in job.items() if k != "sig"}, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def sign_job(job: dict) -> str:
+    """INTERNAL_TOKEN 으로 HMAC-SHA256 — 큐에 끼워 넣은 작업은 러너가 버린다 (ODY-003)."""
+    return hmac.new(settings.internal_token.encode("utf-8"), canonical_job(job), hashlib.sha256).hexdigest()
 
 
 def new_callback_token() -> str:
@@ -46,4 +58,5 @@ async def enqueue_run(
         # 러너는 이 값을 X-Execution-Token 으로 되돌려 준다 — 없거나 다르면 결과가 접수되지 않는다
         "callback_token": callback_token,
     }
+    job["sig"] = sign_job(job)
     await get_redis().lpush(QUEUE_KEY, json.dumps(job))

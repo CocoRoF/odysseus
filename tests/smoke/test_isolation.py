@@ -79,8 +79,11 @@ out = run(a1, s1, "timeout 8 python3 -c \"import urllib.request;print(urllib.req
 check("외부 인터넷 차단", "200" not in out, out[:100])
 out = run(a1, s1, "timeout 6 python3 -c \"import socket;socket.create_connection(('postgres',5432),3);print('reachable')\" 2>&1|tail -1")
 check("데이터베이스 도달 불가", "reachable" not in out, out[:100])
+# ODY-003 이후: 결과 콜백은 러너 워커가 하고, 응시자 명령은 실행 전용 네트워크 네임스페이스(루프백만)에 있다.
 out = run(a1, s1, "timeout 6 python3 -c \"import socket;socket.create_connection(('api',8000),3);print('reachable')\" 2>&1|tail -1")
-check("api 는 도달 가능해야 한다 (결과 콜백)", "reachable" in out, out[:100])
+check("api 도 응시자 명령에서는 도달 불가 (콜백은 워커가 한다)", "reachable" not in out, out[:100])
+out = run(a1, s1, "timeout 6 python3 -c \"import socket;socket.create_connection(('redis',6379),3);print('reachable')\" 2>&1|tail -1")
+check("redis 도달 불가", "reachable" not in out, out[:100])
 
 print("\n── 커널 수준 격리 (PID/mount 네임스페이스) ──")
 out = run(a1, s1, "ps aux")
