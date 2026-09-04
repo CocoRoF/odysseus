@@ -74,12 +74,20 @@ export function ResourceMeter({ attemptId }: { attemptId: string }) {
   const busy = res.running > 0;
   // 방금 끝난 실행은 최고치를 잠시 붙들어 보여 준다 — 순간값만 보면 늘 0 처럼 보인다
   const recent = !busy && res.last_run && now - res.last_run.ended_at * 1000 < HOLD_MS ? res.last_run : null;
-  const cpuNow = busy ? res.cpu_percent : recent ? recent.peak_cpu : 0;
+  // 1초도 안 되는 실행은 샘플러가 최고치를 못 잡는다 — CPU 시간/소요 시간으로 평균을 낸다
+  const recentCpu = recent
+    ? Math.max(recent.peak_cpu, recent.duration_s > 0 ? Math.min((recent.cpu_seconds / recent.duration_s) * 100, res.cpu_capacity_percent) : 0)
+    : 0;
+  const cpuNow = busy ? res.cpu_percent : recentCpu;
   const memNow = busy ? res.memory_bytes : recent ? recent.peak_mem : 0;
+  const memUnknown = !busy && !!recent && recent.peak_mem === 0;
   const cpuRatio = res.cpu_capacity_percent > 0 ? cpuNow / res.cpu_capacity_percent : 0;
   const memRatio = res.memory_limit_bytes ? memNow / res.memory_limit_bytes : 0;
-  const memText =
-    memNow >= 1024 * 1024 * 1024 ? `${(memNow / 1024 ** 3).toFixed(1)}GB` : `${Math.round(memNow / 1024 ** 2)}MB`;
+  const memText = memUnknown
+    ? "—"
+    : memNow >= 1024 * 1024 * 1024
+      ? `${(memNow / 1024 ** 3).toFixed(1)}GB`
+      : `${Math.round(memNow / 1024 ** 2)}MB`;
 
   const last = res.last_run;
   const title = busy
