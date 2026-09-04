@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import workspace as ws
+from ..safe_fetch import UnsafeUrl, assert_public_url, safe_get
 from ..config import settings as app_settings
 from ..db import get_db
 from ..deps import get_current_user
@@ -534,19 +535,15 @@ async def web_search(
 
 
 def _is_public_url(url: str) -> str:
-    """스킴·사설 IP 검사 — 내부망으로 나가는 요청을 막는다."""
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise HTTPException(400, "http/https 주소만 열 수 있습니다")
+    """사전 검사 — 실제 보호는 safe_get 이 연결 시점·리다이렉트마다 다시 한다 (ODY-006)."""
     try:
-        infos = socket.getaddrinfo(parsed.hostname, None)
-    except OSError:
-        raise HTTPException(400, "주소를 찾을 수 없습니다")
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-            raise HTTPException(403, "내부 주소는 열 수 없습니다")
-    return url
+        return assert_public_url(url)
+    except UnsafeUrl as e:
+        raise HTTPException(403 if "내부" in str(e) else 400, str(e))
+
+
+def _unsafe(e: UnsafeUrl) -> HTTPException:
+    return HTTPException(403 if "내부" in str(e) else 400, str(e))
 
 
 _SCRIPT_STYLE = re.compile(r"<(script|style|noscript|svg)[^>]*>.*?</\1>", re.S | re.I)
@@ -571,13 +568,17 @@ async def web_page(
     cached = _cache_get(f"page:{url}")
     if cached is None:
         try:
-            async with httpx.AsyncClient(timeout=25, follow_redirects=True, max_redirects=5) as client:
-                resp = await client.get(
-                    url,
-                    headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36"},
-                )
+            resp = await safe_get(
+                url,
+                timeout=25,
+                max_bytes=2_000_000,
+                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36"},
+                purpose="page",
+            )
+        except UnsafeUrl as e:
+            raise _unsafe(e)
         except httpx.HTTPError as e:
-            raise HTTPException(502, f"페이지를 열 수 없습니다: {e}")
+            raise HTTPException(502, f"페이지를 열 수 없습니다 ({type(e).__name__})")
         ctype = resp.headers.get("content-type", "")
         if "html" not in ctype and "text" not in ctype:
             raise HTTPException(415, f"열 수 없는 형식입니다 ({ctype.split(';')[0] or '알 수 없음'})")
@@ -613,18 +614,16 @@ async def _fetch_css_bundle(urls: list[str]) -> dict[str, str]:
     """외부 스타일시트를 병렬로 받아 온다. 하나가 실패해도 나머지는 살린다."""
     import asyncio as _aio
 
-    async def one(client: httpx.AsyncClient, url: str) -> tuple[str, str]:
+    async def one(url: str) -> tuple[str, str]:
         try:
-            _is_public_url(url)
-            r = await client.get(url, headers={"User-Agent": _BROWSER_UA})
+            r = await safe_get(url, timeout=10, max_bytes=_CSS_MAX, headers={"User-Agent": _BROWSER_UA}, purpose="css")
             if r.status_code < 400 and "css" in r.headers.get("content-type", "text/css"):
                 return url, r.text[:_CSS_MAX]
-        except Exception:  # noqa: BLE001
+        except (UnsafeUrl, httpx.HTTPError):
             pass
         return url, ""
 
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        pairs = await _aio.gather(*(one(client, u) for u in urls))
+    pairs = await _aio.gather(*(one(u) for u in urls))
     return {u: css for u, css in pairs if css}
 
 
@@ -657,15 +656,21 @@ async def web_render(
     cached = _cache_get(cache_key)
     if cached is None:
         try:
-            async with httpx.AsyncClient(timeout=25, follow_redirects=True, max_redirects=5) as client:
-                resp = await client.get(url, headers={"User-Agent": _BROWSER_UA, "Accept-Language": "ko,en;q=0.8"})
+            resp = await safe_get(
+                url,
+                timeout=25,
+                max_bytes=_PAGE_MAX,
+                headers={"User-Agent": _BROWSER_UA, "Accept-Language": "ko,en;q=0.8"},
+                purpose="render",
+            )
+        except UnsafeUrl as e:
+            raise _unsafe(e)
         except httpx.HTTPError as e:
-            raise HTTPException(502, f"페이지를 열 수 없습니다: {e}")
+            raise HTTPException(502, f"페이지를 열 수 없습니다 ({type(e).__name__})")
         ctype = resp.headers.get("content-type", "")
         if "html" not in ctype and "xml" not in ctype:
             raise HTTPException(415, f"열 수 없는 형식입니다 ({ctype.split(';')[0] or '알 수 없음'})")
-        final_url = str(resp.url)
-        _is_public_url(final_url)  # 리다이렉트 끝도 검사한다
+        final_url = resp.url  # 모든 hop 이 safe_get 에서 검사됐다
         raw = resp.content[:_PAGE_MAX]
 
         charset = resp.charset_encoding  # Content-Type 헤더의 charset (없으면 None)
@@ -711,8 +716,11 @@ async def web_asset(u: str, exp: str, sig: str):
         body, ctype = hit[1], hit[2]
     else:
         try:
-            async with httpx.AsyncClient(timeout=20, follow_redirects=True, max_redirects=5) as client:
-                resp = await client.get(target, headers={"User-Agent": _BROWSER_UA, "Referer": target})
+            resp = await safe_get(
+                target, timeout=20, max_bytes=_ASSET_MAX, headers={"User-Agent": _BROWSER_UA, "Referer": target}, purpose="asset"
+            )
+        except UnsafeUrl as e:
+            raise _unsafe(e)
         except httpx.HTTPError:
             raise HTTPException(502, "자산을 받지 못했습니다")
         if resp.status_code >= 400:
