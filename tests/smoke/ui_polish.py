@@ -121,11 +121,14 @@ async def main():
         await cand.locator('button:has-text("응시")').first.click()
         await cand.wait_for_url("**/exam/**", timeout=20000)
         # 브리핑은 설정에 따라 카드("업무 시작하기") 또는 시네마틱("건너뛰기" → "임무 시작" → 부팅)
-        await cand.wait_for_selector("text=업무 시작하기, text=건너뛰기", timeout=20000)
-        cinematic = await cand.locator("text=건너뛰기").count() > 0
+        # ("text=A, text=B" 는 합집합이 아니다 — or_ 로 묶는다. 시네마틱 판정은 무대(.intro-stage)
+        #  존재로: '건너뛰기'는 낭독 중에만 있어서 늦게 도착하면 놓친다)
+        await cand.locator("text=업무 시작하기").or_(cand.locator(".intro-stage")).first.wait_for(timeout=20000)
+        cinematic = await cand.locator(".intro-stage").count() > 0
         if cinematic:
-            await cand.click("text=건너뛰기")
-            await cand.wait_for_selector(".intro-stage >> text=임무 시작", timeout=8000)
+            if await cand.locator("text=건너뛰기").count():
+                await cand.click("text=건너뛰기")
+            await cand.wait_for_selector(".intro-stage >> text=임무 시작", timeout=30000)
         await scan(cand, "exam/briefing", allow_md=True)  # 브리핑은 prose 렌더
         if cinematic:
             await cand.click(".intro-stage >> text=임무 시작")
