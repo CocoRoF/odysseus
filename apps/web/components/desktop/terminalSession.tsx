@@ -35,7 +35,7 @@ export interface CloneResult {
 }
 
 export type TermLine =
-  | { kind: "cmd"; cwd: string; text: string }
+  | { kind: "cmd"; cwd: string; text: string; cont?: boolean }
   | { kind: "out"; text: string }
   | { kind: "err"; text: string };
 
@@ -79,6 +79,181 @@ export function resolveCd(
 function shellQuote(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`;
 }
+
+/** 참고 저장소가 모이는 곳 — 서버(reference.py CLONE_ROOT)와 같은 규약 */
+export const CLONE_ROOT = "github";
+
+/**
+ * 아직 닫히지 않은 입력인지 — bash 처럼 `> ` 프롬프트로 다음 줄을 기다린다.
+ * heredoc(`<<EOF`), 열린 따옴표, 줄 끝 백슬래시를 본다.
+ */
+export function needsContinuation(text: string): boolean {
+  const first = text.split("\n")[0];
+  const hd = first.match(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/);
+  if (hd) {
+    const term = hd[2];
+    return !text.split("\n").slice(1).some((l) => l.replace(/^\t+/, "") === term);
+  }
+  let sq = false;
+  let dq = false;
+  let esc = false;
+  for (const ch of text) {
+    if (esc) {
+      esc = false;
+      continue;
+    }
+    if (ch === "\\" && !sq) {
+      esc = true;
+      continue;
+    }
+    if (ch === "'" && !dq) sq = !sq;
+    else if (ch === '"' && !sq) dq = !dq;
+  }
+  return sq || dq || esc;
+}
+
+const REPL_HINT: Record<string, string> = {
+  python: "python3 script.py  또는  python3 -c '...'",
+  python3: "python3 script.py  또는  python3 -c '...'",
+  ipython: "python3 script.py  또는  python3 -c '...'",
+  node: "node script.js  또는  node -e '...'",
+  bash: "bash script.sh",
+  sh: "sh script.sh",
+  sqlite3: "sqlite3 파일.db 'SELECT ...'",
+  irb: "ruby 는 설치되어 있지 않습니다",
+};
+const EDITOR_HINT = new Set(["vim", "vi", "nano", "vim.tiny", "emacs"]);
+const PAGERS = new Set(["less", "more"]);
+const NO_NETWORK = new Set(["curl", "wget", "apt", "apt-get", "ssh", "scp"]);
+
+/**
+ * 대화형 프로그램·네트워크는 이 터미널로 할 수 없다 — 제한 시간까지 멈춰 있는 대신
+ * 즉시 알려 준다. 대체 명령이 있으면(`less` → `cat`) 바꿔 실행한다.
+ */
+export function interactiveHint(command: string): { lines?: string[]; rewrite?: string } | null {
+  const tokens = command.trim().split(/\s+/);
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i++;
+  const cmd = (tokens[i] ?? "").split("/").pop() ?? "";
+  const args = tokens.slice(i + 1);
+  const positional = args.filter((a) => !a.startsWith("-"));
+  if (cmd in REPL_HINT && positional.length === 0 && !args.includes("-c") && !args.includes("-e") && !args.includes("-m"))
+    return {
+      lines: [
+        `${cmd}: 이 터미널은 대화형 프롬프트를 열 수 없습니다 (입력을 받을 수 없습니다).`,
+        `        ${REPL_HINT[cmd]}`,
+      ],
+    };
+  if (EDITOR_HINT.has(cmd))
+    return { lines: [`${cmd}: 이 터미널은 화면 편집기를 열 수 없습니다 — IDE 에서 파일을 열어 편집하세요.`] };
+  if (PAGERS.has(cmd)) {
+    if (positional.length === 0) return { lines: [`${cmd}: 파일 이름이 필요합니다 (예: cat 파일)`] };
+    return { rewrite: ["cat", ...positional].join(" ") };
+  }
+  if (cmd === "top" || cmd === "htop") return { rewrite: "ps aux --sort=-%cpu | head -15" };
+  if (cmd === "man") return { lines: [`man: 설명서는 설치되어 있지 않습니다 — ${positional[0] ?? "명령"} --help 를 사용하세요.`] };
+  if (cmd === "sudo" || cmd === "su") return { lines: [`${cmd}: 이 워크스테이션에는 관리자 권한이 없습니다.`] };
+  if (NO_NETWORK.has(cmd))
+    return {
+      lines: [
+        `${cmd}: 이 워크스테이션은 인터넷에 직접 닿지 않습니다.`,
+        `        참고 자료는 [인터넷]·[GitHub] 앱과 git clone 으로 가져올 수 있습니다.`,
+      ],
+    };
+  if ((cmd === "pip" || cmd === "pip3" || cmd === "npm" || cmd === "npx" || cmd === "go") && positional[0] === "install" ||
+      (cmd === "go" && positional[0] === "get"))
+    return {
+      lines: [
+        `${cmd}: 이 워크스테이션은 인터넷에 직접 닿지 않아 패키지를 내려받을 수 없습니다.`,
+        `        자주 쓰는 라이브러리는 미리 설치되어 있습니다 (pip list / npm ls -g).`,
+      ],
+    };
+  return null;
+}
+
+/** 탭 완성 후보가 되는 명령들 — 흔히 쓰는 것만, 나머지는 경로 완성으로 충분하다. */
+const COMMANDS = [
+  "awk", "bc", "cat", "cd", "chmod", "clear", "cp", "cut", "date", "diff", "du", "echo", "env", "file", "find",
+  "g++", "gcc", "git clone", "go", "grep", "head", "help", "java", "javac", "jq", "ls", "make", "mkdir", "mv",
+  "node", "npm", "pip3", "printf", "ps", "pwd", "pytest", "python", "python3", "rg", "rm", "sed", "sort",
+  "sqlite3", "tail", "tar", "touch", "tree", "uniq", "unzip", "wc", "which", "xargs", "zip",
+];
+
+export interface Completion {
+  /** 바꿀 입력 전체 (완성됐을 때) */
+  input?: string;
+  /** 후보가 여럿이면 보여 줄 목록 */
+  candidates?: string[];
+}
+
+function commonPrefix(items: string[]): string {
+  if (items.length === 0) return "";
+  let p = items[0];
+  for (const it of items.slice(1)) {
+    let i = 0;
+    while (i < p.length && i < it.length && p[i] === it[i]) i++;
+    p = p.slice(0, i);
+  }
+  return p;
+}
+
+/**
+ * bash 식 탭 완성 — 첫 단어는 명령, 그 뒤는 현재 폴더 기준 경로.
+ * 후보가 하나면 채우고(폴더는 `/` 까지), 여럿이면 공통 접두어까지만 채우고 목록을 돌려준다.
+ */
+export function complete(
+  input: string,
+  cwd: string,
+  children: Map<string, string[]>,
+): Completion | null {
+  const m = input.match(/(^|.*\s)(\S*)$/);
+  if (!m) return null;
+  const head = m[1];
+  const token = m[2];
+  const isCommand = head.trim() === "" || /(\||&&|;)\s*$/.test(head);
+  let candidates: string[];
+  let prefixDir = "";
+  if (isCommand && !token.includes("/") && !token.startsWith(".")) {
+    candidates = COMMANDS.filter((c) => c.startsWith(token));
+  } else {
+    const slash = token.lastIndexOf("/");
+    prefixDir = slash === -1 ? "" : token.slice(0, slash + 1);
+    const base = slash === -1 ? token : token.slice(slash + 1);
+    let dir: string;
+    if (prefixDir.startsWith("~/")) dir = prefixDir.slice(2);
+    else if (prefixDir.startsWith("/")) return null;
+    else dir = cwd ? `${cwd}/${prefixDir}` : prefixDir;
+    const parts: string[] = [];
+    for (const seg of dir.split("/")) {
+      if (!seg || seg === ".") continue;
+      if (seg === "..") parts.pop();
+      else parts.push(seg);
+    }
+    const names = children.get(parts.join("/")) ?? [];
+    candidates = names.filter((n) => n.startsWith(base) && (base.startsWith(".") || !n.startsWith(".")));
+  }
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) {
+    const c = candidates[0];
+    const done = c.endsWith("/") || c.endsWith(" ") ? c : `${c} `;
+    return { input: `${head}${prefixDir}${done}` };
+  }
+  const cp = commonPrefix(candidates);
+  const tokenBase = token.slice(prefixDir.length);
+  if (cp.length > tokenBase.length) return { input: `${head}${prefixDir}${cp}` };
+  return { candidates: candidates.slice().sort() };
+}
+
+const HELP_LINES = [
+  "Odysseus 워크스테이션 — 참고 명령",
+  "  언어      python3 · node · go · java/javac · gcc/g++ · make   (python 은 python3 과 같습니다)",
+  "  도구      git clone <github 주소> [폴더]  → github/<저장소> 에 받습니다 (그 외 git 명령은 없음)",
+  "            jq · sqlite3 · rg · tree · pytest 등이 설치되어 있습니다",
+  "  편집기    파일 편집은 IDE 에서 — vim/nano 는 열리지 않습니다",
+  "  입력      Tab 완성 · ↑↓ 히스토리 · Ctrl+C 중단 · Ctrl+L 지우기 · 여러 줄은 \\ 나 <<EOF 로",
+  "  제한      명령마다 새 셸에서 실행되어 export/변수/cd 는 다음 명령으로 이어지지 않습니다 (cd 제외)",
+  "            인터넷 직접 접속 없음 · 실행 시간 30초 · 대화형 프로그램 없음",
+];
 
 /** `git clone <url|owner/repo> [dest]` 파싱 — 지원하는 형태만 받아들인다. */
 export function parseGitClone(
@@ -128,6 +303,8 @@ interface TerminalSessionValue {
   print: (entries: TermLine[]) => void;
   clear: () => void;
   submit: (raw: string) => Promise<void>;
+  /** 여러 줄 입력 중이면 첫 줄부터의 내용 — 화면은 `> ` 프롬프트를 보인다 */
+  pending: string | null;
   handleKey: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   /** IDE 가 더티 탭을 저장할 기회를 얻는다 — 실행은 서버 파일 기준이므로 */
   registerPreRun: (fn: () => Promise<void>) => () => void;
@@ -159,7 +336,17 @@ export function TerminalSessionProvider({
   const [input, setInput] = useState("");
   const [cwd, setCwd] = useState("");
   const [running, setRunning] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const historyKey = `odysseus:term:${ws.attemptId}`;
   const historyRef = useRef<string[]>([]);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(historyKey);
+      if (raw) historyRef.current = JSON.parse(raw);
+    } catch {
+      /* 없으면 빈 히스토리 */
+    }
+  }, [historyKey]);
   const histPosRef = useRef(-1);
   const cancelRef = useRef<string | null>(null);
   const runIdRef = useRef<string | null>(null);
@@ -175,6 +362,22 @@ export function TerminalSessionProvider({
     return set;
   }, [ws.files]);
   const fileSet = useMemo(() => new Set(ws.files.map((f) => f.path)), [ws.files]);
+  /** 폴더 → 직계 항목 이름(폴더는 `/` 붙임) — 탭 완성용 */
+  const childrenMap = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    const add = (dir: string, name: string) => {
+      if (!m.has(dir)) m.set(dir, new Set());
+      m.get(dir)!.add(name);
+    };
+    for (const f of ws.files) {
+      const parts = f.path.split("/");
+      for (let i = 1; i < parts.length; i++) add(parts.slice(0, i - 1).join("/"), `${parts[i - 1]}/`);
+      if (!parts[parts.length - 1].startsWith(".keep")) add(parts.slice(0, -1).join("/"), parts[parts.length - 1]);
+    }
+    const out = new Map<string, string[]>();
+    for (const [k, v] of m) out.set(k, [...v].sort());
+    return out;
+  }, [ws.files]);
 
   const print = useCallback((entries: TermLine[]) => {
     setLines((l) => [...l, ...entries]);
@@ -255,8 +458,12 @@ export function TerminalSessionProvider({
         );
         runIdRef.current = exec.id;
         let done: Execution = exec;
-        for (let i = 0; i < 90; i++) {
-          await new Promise((r) => setTimeout(r, 650));
+        // 짧은 명령은 곧바로 돌아오도록 처음엔 촘촘히, 오래 걸리면 완만히 확인한다
+        const started = Date.now();
+        let delay = 120;
+        while (Date.now() - started < 75_000) {
+          await new Promise((r) => setTimeout(r, delay));
+          delay = Math.min(650, Math.round(delay * 1.5));
           if (cancelRef.current === exec.id) return;
           done = await api.get<Execution>(`/executions/${exec.id}`);
           if (done.status === "done" || done.status === "error") break;
@@ -291,16 +498,36 @@ export function TerminalSessionProvider({
 
   const submit = useCallback(
     async (raw: string) => {
-      const command = raw.trim();
-      print([{ kind: "cmd", cwd, text: raw }]);
+      // 여러 줄 입력 — 닫힐 때까지 모은다
+      const whole = pending !== null ? `${pending}\n${raw}` : raw;
+      print([{ kind: "cmd", cwd, text: raw, cont: pending !== null }]);
+      if (needsContinuation(whole)) {
+        setPending(whole);
+        return;
+      }
+      setPending(null);
+      const command = whole.trim();
       if (command) {
         historyRef.current = [...historyRef.current.filter((c) => c !== command), command].slice(-100);
+        try {
+          sessionStorage.setItem(historyKey, JSON.stringify(historyRef.current));
+        } catch {
+          /* 저장 실패는 무시 */
+        }
       }
       histPosRef.current = -1;
       if (!command) return;
 
       if (command === "clear" || command === "reset") {
         setLines([]);
+        return;
+      }
+      if (command === "help" || command === "?") {
+        print(HELP_LINES.map((text) => ({ kind: "out" as const, text })));
+        return;
+      }
+      if (command === "exit" || command === "logout") {
+        print([{ kind: "out", text: "이 터미널은 시험이 끝날 때까지 열려 있습니다. 창을 닫으려면 ✕ 를 누르세요." }]);
         return;
       }
       if (command === "pwd") {
@@ -321,10 +548,11 @@ export function TerminalSessionProvider({
           print(git.error.split("\n").map((text) => ({ kind: "err" as const, text })));
           return;
         }
-        const dest = git.dest || git.name;
-        const full = cwd && !dest.startsWith("/") ? `${cwd}/${dest}` : dest;
+        // 폴더를 지정하지 않으면 현재 위치와 무관하게 github/<저장소> 로 모은다
+        const dest = git.dest || `${CLONE_ROOT}/${git.name}`;
+        const full = git.dest && cwd && !dest.startsWith("/") ? `${cwd}/${dest}` : dest;
         setRunning(true);
-        print([{ kind: "err", text: `Cloning into '${dest}'...` }]);
+        print([{ kind: "err", text: `Cloning into '${full}'...` }]);
         try {
           printCloneResult(await cloneRepo(git.owner, git.name, full, git.branch));
         } catch (e) {
@@ -340,9 +568,14 @@ export function TerminalSessionProvider({
         return;
       }
 
-      await runServerCommand(command, cwd);
+      const hint = interactiveHint(command);
+      if (hint?.lines) {
+        print(hint.lines.map((text) => ({ kind: "err" as const, text })));
+        return;
+      }
+      await runServerCommand(hint?.rewrite ?? command, cwd);
     },
-    [cwd, dirSet, fileSet, print, runServerCommand, cloneRepo, printCloneResult],
+    [cwd, pending, historyKey, dirSet, fileSet, print, runServerCommand, cloneRepo, printCloneResult],
   );
 
   const handleKey = useCallback(
@@ -355,9 +588,24 @@ export function TerminalSessionProvider({
           setRunning(false);
           print([{ kind: "out", text: "^C" }]);
         } else {
-          print([{ kind: "cmd", cwd, text: `${input}^C` }]);
+          print([{ kind: "cmd", cwd, text: `${input}^C`, cont: pending !== null }]);
           setInput("");
+          setPending(null);
           histPosRef.current = -1;
+        }
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (running || pending !== null) return;
+        const c = complete(input, cwd, childrenMap);
+        if (!c) return;
+        if (c.input !== undefined) setInput(c.input);
+        else if (c.candidates) {
+          print([
+            { kind: "cmd", cwd, text: input },
+            { kind: "out", text: c.candidates.join("  ") },
+          ]);
         }
         return;
       }
@@ -396,7 +644,7 @@ export function TerminalSessionProvider({
         }
       }
     },
-    [running, input, cwd, print, submit],
+    [running, input, cwd, pending, childrenMap, print, submit],
   );
 
   const value = useMemo(
@@ -409,6 +657,7 @@ export function TerminalSessionProvider({
       print,
       clear,
       submit,
+      pending,
       handleKey,
       registerPreRun,
       registerFilesChanged,
@@ -416,7 +665,7 @@ export function TerminalSessionProvider({
       printCloneResult,
     }),
     [
-      lines, input, cwd, running, print, clear, submit, handleKey,
+      lines, input, cwd, running, print, clear, submit, pending, handleKey,
       registerPreRun, registerFilesChanged, cloneRepo, printCloneResult,
     ],
   );

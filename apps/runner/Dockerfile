@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         # 데이터·문서 도구
         jq sqlite3 ripgrep \
         # Python + 자주 쓰는 스택 (네트워크가 없으므로 사전 설치)
-        python3 python3-pip python3-venv python3-dev \
+        python3 python3-pip python3-venv python3-dev python-is-python3 \
         python3-numpy python3-pandas python3-yaml python3-requests \
         python3-dateutil python3-tabulate python3-pytest python3-redis \
         # Node.js

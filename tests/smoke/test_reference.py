@@ -161,7 +161,9 @@ check("잘리지 않았으면 limit 은 빈 값", st == 200 and cl["limit"] == "
 
 _, files = call(admin, "GET", f"{base}/files")
 paths = [f["path"] for f in (files["files"] if isinstance(files, dict) else files)]
-check("clone 파일이 워크스페이스에 존재", any(p.startswith("Hello-World/") for p in paths), str(paths[:6]))
+check("clone 파일이 github/<repo>/ 아래에 존재", any(p.startswith("github/Hello-World/") for p in paths), str(paths[:6]))
+st, again = call(admin, "POST", f"{base}/github/clone" + q(owner="octocat", name="Hello-World"))
+check("같은 곳에 다시 clone 하면 git 처럼 거부(409)", st == 409 and "already exists" in str(again), f"status={st} {str(again)[:80]}")
 
 st, big = call(admin, "POST", f"{base}/github/clone" + q(owner="vllm-project", name="vllm", dest="ref/vllm"))
 check("큰 저장소는 상한에서 잘린다", st == 200 and big["truncated"] and big["limit"] == "repo", str(big)[:160])

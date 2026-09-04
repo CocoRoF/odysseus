@@ -77,7 +77,7 @@ export function TerminalView({ readOnly = false }: { readOnly?: boolean }) {
         {term.lines.map((l, i) =>
           l.kind === "cmd" ? (
             <div key={i} className="whitespace-pre-wrap break-all">
-              <Ps1 cwd={l.cwd} />
+              {l.cont ? <span className="text-[#cccccc]">{"> "}</span> : <Ps1 cwd={l.cwd} />}
               <span className="text-[#cccccc]">{l.text}</span>
             </div>
           ) : (
@@ -91,7 +91,8 @@ export function TerminalView({ readOnly = false }: { readOnly?: boolean }) {
         )}
         {!readOnly && (
           <div className="flex items-center whitespace-pre">
-            {!term.running && <Ps1 cwd={term.cwd} />}
+            {!term.running &&
+              (term.pending !== null ? <span className="text-[#cccccc]">{"> "}</span> : <Ps1 cwd={term.cwd} />)}
             <input
               ref={inputRef}
               className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[12.5px] text-[#cccccc] caret-[#cccccc] outline-none"

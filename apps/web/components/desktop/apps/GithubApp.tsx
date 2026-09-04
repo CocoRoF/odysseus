@@ -206,7 +206,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
     if (readOnly || cloning) return;
     setCloning(true);
     try {
-      const res = await term.cloneRepo(r.owner, r.name, r.name, r.default_branch);
+      const res = await term.cloneRepo(r.owner, r.name, `github/${r.name}`, r.default_branch);
       // 터미널에도 남긴다 — 어디서 받았든 셸에서 이어서 작업하게 된다
       term.print([{ kind: "cmd", cwd: "", text: `git clone https://github.com/${r.full_name}.git` }]);
       term.printCloneResult(res);
@@ -293,7 +293,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
       </span>
       <h2 className="text-2xl font-bold text-[#e6edf3]">무엇을 찾고 있나요?</h2>
       <p className="mt-1.5 text-[13px] text-[#7d8590]">
-        오픈소스 저장소를 검색하고, 읽고, 워크스페이스로 <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11.5px]">clone</code> 할 수 있습니다.
+        오픈소스 저장소를 검색하고, 읽고, 워크스페이스의 <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11.5px]">github/</code> 아래로 <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11.5px]">clone</code> 할 수 있습니다.
       </p>
       <form
         className="mt-6 flex w-full max-w-xl items-center gap-2 rounded-xl border border-[#30363d] bg-[#0d1117] px-4 py-3 shadow-lg transition focus-within:border-[#2f81f7] focus-within:shadow-[0_0_0_3px_rgba(47,129,247,0.18)]"
@@ -393,7 +393,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
                   <button
                     onClick={() => doClone(r)}
                     disabled={cloning}
-                    title="워크스페이스로 clone"
+                    title="github/ 아래로 clone"
                     className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-[#30363d] bg-[#21262d] px-2.5 py-1 text-[11.5px] font-semibold text-[#e6edf3] transition hover:bg-[#30363d] disabled:opacity-50"
                   >
                     <IconDownload size={11} /> clone
@@ -652,7 +652,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
             {!readOnly && (
               <div className="mt-4 rounded-lg border border-[#30363d] bg-[#161b22] p-3">
                 <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#6e7681]">
-                  터미널에서도 가능
+                  터미널에서도 가능 — github/{repo.repo.name} 에 받습니다
                 </p>
                 <code className="block break-all rounded bg-[#0d1117] px-2 py-1.5 font-mono text-[11px] text-[#7d8590]">
                   git clone https://github.com/{repo.repo.full_name}.git
@@ -732,7 +732,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
     if (view.kind === "repo" && repo) {
       items.push({ label: "저장소 주소 복사", onClick: () => copyText(repo.repo.html_url) });
       if (!readOnly)
-        items.push({ label: "워크스페이스로 clone", onClick: () => doClone(repo.repo) });
+        items.push({ label: "github/ 아래로 clone", onClick: () => doClone(repo.repo) });
     }
     items.push("separator");
     items.push({ label: "뒤로", disabled: cursor === 0, onClick: () => setCursor((c) => Math.max(0, c - 1)) });

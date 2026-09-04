@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { fmtBytes, fmtDateTime } from "@/lib/format";
 import { useToast } from "@/components/toast";
@@ -98,6 +98,33 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
 
   const entries = useMemo(() => entriesOf(ws.files, cwd), [ws.files, cwd]);
   const dirs = useMemo(() => allDirs(ws.files), [ws.files]);
+  // 사이드바 트리 — 접혀 있는 것이 기본. 현재 폴더의 조상만 자동으로 펼친다.
+  const childDirs = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const d of dirs) {
+      const parent = d.includes("/") ? d.slice(0, d.lastIndexOf("/")) : "";
+      if (!m.has(parent)) m.set(parent, []);
+      m.get(parent)!.push(d);
+    }
+    return m;
+  }, [dirs]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!cwd) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      const parts = cwd.split("/");
+      for (let i = 1; i <= parts.length; i++) next.add(parts.slice(0, i).join("/"));
+      return next;
+    });
+  }, [cwd]);
+  const toggleExpand = (d: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d);
+      else next.add(d);
+      return next;
+    });
   const selectedEntry = entries.find((e) => e.path === selected) ?? null;
 
   const navigate = (path: string) => {
@@ -296,6 +323,48 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
   const crumbs = cwd ? cwd.split("/") : [];
   const previewFile = previewOn && selectedEntry && !selectedEntry.isDir ? selectedEntry : null;
 
+  const renderTree = (parent: string, depth: number): ReactNode =>
+    (childDirs.get(parent) ?? []).map((d) => {
+      const kids = childDirs.has(d);
+      const open = expanded.has(d);
+      return (
+        <div key={d}>
+          <div
+            className={`flex w-full items-center gap-1 py-1 pr-2 text-[13px] ${
+              cwd === d ? "bg-sky-100/80 font-semibold text-sky-800" : "text-slate-600 hover:bg-slate-100"
+            }`}
+            style={{ paddingLeft: 6 + depth * 14 }}
+          >
+            <button
+              aria-label={kids ? (open ? "접기" : "펼치기") : undefined}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (kids) toggleExpand(d);
+              }}
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 ${
+                kids ? "hover:bg-slate-200/80 hover:text-slate-700" : "invisible"
+              }`}
+            >
+              <IconChevronRight size={11} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+            </button>
+            <button
+              onClick={() => {
+                navigate(d);
+                if (kids && !open) toggleExpand(d);
+              }}
+              onDoubleClick={() => kids && toggleExpand(d)}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+              title={d}
+            >
+              <FolderGlyph size={15} />
+              <span className="min-w-0 truncate">{d.split("/").pop()}</span>
+            </button>
+          </div>
+          {kids && open && renderTree(d, depth + 1)}
+        </div>
+      );
+    });
+
   const toolBtn =
     "flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-700 disabled:pointer-events-none disabled:opacity-30";
 
@@ -407,22 +476,7 @@ export function FilesApp({ readOnly = false }: { readOnly?: boolean }) {
             <IconMonitor size={14} className="shrink-0 text-sky-500" />
             워크스페이스
           </button>
-          {dirs.map((d) => {
-            const depth = d.split("/").length;
-            return (
-              <button
-                key={d}
-                onClick={() => navigate(d)}
-                className={`flex w-full items-center gap-2 py-1.5 pr-2 text-[13px] ${
-                  cwd === d ? "bg-sky-100/80 font-semibold text-sky-800" : "text-slate-600 hover:bg-slate-100"
-                }`}
-                style={{ paddingLeft: 12 + depth * 14 }}
-              >
-                <FolderGlyph size={15} />
-                <span className="min-w-0 truncate">{d.split("/").pop()}</span>
-              </button>
-            );
-          })}
+          {renderTree("", 0)}
         </div>
 
         {/* 메인 목록 — Del 키로 선택 항목 삭제 */}

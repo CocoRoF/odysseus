@@ -369,6 +369,9 @@ def _extract_tar(blob: bytes) -> tuple[list[tuple[str, str]], dict]:
     return files, stats
 
 
+CLONE_ROOT = "github"
+
+
 @router.post("/attempts/{attempt_id}/scenarios/{scenario_id}/github/clone")
 async def github_clone(
     attempt_id: uuid.UUID,
@@ -407,8 +410,14 @@ async def github_clone(
     if resp is None or resp.status_code >= 400:
         raise HTTPException(502, f"'{branch}' 를 내려받지 못했습니다 ({resp.status_code if resp else '연결 실패'})")
 
+    # 참고 저장소는 워크스페이스의 github/<repo> 아래 모인다 — 터미널의 `git clone` 도 같은 규약
+    root = ws.normalize_path(dest.strip() or f"{CLONE_ROOT}/{c_name}")
+    existing = await ws.list_files(db, attempt_id, scenario_id)
+    if any(f.path.startswith(root + "/") for f in existing):
+        raise HTTPException(
+            409, f"fatal: destination path '{root}' already exists and is not an empty directory."
+        )
     files, stats = await asyncio.to_thread(_extract_tar, resp.content)
-    root = ws.normalize_path(dest.strip() or name)
     written = 0
     # 왜 잘렸는지는 구분해서 알린다 — 저장소가 큰 것과 워크스페이스가 찬 것은 다른 문제다
     limit = "repo" if stats["truncated"] else ""
