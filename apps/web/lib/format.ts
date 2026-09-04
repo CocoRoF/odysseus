@@ -46,6 +46,7 @@ export const STATUS_LABEL: Record<string, string> = {
 
 export const EVENT_LABEL: Record<string, string> = {
   attempt_started: "응시 시작",
+  telemetry_gap: "보고 누락 감지",
   attempt_submitted: "응시 제출",
   attempt_expired: "시간 만료",
   attempt_superseded: "재응시로 대체",

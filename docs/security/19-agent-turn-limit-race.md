@@ -45,3 +45,11 @@ wait
 5. 모델 호출 실패 시 quota 환불 정책을 명확히 하고 reservation 상태를 `reserved/completed/failed`로 관리한다.
 6. DB가 최종 강제 지점이 되도록 순번 또는 reservation에 unique constraint를 둔다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **원자적 예약:** `send_agent_message` 가 응시 행을 `SELECT … FOR UPDATE` 로 잠근 채 COUNT → 사용자 메시지 INSERT → COMMIT 을 한다. 잠금이 풀리기 전엔 다른 요청이 같은 COUNT 를 볼 수 없어 한도를 넘는 예약이 생기지 않는다 (`routers/agent.py`).
+- **동시 턴 1개:** 응시별 프로세스 내 `asyncio.Lock` 으로 진행 중인 턴이 있으면 409 로 거절하고, 스트림이 끝나면(정상·오류·연결 끊김) 풀린다. api 는 단일 인스턴스라 프로세스 잠금으로 충분하며, 다중 인스턴스가 되면 Redis 세마포어로 옮긴다.
+- **기록:** `agent_turn` 이벤트에 `turn`(순번)과 `max` 를 남겨 리뷰에서 순서를 확인할 수 있다.
+- **검증:** `tests/security/test_agent_turn_race.py` — 한도 3 에 10개 동시 요청: 200 은 3 이하, 나머지 409/429, 저장된 사용자 턴 ≤ 3; 순차로 채운 뒤 4번째는 429 이고 턴이 늘지 않음; usage 일치; 순번 1..N 겹침 없음.
+- **미완:** 모델 호출 실패 시 환불 정책(#5)은 두지 않았다 — 실패한 턴도 소비된 것으로 본다 (응시자 화면에 오류가 표시되고 재시도는 새 턴).

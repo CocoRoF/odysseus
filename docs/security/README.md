@@ -44,14 +44,14 @@ curl -sS -c "$COOKIE_JAR" \
 | ODY-014 | 높음 | [평문 HTTP와 Secure 없는 세션 쿠키](14-plaintext-http-and-insecure-session-cookie.md) | 조치 완료 (2026-09-04) |
 | ODY-015 | 중간 | [응시 생성 경쟁 조건](15-attempt-creation-race.md) | 조치 완료 (2026-09-04) |
 | ODY-016 | 높음 | [평문 비밀이 포함된 보호되지 않은 백업](16-unprotected-plaintext-backups.md) | 조치 완료 (2026-09-04) |
-| ODY-017 | 높음 | [클라이언트 행동 로그 위조·누락](17-client-telemetry-forgery.md) | 미조치 |
-| ODY-018 | 높음 | [참고자료 감사 로그 우회](18-reference-audit-log-bypass.md) | 미조치 |
-| ODY-019 | 높음 | [AI 에이전트 턴 제한 경쟁 조건](19-agent-turn-limit-race.md) | 미조치 |
-| ODY-020 | 중간 | [쿼리스트링과 서명 자산 URL 노출](20-query-string-and-signed-asset-leak.md) | 미조치 |
-| ODY-021 | 중간 | [응시자 명령을 이용한 러너 로그 인젝션](21-runner-log-injection.md) | 미조치 |
-| ODY-022 | 중간 | [AI 내부 오류 상세 노출](22-ai-error-detail-exposure.md) | 미조치 |
-| ODY-023 | 중간 | [로그아웃 후 JWT 재사용과 브라우저 잔존 데이터](23-jwt-logout-replay-and-client-cache.md) | 미조치 |
-| ODY-024 | 조건부 중간 | [보안 헤더·클릭재킹·CSRF 방어 부족](24-missing-security-headers-and-csrf.md) | 미조치 |
+| ODY-017 | 높음 | [클라이언트 행동 로그 위조·누락](17-client-telemetry-forgery.md) | 조치 완료 (2026-09-04) |
+| ODY-018 | 높음 | [참고자료 감사 로그 우회](18-reference-audit-log-bypass.md) | 조치 완료 (2026-09-04) |
+| ODY-019 | 높음 | [AI 에이전트 턴 제한 경쟁 조건](19-agent-turn-limit-race.md) | 조치 완료 (2026-09-04) |
+| ODY-020 | 중간 | [쿼리스트링과 서명 자산 URL 노출](20-query-string-and-signed-asset-leak.md) | 조치 완료 (2026-09-04) |
+| ODY-021 | 중간 | [응시자 명령을 이용한 러너 로그 인젝션](21-runner-log-injection.md) | 조치 완료 (2026-09-04) |
+| ODY-022 | 중간 | [AI 내부 오류 상세 노출](22-ai-error-detail-exposure.md) | 조치 완료 (2026-09-04) |
+| ODY-023 | 중간 | [로그아웃 후 JWT 재사용과 브라우저 잔존 데이터](23-jwt-logout-replay-and-client-cache.md) | 조치 완료 (2026-09-04) |
+| ODY-024 | 조건부 중간 | [보안 헤더·클릭재킹·CSRF 방어 부족](24-missing-security-headers-and-csrf.md) | 조치 완료 (2026-09-04) |
 
 ## 권장 조치 순서
 

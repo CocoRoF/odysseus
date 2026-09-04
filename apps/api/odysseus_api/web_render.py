@@ -31,7 +31,7 @@ from lxml import etree, html as lhtml
 
 # ── 서명된 프록시 URL ─────────────────────────────────────────────
 
-ASSET_TTL_S = 6 * 3600
+ASSET_TTL_S = 15 * 60  # 서명 URL 은 짧게 산다 — 재생·공유 창을 줄인다 (ODY-020)
 
 
 def _b64(raw: bytes) -> str:
@@ -43,22 +43,25 @@ def _unb64(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + pad)
 
 
-def sign_asset(url: str, secret: str, *, now: float | None = None) -> tuple[str, str, str]:
-    """(u, exp, sig) — 쿼리 파라미터 세 개. 쿠키 없이도 프록시가 요청을 믿을 수 있다."""
+def sign_asset(url: str, secret: str, *, scope: str = "", now: float | None = None) -> tuple[str, str, str]:
+    """(u, exp, sig) — 쿼리 파라미터 세 개. 쿠키 없이도 프록시가 요청을 믿을 수 있다.
+
+    scope(응시 id 등)를 서명에 섞는다 — 다른 응시·다른 사용자의 렌더에서 나온 URL 은 여기서 통하지 않는다.
+    """
     exp = str(int((now or time.time()) + ASSET_TTL_S))
     u = _b64(url.encode())
-    sig = hmac.new(secret.encode(), f"{u}.{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+    sig = hmac.new(secret.encode(), f"{u}.{exp}.{scope}".encode(), hashlib.sha256).hexdigest()[:32]
     return u, exp, sig
 
 
-def verify_asset(u: str, exp: str, sig: str, secret: str, *, now: float | None = None) -> str | None:
+def verify_asset(u: str, exp: str, sig: str, secret: str, *, scope: str = "", now: float | None = None) -> str | None:
     """서명이 맞고 만료 전이면 원래 URL, 아니면 None."""
     try:
         if int(exp) < (now or time.time()):
             return None
     except ValueError:
         return None
-    want = hmac.new(secret.encode(), f"{u}.{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+    want = hmac.new(secret.encode(), f"{u}.{exp}.{scope}".encode(), hashlib.sha256).hexdigest()[:32]
     if not hmac.compare_digest(want, sig):
         return None
     try:
@@ -67,9 +70,10 @@ def verify_asset(u: str, exp: str, sig: str, secret: str, *, now: float | None =
         return None
 
 
-def asset_url(asset_base: str, url: str, secret: str) -> str:
-    u, exp, sig = sign_asset(url, secret)
-    return f"{asset_base}?u={u}&exp={exp}&sig={sig}"
+def asset_url(asset_base: str, url: str, secret: str, scope: str = "") -> str:
+    u, exp, sig = sign_asset(url, secret, scope=scope)
+    tail = f"&a={scope}" if scope else ""
+    return f"{asset_base}?u={u}&exp={exp}&sig={sig}{tail}"
 
 
 # ── CSS 재작성 ───────────────────────────────────────────────────
@@ -79,7 +83,7 @@ _CSS_IMPORT = re.compile(r"@import\s+[^;]+;", re.I)
 _CSS_DANGER = re.compile(r"(expression\s*\(|behavior\s*:|-moz-binding\s*:|javascript\s*:)", re.I)
 
 
-def rewrite_css(css: str, base_url: str, asset_base: str, secret: str) -> str:
+def rewrite_css(css: str, base_url: str, asset_base: str, secret: str, scope: str = "") -> str:
     """CSS 안의 url() 을 프록시로, @import 는 제거(외부 연쇄 로드 차단)."""
     css = _CSS_IMPORT.sub("", css)
     css = _CSS_DANGER.sub("/* removed */", css)
@@ -91,7 +95,7 @@ def rewrite_css(css: str, base_url: str, asset_base: str, secret: str) -> str:
         absolute = urllib.parse.urljoin(base_url, raw)
         if not absolute.startswith(("http://", "https://")):
             return "url()"
-        return f'url("{asset_url(asset_base, absolute, secret)}")'
+        return f'url("{asset_url(asset_base, absolute, secret, scope)}")'
 
     return _CSS_URL.sub(swap, css)
 
@@ -190,7 +194,7 @@ def _rewrite_srcset(base: str, srcset: str, asset_base: str, secret: str) -> str
         absolute = _absolute(base, bits[0])
         if not absolute:
             continue
-        proxied = absolute if absolute.startswith("data:") else asset_url(asset_base, absolute, secret)
+        proxied = absolute if absolute.startswith("data:") else asset_url(asset_base, absolute, secret, scope)
         out.append(" ".join([proxied] + bits[1:]))
     return ", ".join(out) or None
 
@@ -203,6 +207,7 @@ def render_page(
     secret: str,
     inline_css: dict[str, str] | None = None,
     declared_charset: str | None = None,
+    scope: str = "",
 ) -> RenderResult:
     """정제된 전체 HTML 문서를 만든다.
 
@@ -236,7 +241,7 @@ def render_page(
     inline_styles: list[str] = []
     for st in doc.iter("style"):
         if st.text and len(inline_styles) < 30:
-            inline_styles.append(rewrite_css(st.text, base, asset_base, secret)[:200_000])
+            inline_styles.append(rewrite_css(st.text, base, asset_base, secret, scope)[:200_000])
 
     body = doc.find("body")
     if body is None:
@@ -277,7 +282,7 @@ def render_page(
                 del el.attrib[name]
                 continue
             if lname == "style":
-                el.set(name, rewrite_css(value, base, asset_base, secret)[:4000])
+                el.set(name, rewrite_css(value, base, asset_base, secret, scope)[:4000])
                 continue
             if lname == "href" and tag == "a":
                 absolute = _absolute(base, value)
@@ -290,7 +295,7 @@ def render_page(
                 real = el.get("data-src") or el.get("data-original") or value
                 absolute = _absolute(base, real)
                 if absolute:
-                    el.set("src", absolute if absolute.startswith("data:") else asset_url(asset_base, absolute, secret))
+                    el.set("src", absolute if absolute.startswith("data:") else asset_url(asset_base, absolute, secret, scope))
                 else:
                     del el.attrib[name]
                 continue
@@ -306,7 +311,7 @@ def render_page(
         if tag == "img" and not el.get("src") and lazy_src:
             absolute = _absolute(base, lazy_src)
             if absolute:
-                el.set("src", absolute if absolute.startswith("data:") else asset_url(asset_base, absolute, secret))
+                el.set("src", absolute if absolute.startswith("data:") else asset_url(asset_base, absolute, secret, scope))
         if tag == "img":
             el.set("loading", "lazy")
             el.set("referrerpolicy", "no-referrer")
@@ -343,7 +348,7 @@ def render_page(
     for url in stylesheets:
         css = inline_css.get(url)
         if css:
-            head_parts.append(f"<style data-from=\"{_esc(url)}\">{rewrite_css(css, url, asset_base, secret)[:400_000]}</style>")
+            head_parts.append(f"<style data-from=\"{_esc(url)}\">{rewrite_css(css, url, asset_base, secret, scope)[:400_000]}</style>")
     for css in inline_styles:
         head_parts.append(f"<style>{css}</style>")
     head_parts.append(f'<script nonce="{nonce}">{BRIDGE_SCRIPT}</script>')

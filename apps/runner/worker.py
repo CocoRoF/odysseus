@@ -235,7 +235,7 @@ def collect_changes(workdir: str, before: dict[str, str], uid: int | None = None
     for kind, paths in skipped.items():
         shown = ", ".join(paths[:5]) + (f" 외 {len(paths) - 5}개" if len(paths) > 5 else "")
         notes.append(f"[산출물 수집] {labels.get(kind, kind)}은 워크스페이스에 반영하지 않습니다: {shown}")
-        print(f"[runner] SECURITY skipped {kind} x{len(paths)}: {shown[:200]}", flush=True)
+        print(f"[runner] SECURITY skipped {kind} x{len(paths)}: {_log_safe(shown, 200)}", flush=True)
     return changes, notes
 
 
@@ -338,6 +338,12 @@ def mark_running(execution_id: str, callback_token: str = "") -> None:
         pass
 
 
+def _log_safe(text: str, limit: int = 60) -> str:
+    """로그 한 줄용 — 응시자 문자열의 개행·제어문자·ANSI 를 이스케이프한다 (ODY-021)."""
+    out = repr(text[:limit])[1:-1]
+    return out + ("…" if len(text) > limit else "")
+
+
 def canonical_job(job: dict) -> bytes:
     # api/runqueue.py 와 같은 규칙
     return json.dumps({k: v for k, v in job.items() if k != "sig"}, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -357,14 +363,14 @@ def handle(raw: str) -> None:
         job = json.loads(raw)
         execution_id = job["execution_id"]
         if not job_is_signed(job):
-            print(f"[runner] DROPPED unsigned/forged job execution={str(execution_id)[:40]}", flush=True)
+            print(f"[runner] DROPPED unsigned/forged job execution={_log_safe(str(execution_id), 40)}", flush=True)
             return
         callback_token = str(job.get("callback_token", ""))
         mark_running(execution_id, callback_token)
         started = time.monotonic()
         result = run_job(job, execution_id)
         print(
-            f"[runner] {execution_id} `{str(job.get('command'))[:60]}` -> "
+            f"[runner] {_log_safe(str(execution_id), 40)} `{_log_safe(str(job.get('command')))}` -> "
             f"exit={result.get('exit_code')} changed={len(result.get('changed_files', []))} "
             f"({time.monotonic() - started:.1f}s)",
             flush=True,
@@ -396,7 +402,7 @@ def register_active(execution_id: str, job: dict, proc) -> None:
             "attempt_id": job.get("attempt_id"),
             "scenario_id": job.get("scenario_id"),
             "source": job.get("source"),
-            "command": str(job.get("command", ""))[:200],
+            "command": _log_safe(str(job.get("command", "")), 200),  # 관리자 화면·통계용도 이스케이프
             "started_at": time.time(),
             "proc": proc,
             "cpu_percent": 0.0,

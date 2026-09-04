@@ -95,10 +95,34 @@ function useActivityTracker(attemptId: string, active: boolean, scenarioId: stri
   const queue = useRef<{ type: string; scenario_id: string | null; payload: Record<string, unknown> }[]>([]);
   const scenarioRef = useRef(scenarioId);
   scenarioRef.current = scenarioId;
+  // 순서 번호·클라이언트 id — 서버가 중복을 버리고 빈틈을 기록한다 (ODY-017). 세션(탭) 단위로 이어진다.
+  const seqRef = useRef(0);
+  const clientIdRef = useRef<string>("");
+  if (!clientIdRef.current) {
+    try {
+      const key = `odysseus:telemetry:${attemptId}`;
+      const saved = sessionStorage.getItem(key);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { id: string; seq: number };
+        clientIdRef.current = parsed.id;
+        seqRef.current = parsed.seq;
+      } else {
+        clientIdRef.current = Math.random().toString(36).slice(2, 10);
+      }
+    } catch {
+      clientIdRef.current = Math.random().toString(36).slice(2, 10);
+    }
+  }
 
   const push = useCallback((type: string, payload: Record<string, unknown> = {}) => {
-    queue.current.push({ type, scenario_id: scenarioRef.current, payload });
-  }, []);
+    seqRef.current += 1;
+    try {
+      sessionStorage.setItem(`odysseus:telemetry:${attemptId}`, JSON.stringify({ id: clientIdRef.current, seq: seqRef.current }));
+    } catch {
+      /* 저장 실패는 무시 */
+    }
+    queue.current.push({ type, scenario_id: scenarioRef.current, payload: { ...payload, seq: seqRef.current, client_id: clientIdRef.current } });
+  }, [attemptId]);
 
   useEffect(() => {
     if (!active) return;

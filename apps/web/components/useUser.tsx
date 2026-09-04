@@ -46,6 +46,16 @@ export function homeFor(role: Role): string {
 }
 
 export async function logout(router: { replace: (p: string) => void }) {
-  await api.post("/auth/logout");
-  router.replace("/login");
+  try {
+    await api.post("/auth/logout");
+  } finally {
+    // 공유 PC 대비 — 서버의 Clear-Site-Data 와 별개로 여기서도 지운다 (ODY-023)
+    try {
+      sessionStorage.clear();
+      localStorage.clear();
+    } catch {
+      /* 저장소 접근 불가 */
+    }
+    router.replace("/login");
+  }
 }

@@ -4,7 +4,10 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import get_db
-from .models import User
+from datetime import timedelta
+
+from .config import settings
+from .models import Session, User, utcnow
 from .security import COOKIE_NAME, decode_token
 
 
@@ -19,9 +22,28 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     payload = decode_token(token)
     if not payload:
         raise HTTPException(401, "세션이 만료되었습니다")
+    # ODY-023: 토큰의 jti 가 가리키는 세션이 살아 있어야 한다 — 로그아웃·비밀번호 변경·비활성화로 폐기된다
+    jti = payload.get("jti")
+    if not jti:
+        raise HTTPException(401, "세션이 만료되었습니다. 다시 로그인하세요")
+    session = await db.get(Session, uuid.UUID(jti))
+    now = utcnow()
+    if (
+        session is None
+        or session.revoked_at is not None
+        or session.expires_at < now
+        or session.last_seen_at < now - timedelta(hours=settings.session_idle_hours)
+    ):
+        raise HTTPException(401, "세션이 만료되었습니다. 다시 로그인하세요")
+    if str(session.user_id) != payload["sub"]:
+        raise HTTPException(401, "세션이 만료되었습니다. 다시 로그인하세요")
     user = await db.get(User, uuid.UUID(payload["sub"]))
     if not user or not user.is_active:
         raise HTTPException(401, "유효하지 않은 사용자입니다")
+    # 마지막 활동 시각은 1분에 한 번만 갱신 (매 요청 쓰기 방지)
+    if (now - session.last_seen_at).total_seconds() > 60:
+        session.last_seen_at = now
+        await db.commit()
     return user
 
 

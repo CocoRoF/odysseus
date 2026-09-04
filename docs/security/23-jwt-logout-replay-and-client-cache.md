@@ -43,3 +43,11 @@ curl -i -H "Authorization: Bearer $TEST_JWT" "$BASE_URL/auth/me"
 5. 로그아웃 응답에 배포 검토 후 `Clear-Site-Data: "cache", "cookies", "storage"`를 적용하고 service worker/cache storage도 정리한다.
 6. kiosk 또는 임시 browser profile을 사용해 시험 종료 시 프로필 전체를 폐기한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **서버 세션:** `sessions` 테이블(id=jti, user, 생성·마지막 활동·절대 만료·폐기 시각/사유·IP·UA)을 두고 로그인마다 한 행을 만든다. JWT 에 `jti` 를 넣고, `get_current_user` 가 요청마다 세션이 살아 있는지(폐기 아님·절대 만료 전·유휴 4시간 이내)를 확인한다. `jti` 없는 옛 토큰은 거부된다 (`models.Session`, `security.create_token`, `deps.py`).
+- **폐기 시점:** 로그아웃(`logout`), 관리자의 비밀번호 변경·역할 변경·비활성화(`users.update_user` → `revoke_user_sessions`). 사용자 삭제는 CASCADE 로 세션이 사라진다.
+- **브라우저 잔존 데이터:** 로그아웃 응답에 `Clear-Site-Data: "cache", "cookies", "storage"` 를 붙이고, 웹의 `logout()` 도 `sessionStorage`/`localStorage` 를 지운다. 모든 API 응답은 미들웨어가 `Cache-Control: no-store, private` + `Pragma: no-cache` 를 단다 (서명 자산 프록시만 `private, max-age=300`).
+- **검증:** `tests/security/test_session_revocation.py` — 로그아웃 뒤 쿠키·Bearer 재사용 401, 세션 행 revoked(logout), 비밀번호 변경으로 두 기기 세션 401·새 비밀번호 로그인 OK, 비활성화 401, 유휴 5시간·절대 만료 401, no-store 헤더, jti 없는 토큰 401.
+- **미완:** refresh token 회전(#3)은 단일 12시간 세션 + 유휴 만료로 대신한다. 시험 종료 시 세션 폐기(#2 일부)는 응시자가 대시보드를 계속 봐야 해 두지 않았다.

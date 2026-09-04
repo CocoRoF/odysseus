@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import workspace as ws
+from ..commands import validate_command
 from ..config import settings
 from ..db import get_db
 from ..deps import get_current_user
@@ -31,9 +32,7 @@ async def run_command(
 ):
     attempt = await require_own_active(attempt_id, user, db)
     await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
-    command = body.command.strip()
-    if len(command) > settings.run_command_max_len:
-        raise HTTPException(400, "명령이 너무 깁니다")
+    command = validate_command(body.command, settings.run_command_max_len)  # ODY-021
     # ODY-010: 응시별 속도(분당 30, 순간 10) + 동시 실행 수 — 한 응시자가 러너 슬롯을 독점하지 못한다
     enforce(f"run:{attempt_id}", per_min=30, burst=10, what="실행 요청")
     open_count = (

@@ -39,6 +39,11 @@ limit_req_zone  $client_ip zone=api_req:10m  rate=30r/s;
 limit_req_zone  $client_ip zone=login_req:1m rate=10r/m;
 limit_conn_zone $client_ip zone=api_conn:10m;
 limit_req_status 429;
+
+# 접근 로그에는 쿼리스트링을 남기지 않는다 — 검색어·열람 URL·서명 토큰이 로그로 새지 않게 (ODY-020)
+log_format noquery '$client_ip - $remote_user [$time_local] "$request_method $uri $server_protocol" '
+                   '$status $body_bytes_sent "$http_user_agent" rt=$request_time';
+access_log /var/log/nginx/access.log noquery;
 limit_conn_status 429;
 
 server {
@@ -51,6 +56,13 @@ server {
     }
     # HTTPS 로 왔을 때만 HSTS — 평문 개발 환경에서는 빈 값이라 헤더가 붙지 않는다
     add_header Strict-Transport-Security $hsts_value always;
+    # 보안 헤더 (ODY-024) — 메인 UI 와 API 모두. 클릭재킹 차단, 플러그인 금지, base 태그 고정,
+    # 리퍼러 미전송, 불필요한 브라우저 기능 차단, MIME 스니핑 금지.
+    add_header Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    add_header X-Content-Type-Options "nosniff" always;
 
     # 내부 콜백(러너·MCP 브리지 전용)은 바깥에서 존재하지 않는 경로다 — 토큰과 무관하게 404
     location ^~ /api/internal/ {
@@ -63,7 +75,7 @@ server {
         limit_conn api_conn 20;
         proxy_pass http://api:8000/auth/login;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;  # 포트까지 — Origin 검사(ODY-024)가 정확히 비교한다
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $effective_proto;
     }
@@ -76,7 +88,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;  # 포트까지 — Origin 검사(ODY-024)가 정확히 비교한다
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $effective_proto;
         proxy_buffering off;
@@ -89,7 +101,7 @@ server {
     location / {
         proxy_pass http://web:3000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;  # 포트까지 — Origin 검사(ODY-024)가 정확히 비교한다
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $effective_proto;
     }

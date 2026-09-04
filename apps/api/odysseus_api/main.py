@@ -47,6 +47,8 @@ MIGRATIONS: list[str] = [
         RETURN NEW;
     END $$ LANGUAGE plpgsql
     """,
+    # ODY-017: 이벤트 출처 — 서버 관측 / 브라우저 보고(신뢰 불가)
+    "ALTER TABLE events ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'server'",
     # ODY-015: 한 사용자는 한 시험에 활성 응시 하나 — 기존 중복은 최신만 남기고 superseded 처리한 뒤 유일 인덱스
     """
     UPDATE attempts a SET superseded = true
@@ -93,6 +95,35 @@ app = FastAPI(title="Odysseus API", version="0.1.0", lifespan=lifespan)
 
 PROXY_MARKERS = ("x-forwarded-for", "x-forwarded-proto", "cf-visitor", "cf-connecting-ip")
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+@app.middleware("http")
+async def no_store_and_origin_check(request, call_next):
+    """ODY-023: 모든 API 응답은 저장하지 않는다 (답안·대화·평가가 브라우저 캐시에 남지 않게).
+    ODY-024: 프록시를 거쳐 온 변경 요청은 Origin 이 이 사이트여야 한다 (CSRF).
+    """
+    if request.method in MUTATING and any(h in request.headers for h in PROXY_MARKERS):
+        origin = request.headers.get("origin")
+        host = request.headers.get("host", "")
+        proto = (request.headers.get("x-forwarded-proto") or "http").split(",")[0].strip().lower()
+        if origin:
+            if origin.lower() != f"{proto}://{host}".lower():
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse({"detail": "다른 출처에서 온 요청입니다"}, status_code=403)
+        else:
+            site = (request.headers.get("sec-fetch-site") or "").lower()
+            if site in ("cross-site", "same-site"):
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse({"detail": "다른 출처에서 온 요청입니다"}, status_code=403)
+    response = await call_next(request)
+    if request.url.path.startswith("/reference/web/asset"):
+        response.headers.setdefault("Cache-Control", "private, max-age=300")
+    else:
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.middleware("http")

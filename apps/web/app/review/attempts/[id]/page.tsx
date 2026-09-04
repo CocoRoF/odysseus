@@ -485,6 +485,14 @@ export default function ReviewAttemptPage({ params }: { params: Promise<{ id: st
                     {fmtOffset(detail.started_at, e.created_at)}
                   </span>
                   <span className="w-28 shrink-0 font-medium">{EVENT_LABEL[e.type] ?? e.type}</span>
+                  {e.source === "client_untrusted" && (
+                    <span
+                      title="응시자 브라우저가 보고한 값 — 위조·누락될 수 있어 단독 근거로 쓰지 않습니다"
+                      className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1 text-[10px] font-medium text-amber-700"
+                    >
+                      브라우저 보고
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1 truncate text-xs text-slate-400">
                     {JSON.stringify(e.payload)}
                   </span>

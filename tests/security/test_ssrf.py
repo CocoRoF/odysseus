@@ -57,18 +57,25 @@ op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar())
 
 
 def call(method, path, body=None):
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(f"{API}{path}", data=data, method=method, headers={"Content-Type": "application/json"})
-    try:
-        with op.open(req, timeout=60) as r:
-            raw = r.read()
-            return r.status, (json.loads(raw) if raw else None)
-    except urllib.error.HTTPError as e:
-        raw = e.read()
+    import time as _t
+
+    for _ in range(30):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(f"{API}{path}", data=data, method=method, headers={"Content-Type": "application/json"})
         try:
-            return e.code, json.loads(raw)
-        except Exception:
-            return e.code, raw.decode(errors="replace")
+            with op.open(req, timeout=60) as r:
+                raw = r.read()
+                return r.status, (json.loads(raw) if raw else None)
+        except urllib.error.HTTPError as e:
+            raw = e.read()
+            if e.code == 429:  # 속도 제한(ODY-010)은 이 테스트의 관심사가 아니다 — Retry-After 만큼 기다렸다 다시
+                _t.sleep(float(e.headers.get("Retry-After", "2")))
+                continue
+            try:
+                return e.code, json.loads(raw)
+            except Exception:
+                return e.code, raw.decode(errors="replace")
+    return 429, "rate limited"
 
 
 st, _ = call("POST", "/auth/login", {"email": "admin@odysseus.dev", "password": "admin1234"})

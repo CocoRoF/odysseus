@@ -15,6 +15,7 @@ from ..ai import provider as ai_provider
 from ..db import get_db
 from ..deps import get_current_user
 from ..ratelimit import enforce
+from ..ai.errors import describe_error
 from ..config import settings
 from ..models import Assessment, Event, MessengerMessage, User
 from ..schemas import MessengerMessageOut, MessengerSendIn
@@ -118,9 +119,10 @@ async def send_message(
     try:
         reply = await npc.generate_reply(res, scenario, character, list(history))
         meta: dict = {}
-    except Exception as e:  # noqa: BLE001 — 오류도 메신저 결로 전달하되 meta에 남긴다
+    except Exception as e:  # noqa: BLE001 — 오류는 코드·상관 ID 로만 남긴다 (ODY-022)
         reply = "(지금 자리를 비운 것 같습니다 — 잠시 후 다시 말을 걸어 보세요)"
-        meta = {"error": str(e)[:500]}
+        info = describe_error(e, where="npc")
+        meta = {"error": info["code"], "correlation_id": info["correlation_id"]}
 
     npc_msg = MessengerMessage(
         attempt_id=attempt_id,

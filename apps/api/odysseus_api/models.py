@@ -35,6 +35,26 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Session(Base):
+    """로그인 세션 — JWT 의 jti 가 이 행을 가리킨다 (ODY-023).
+
+    상태 없는 JWT 만으로는 로그아웃·비밀번호 변경·비활성화가 토큰을 무효화하지 못한다. 요청마다
+    이 행을 확인해 revoked/만료/유휴 초과면 거부한다.
+    """
+
+    __tablename__ = "sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
 class Scenario(Base):
     """시나리오 — 하나의 '가상 업무 상황' 전체.
 
@@ -229,6 +249,8 @@ class Event(Base):
     scenario_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     type: Mapped[str] = mapped_column(String(50), index=True)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # 누가 관측했는가 (ODY-017): server = 서버가 직접 본 사실, client_untrusted = 브라우저가 보고한 값
+    source: Mapped[str] = mapped_column(String(20), default="server")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 

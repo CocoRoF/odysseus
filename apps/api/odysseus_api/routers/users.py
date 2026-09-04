@@ -70,12 +70,22 @@ async def update_user(user_id: uuid.UUID, body: UserUpdate, db: AsyncSession = D
         raise HTTPException(404, "사용자를 찾을 수 없습니다")
     if body.name is not None:
         user.name = body.name
+    revoke_reason = None
     if body.password is not None:
         user.password_hash = hash_password(body.password)
+        revoke_reason = "password_changed"
     if body.role is not None:
+        if body.role != user.role:
+            revoke_reason = revoke_reason or "role_changed"
         user.role = body.role
     if body.is_active is not None:
+        if user.is_active and not body.is_active:
+            revoke_reason = "deactivated"
         user.is_active = body.is_active
+    if revoke_reason:
+        from .auth import revoke_user_sessions
+
+        await revoke_user_sessions(db, user.id, revoke_reason)  # ODY-023
     await db.commit()
     await db.refresh(user)
     return user

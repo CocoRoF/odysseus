@@ -44,3 +44,10 @@ docker compose logs runner --tail=20
 5. 로그 수집기에서 multiline 이벤트를 임의 합치지 말고 예상 schema와 service identity를 검증한다.
 6. 운영자 UI는 텍스트 렌더링만 사용하고 ANSI/HTML을 해석하지 않는다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **입력 거부:** `commands.validate_command()` 가 탭·개행을 뺀 C0, DEL, C1, bidi 제어(U+202A–E, U+2066–9), 줄 구분자(U+2028/9)를 400 으로 거부한다. IDE 실행(`/run`)과 에이전트 `run_command` 도구가 같은 함수를 쓴다. 여러 줄(heredoc)은 그대로 허용.
+- **로그 이스케이프:** 러너는 명령·실행 id·건너뛴 경로를 `_log_safe()`(repr 이스케이프)로 찍는다 — 개행·ESC 가 로그 줄을 만들거나 터미널을 흔들 수 없다. 관리자 자원 화면에 올라가는 명령 조각도 같은 처리.
+- **검증:** `tests/security/test_log_injection.py` — ESC·CR·NUL·C1·RLO·U+2028 이 400, 탭/개행 이스케이프 문자열과 heredoc 은 정상, 러너 로그 줄에 원문 개행이 없음(하네스가 `docker logs` 확인).
+- **미완:** 구조화(JSON) 로깅(#1)은 러너 로그 전체 형식 변경이라 별도 작업으로 남긴다.

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..ai import provider as ai
 from ..ai.claude_login import ClaudeLoginError, manager as claude_login
 from ..config import settings as env
+from ..ai.errors import redact
 from ..db import get_db
 from ..deps import require_admin
 from ..models import AiProvider, AppSetting
@@ -198,7 +199,7 @@ async def test_provider(body: AiTestIn, db: AsyncSession = Depends(get_db)):
             max_tokens=512,
         )
     except Exception as e:  # noqa: BLE001 — 실패 사유를 그대로 관리자에게 보여준다
-        return {"ok": False, "error": str(e)[:600]}
+        return {"ok": False, "error": redact(str(e))[:600]}  # 관리자 화면 — 키·토큰·쿼리는 가린다
     return {
         "ok": True,
         "latency_ms": int((time.monotonic() - started) * 1000),

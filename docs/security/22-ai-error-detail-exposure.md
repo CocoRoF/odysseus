@@ -38,3 +38,11 @@ mock LLM 공급자가 `TEST_INTERNAL_ENDPOINT=http://ai-internal.test/v1`을 포
 5. 대표 SDK 예외를 테스트해 public response에 내부 host·path·credential이 포함되지 않는지 회귀 검사한다.
 6. 같은 correlation ID의 반복 오류에 rate limit을 적용해 정찰 자동화를 줄인다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **중앙 정제:** `ai/errors.py` 의 `describe_error()` 가 예외를 안정된 코드(`AI_TIMEOUT`·`AI_RATE_LIMIT`·`AI_AUTH`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_BACKEND_ERROR`)로 분류하고, 응시자에게는 코드·일반 설명·상관 ID 만 준다. 상세는 서버 로그에 `redact()`(API 키·Bearer·key=/token=·URL userinfo·쿼리 마스킹)를 거쳐 남긴다.
+- **적용:** 에이전트 SSE `error` 이벤트와 저장 `meta.error`(코드만), 메신저 NPC 오류 meta, 스튜디오 author/stream 오류(참조 ID), 관리자 연결 테스트·자동평가 503 은 관리자 대상이라 상세를 주되 키·토큰·쿼리는 가린다.
+- **메시지 목록:** `AgentMessageOut.meta` 는 `public_meta()` 로 도구 이름/짧은 detail·오류 코드·상관 ID 만 내보낸다.
+- **검증:** `tests/security/test_error_redaction.py` — 닿지 않는 공급자(비밀 호스트·키)로 에이전트/메신저/스튜디오/연결 테스트를 일으켜 SSE·저장 meta·응답에 호스트·키·경로·Traceback 이 없고 코드·상관 ID 가 있음을 확인.
+- **미완:** 같은 상관 ID 반복 오류의 속도 제한(#6)은 ODY-010 의 에이전트/메신저 한도가 대신한다.

@@ -145,12 +145,12 @@ check("파일 조회", st == 200 and len(f["content"]) > 100, str(f)[:120])
 st, rn = call(admin, "GET", "/reference/github/repo" + q(owner="tiangolo", name="fastapi"))
 check("이름 바뀐 저장소는 정식 이름으로 해석", st == 200 and rn["repo"]["full_name"] == "fastapi/fastapi", str(rn)[:120])
 
-st, ws = call(admin, "GET", "/reference/web/search" + q(q="vllm tensor parallel", attempt_id=attempt_id))
+st, ws = call(admin, "GET", "/reference/web/search" + q(q="vllm tensor parallel", attempt_id=attempt_id, scenario_id=scenario_id))
 check("웹 검색", st == 200 and len(ws.get("results", [])) > 0, str(ws)[:160])
 if st == 200 and ws["results"]:
     r0 = ws["results"][0]
     check("결과가 리다이렉터가 아닌 실제 주소", "duckduckgo.com/l/" not in r0["url"], r0["url"][:80])
-    st, pg = call(admin, "GET", "/reference/web/page" + q(url=r0["url"], attempt_id=attempt_id))
+    st, pg = call(admin, "GET", "/reference/web/page" + q(url=r0["url"], attempt_id=attempt_id, scenario_id=scenario_id))
     check("페이지 읽기", st == 200 and len(pg.get("text", "")) > 200, str(pg)[:120])
     check("스크립트가 제거된 텍스트", st == 200 and "<script" not in pg.get("text", ""))
 

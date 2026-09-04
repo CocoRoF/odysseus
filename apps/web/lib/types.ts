@@ -297,6 +297,8 @@ export interface ReviewEvent {
   id: number;
   scenario_id: string | null;
   type: string;
+  /** server = 서버가 직접 관측, client_untrusted = 브라우저 보고 (ODY-017) */
+  source?: string;
   payload: Record<string, unknown>;
   created_at: string;
 }

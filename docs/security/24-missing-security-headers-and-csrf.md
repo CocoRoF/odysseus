@@ -47,3 +47,10 @@ curl -I http://localhost:3100/api/auth/me
 6. `Referrer-Policy: no-referrer`, 최소 `Permissions-Policy`, `X-Content-Type-Options: nosniff`, HTTPS 환경의 HSTS를 Edge에서 일관되게 설정한다.
 7. CSRF 테스트에는 cross-site와 same-site sibling origin을 모두 포함한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **보안 헤더(엣지):** 모든 응답에 `Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()`, `X-Content-Type-Options: nosniff` 를 단다 (`apps/edge/templates/default.conf.template`). HSTS 는 ODY-014 에서 HTTPS 응답에만.
+- **CSRF(Origin 검사):** api 미들웨어가 프록시를 거쳐 온 변경 요청(POST/PUT/PATCH/DELETE)의 `Origin` 을 자기 사이트(`scheme://host`)와 정확히 비교하고 다르면 403 — 같은 site 의 형제 서브도메인도 거부된다. Origin 이 없으면 `Sec-Fetch-Site` 가 `cross-site`/`same-site` 일 때 403. 둘 다 없는 비브라우저 요청은 쿠키가 없으니 CSRF 가 아니며 통과한다 (`main.no_store_and_origin_check`). 세션 쿠키는 `SameSite=Lax; HttpOnly; Secure(운영)` 유지 — Strict 는 외부 링크 진입 UX 를 해쳐 Origin 검사로 대신했다.
+- **검증:** `tests/security/test_csrf_headers.py` — 메인 UI·API 응답의 다섯 헤더, 같은 출처 200 / 다른 출처·형제 서브도메인·cross-site·same-site 403 / same-origin 200 / 비브라우저 통과, 쿠키가 있어도 다른 출처의 로그아웃 403, GET 은 무관.
+- **미완:** 스크립트 CSP(nonce 기반 `script-src`, #5)는 Next.js 인라인 스크립트와 Monaco 워커·렌더 iframe(srcdoc 은 부모 CSP 상속) 호환 검증이 필요해 다음 단계로 남긴다. 현재 CSP 는 프레이밍·플러그인·base·form 만 잠근다.

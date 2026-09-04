@@ -41,3 +41,11 @@ Nginx/Uvicorn의 일반적인 access log는 request target 전체를 기록한�
 5. 검색·열람 Event에는 전체 값 대신 분류, 허용된 host, salted hash 등 평가에 필요한 최소 정보만 저장한다.
 6. 지원용 HAR 수집 전에 Cookie, Authorization, query token을 자동 마스킹하는 절차를 제공한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **서명 자산 TTL·범위:** `ASSET_TTL_S` 6시간 → 15분. 서명에 범위(`scope` = 응시 id, 없으면 사용자 id)를 섞고 URL 에 `a=` 로 실어, 다른 응시·다른 사람의 렌더에서 나온 자산 URL 은 통하지 않는다 (`web_render.sign_asset/verify_asset/asset_url`, 렌더 캐시 키에도 포함). CSS 안 `url()` 재작성도 같은 범위.
+- **로그에서 쿼리 제거:** 엣지 접근 로그를 `noquery` 포맷(`$request_method $uri`)으로 바꿔 `q`·`url`·`u`·`sig` 가 남지 않게 했고, uvicorn 접근 로그는 `--no-access-log` 로 껐다 (엣지가 대신 남긴다).
+- **이벤트 최소화:** 참고자료 이벤트의 URL 은 `_url_for_log()` 로 쿼리스트링·userinfo 를 지우고 `scheme://host/path` 만 남긴다 (검색어 `q` 는 평가 신호라 200자까지 유지).
+- **검증:** `tests/security/test_asset_scope.py` — 범위 불일치·범위 없음·시크릿 불일치·만료 거부, `a=` 파라미터, 렌더 HTML/CSS 의 자산 링크에 범위 포함, 기록 URL 의 쿼리·userinfo 제거.
+- **미완:** 불투명 자산 ID 저장소(#1)는 서명+범위+짧은 TTL 로 대신했다. HAR 마스킹 절차(#6)는 운영 문서 항목.

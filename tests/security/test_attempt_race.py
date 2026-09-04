@@ -63,7 +63,7 @@ def candidate_rows():
     _, rows = call(admin, "GET", "/review/attempts")
     return [
         a for a in (rows or [])
-        if a.get("user_email") == "candidate@odysseus.dev"
+        if (a.get("user") or {}).get("email") == "candidate@odysseus.dev"
         and (a.get("assessment_id") == target or a.get("assessment_title") == target_title)
     ]
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from ..ai import provider as ai_provider
 from ..ai.autoeval import run_auto_eval, run_checks
+from ..ai.errors import redact
 from ..db import get_db
 from ..deps import require_staff
 from ..models import (
@@ -151,6 +152,7 @@ async def attempt_events(attempt_id: uuid.UUID, db: AsyncSession = Depends(get_d
             "id": e.id,
             "scenario_id": str(e.scenario_id) if e.scenario_id else None,
             "type": e.type,
+            "source": e.source,
             "payload": e.payload,
             "created_at": e.created_at.isoformat(),
         }
@@ -214,7 +216,7 @@ async def autoeval(
             attempt, db, override_provider_id=body.provider_id if body else None
         )
     except RuntimeError as e:
-        raise HTTPException(503, str(e))
+        raise HTTPException(503, redact(str(e))[:600])
     return {
         "id": str(evaluation.id),
         "kind": evaluation.kind,

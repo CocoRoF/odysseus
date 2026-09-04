@@ -7,7 +7,8 @@ class Settings(BaseSettings):
 
     # 시크릿에는 기본값이 없다 — 운영 모드에서는 충분히 긴 무작위 값이 없으면 기동을 거부한다
     jwt_secret: str = ""
-    jwt_expire_hours: int = 12
+    jwt_expire_hours: int = 12  # 절대 만료
+    session_idle_hours: int = 4  # 이 시간 동안 요청이 없으면 세션 만료 (ODY-023)
     internal_token: str = ""
     # MCP 브리지가 되돌아 호출하는 주소 (api 컨테이너 내부)
     internal_api_base: str = "http://127.0.0.1:8000"

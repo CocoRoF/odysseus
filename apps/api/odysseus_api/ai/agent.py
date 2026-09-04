@@ -228,9 +228,12 @@ async def execute_agent_tool(
             return (f"삭제됨: {path} (파일 {removed}개)" if removed else f"경로가 없습니다: {path}"), path
 
         if name == "run_command":
-            command = str(tool_input.get("command", "")).strip()
-            if not command or len(command) > settings.run_command_max_len:
-                return "명령이 비어 있거나 너무 깁니다", command[:60]
+            from ..commands import validate_command
+
+            try:
+                command = validate_command(str(tool_input.get("command", "")), settings.run_command_max_len)
+            except Exception as e:  # noqa: BLE001 — 도구 결과로 돌려준다
+                return f"거부됨: {getattr(e, 'detail', '명령이 올바르지 않습니다')}", str(tool_input.get("command", ""))[:60]
             execution = Execution(
                 attempt_id=attempt_id,
                 scenario_id=scenario_id,

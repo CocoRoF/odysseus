@@ -43,3 +43,14 @@ gzip -cd backups/*security-test.sql.gz | grep -F 'TEST_ONLY_FAKE_KEY'
 5. 백업 접근·복원·다운로드를 감사하고 보존 기간과 자동 폐기를 정책화한다.
 6. 정기 복원 테스트에서 권한, 암호화, key rotation, 폐기된 키 무효화를 함께 검증한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **위치·권한:** 백업은 저장소 밖 `/var/backups/odysseus`(`ODYSSEUS_BACKUP_DIR`)에만 쓴다. 스크립트가 `umask 077` 로 시작해 폴더 0700·파일 0600 이 강제된다 (`scripts/backup.sh`). 소스 트리의 `backups/` 는 더 이상 쓰지 않는다.
+- **암호화:** `pg_dump | gzip` 뒤에 바로 암호화한다. `BACKUP_AGE_RECIPIENT` 와 `age` 가 있으면 공개키(age)로, 아니면 `openssl enc -aes-256-cbc -pbkdf2 -iter 200000` 과 호스트 키 파일 `/etc/odysseus/backup.key`(0600 root, 첫 실행에 생성)로. 평문 덤프는 디스크에 닿지 않는다.
+- **복원:** `scripts/restore.sh` 가 `.enc`/`.age`/`.sql.gz` 를 구분해 열고, 앱을 내리기 **전에** 먼저 열리는지 검사한다(키가 틀리면 아무것도 건드리지 않음). 자동화용 `--yes`.
+- **감사:** 백업 생성·복원 시작/완료를 `logger -t odysseus-backup` 으로 syslog 에 남긴다 (누가, 어느 파일).
+- **보존:** 최근 20개(`ODYSSEUS_BACKUP_KEEP`)만 남긴다.
+- **운영 이관:** 미니PC 의 기존 평문 백업 5개를 새 위치로 옮겨 암호화하고 평문은 지웠다. 키 파일 사본은 별도 보관이 필요하다 (아래 운영 메모).
+- **검증:** 격리 스택에서 `COMPOSE_PROJECT_NAME` 으로 backup→(파일 권한 0600·폴더 0700·gzip 아님·openssl 로 열림)→데이터 변경→restore --yes→원복 확인, 틀린 키로는 복원이 시작조차 안 됨.
+- **미완:** AI 키를 secret manager 참조로 바꾸는 것(#4)은 단일 호스트 배포라 보류 — 대신 백업이 암호화된다. 키 회전·정기 복원 훈련(#6)은 운영 절차로 남긴다.

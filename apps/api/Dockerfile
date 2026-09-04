@@ -30,4 +30,5 @@ RUN pip install --no-cache-dir --no-deps -r requirements.lock
 COPY odysseus_api ./odysseus_api
 
 EXPOSE 8000
-CMD ["uvicorn", "odysseus_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 접근 로그는 엣지가 쿼리 없이 남긴다 — 여기서 전체 URL 을 또 찍지 않는다 (ODY-020)
+CMD ["uvicorn", "odysseus_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

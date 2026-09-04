@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai.autoeval import default_rubric
+from ..ai.errors import describe_error
 from ..db import get_db
 from ..deps import require_admin, require_staff
 from ..models import AssessmentScenario, Scenario, User
@@ -110,9 +111,11 @@ async def author_with_ai(
             instruction=body.instruction,
         )
     except ValueError as e:
-        raise HTTPException(502, f"AI 응답을 해석하지 못했습니다: {e}")
+        info = describe_error(e, where="author")
+        raise HTTPException(502, f"{info['message']} (참조: {info['correlation_id']})")
     except Exception as e:  # noqa: BLE001 — 공급자 오류를 그대로 보여 준다
-        raise HTTPException(502, f"AI 호출 실패: {str(e)[:300]}")
+        info = describe_error(e, where="author")
+        raise HTTPException(502, f"{info['message']} (참조: {info['correlation_id']})")
     return {"scenario": scenario, "notes": notes, "warnings": warnings, "provider": res.name}
 
 
@@ -134,7 +137,8 @@ async def author_chat(body: AuthorChatIn, db: AsyncSession = Depends(get_db), _=
             async for event in author_chat_stream(res, history=body.messages, draft=draft):
                 yield f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
         except ValueError as e:
-            yield f"data: {_json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            info = describe_error(e, where="author-stream")
+            yield f"data: {_json.dumps({'error': info['message'], 'code': info['code'], 'correlation_id': info['correlation_id']}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

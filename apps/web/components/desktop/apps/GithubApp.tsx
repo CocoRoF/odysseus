@@ -161,7 +161,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
               `/reference/github/repo?owner=${view.owner}&name=${view.name}&attempt_id=${ws.attemptId}&scenario_id=${ws.scenarioId}`,
             ),
             api.get<GhTree>(
-              `/reference/github/tree?owner=${view.owner}&name=${view.name}&path=${encodeURIComponent(view.path)}`,
+              `/reference/github/tree?owner=${view.owner}&name=${view.name}&path=${encodeURIComponent(view.path)}&attempt_id=${ws.attemptId}&scenario_id=${ws.scenarioId}`,
             ),
           ]);
           if (alive) {
@@ -170,7 +170,7 @@ export function GithubApp({ readOnly = false }: { readOnly?: boolean }) {
           }
         } else if (view.kind === "file") {
           const f = await api.get<GhFile>(
-            `/reference/github/file?owner=${view.owner}&name=${view.name}&path=${encodeURIComponent(view.path)}`,
+            `/reference/github/file?owner=${view.owner}&name=${view.name}&path=${encodeURIComponent(view.path)}&attempt_id=${ws.attemptId}&scenario_id=${ws.scenarioId}`,
           );
           if (alive) setFile(f);
         }

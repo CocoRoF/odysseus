@@ -138,6 +138,55 @@ async def _github_get(path: str, settings_row: dict, *, params: dict | None = No
     return data
 
 
+def _url_for_log(url: str) -> str:
+    """기록용 URL — 쿼리스트링·userinfo 를 지운다 (ODY-020). 무엇을 봤는지는 host/path 로 충분하다."""
+    try:
+        p = urllib.parse.urlsplit(url)
+        host = p.hostname or ""
+        if p.port and p.port not in (80, 443):
+            host = f"{host}:{p.port}"
+        return f"{p.scheme}://{host}{p.path or '/'}"[:300]
+    except ValueError:
+        return url[:300]
+
+
+class AuditCtx:
+    """참고자료 조회의 감사 문맥 (ODY-018). 응시자는 반드시 자기 진행 중 응시·현재 시나리오를 대야 한다."""
+
+    def __init__(self, attempt: Attempt | None, scenario_id: uuid.UUID | None, user: User):
+        self.attempt = attempt
+        self.scenario_id = scenario_id
+        self.user = user
+
+
+async def audit_ctx(
+    db: AsyncSession, user: User, attempt_id: uuid.UUID | None, scenario_id: uuid.UUID | None
+) -> AuditCtx:
+    """감사 문맥을 검증한다. 잘못된 문맥은 조용히 무시하지 않고 거부한다.
+
+    · 응시자(candidate): attempt_id·scenario_id 필수, 본인 소유·진행 중·현재 순서의 시나리오여야 한다 (아니면 403)
+    · 스태프: 문맥이 있으면 같은 검증, 없으면 미리보기(기록은 남기되 응시 없음)
+    """
+    from .attempts import require_own_active, scenario_in_attempt
+
+    if attempt_id is None or scenario_id is None:
+        if user.role == "candidate":
+            raise HTTPException(403, "참고자료는 진행 중인 시험 안에서만 열 수 있습니다")
+        return AuditCtx(None, None, user)
+    attempt = await require_own_active(attempt_id, user, db)
+    await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
+    return AuditCtx(attempt, scenario_id, user)
+
+
+async def _record(db: AsyncSession, ctx: AuditCtx, type_: str, payload: dict) -> None:
+    """서버 관측 이벤트 — 응시 문맥이 있을 때만 응시에 붙는다. 스태프 미리보기는 서버 로그로만."""
+    if ctx.attempt is None:
+        log.info("reference (staff preview) user=%s type=%s %s", ctx.user.id, type_, str(payload)[:200])
+        return
+    db.add(Event(attempt_id=ctx.attempt.id, scenario_id=ctx.scenario_id, type=type_, source="server", payload=payload))
+    await db.commit()
+
+
 async def _log(
     db: AsyncSession,
     user: User,
@@ -146,14 +195,35 @@ async def _log(
     type_: str,
     payload: dict,
 ) -> None:
-    """응시 중이라면 조회 행위를 기록 — '무엇을 찾아봤는가'가 평가 자료가 된다."""
-    if not attempt_id:
-        return
-    attempt = await db.get(Attempt, attempt_id)
-    if not attempt or attempt.user_id != user.id or attempt.status != "in_progress":
-        return
-    db.add(Event(attempt_id=attempt_id, scenario_id=scenario_id, type=type_, payload=payload))
-    await db.commit()
+    """(하위 호환) 성공 기록 — 문맥은 이미 audit_ctx 가 검증했다."""
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
+    await _record(db, ctx, type_, payload)
+
+
+class audited:
+    """외부 요청을 감싸 시작·실패를 남긴다 — 성공 뒤에만 기록하던 구멍을 막는다.
+
+        async with audited(db, ctx, "web", {"url": ...}) as a:
+            ... 외부 호출 ...
+            a.result = {...}   # 완료 시 함께 기록할 값
+    """
+
+    def __init__(self, db: AsyncSession, ctx: AuditCtx, source: str, payload: dict):
+        self.db, self.ctx, self.source, self.payload = db, ctx, source, payload
+        self.result: dict = {}
+
+    async def __aenter__(self):
+        await _record(self.db, self.ctx, "reference_request", {"source": self.source, **self.payload})
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if exc is not None:
+            status = getattr(exc, "status_code", None)
+            await _record(
+                self.db, self.ctx, "reference_failed",
+                {"source": self.source, **self.payload, "status": status, "error": type(exc).__name__},
+            )
+        return False
 
 
 # ── 실행 환경 스펙 ([컴퓨터 정보] 화면) ─────────────────────────
@@ -240,12 +310,14 @@ async def github_search(
     s = await get_reference_settings(db)
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
     # 공개 저장소만 — 검색어의 is:private 같은 한정자는 무력화한다 (ODY-011)
     public_q = re.sub(r"\bis:(private|internal)\b", "", q, flags=re.I).strip() + " is:public"
-    data = await _github_get(
-        "/search/repositories", s, params={"q": public_q, "per_page": 20, "page": page}
-    )
-    await _log(db, user, attempt_id, scenario_id, "reference_search", {"source": "github", "q": q[:200]})
+    async with audited(db, ctx, "github", {"q": q[:200], "page": page}):
+        data = await _github_get(
+            "/search/repositories", s, params={"q": public_q, "per_page": 20, "page": page}
+        )
+    await _record(db, ctx, "reference_search", {"source": "github", "q": q[:200], "results": len(data.get("items", []))})
     items = _public_only(data.get("items", []))
     return {
         "total": data.get("total_count", 0),
@@ -266,7 +338,9 @@ async def github_repo(
     s = await get_reference_settings(db)
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
-    repo = await _require_public_repo(owner, name, s)
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
+    async with audited(db, ctx, "github", {"repo": f"{owner}/{name}"}):
+        repo = await _require_public_repo(owner, name, s)
     brief = _repo_brief(repo)
     readme = None
     try:
@@ -280,10 +354,7 @@ async def github_repo(
             }
     except HTTPException:
         readme = None
-    await _log(
-        db, user, attempt_id, scenario_id, "reference_open",
-        {"source": "github", "repo": brief["full_name"]},
-    )
+    await _record(db, ctx, "reference_open", {"source": "github", "repo": brief["full_name"]})
     return {"repo": brief, "readme": readme}
 
 
@@ -293,6 +364,8 @@ async def github_tree(
     name: str,
     path: str = "",
     ref: str = "",
+    attempt_id: uuid.UUID | None = None,
+    scenario_id: uuid.UUID | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -300,10 +373,13 @@ async def github_tree(
     s = await get_reference_settings(db)
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
-    await _require_public_repo(owner, name, s)
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
     clean = "/".join(seg for seg in path.split("/") if seg and seg not in (".", ".."))
     params = {"ref": ref} if ref else None
-    data = await _github_get(f"/repos/{owner}/{name}/contents/{clean}", s, params=params)
+    async with audited(db, ctx, "github", {"repo": f"{owner}/{name}", "tree": clean[:300]}):
+        await _require_public_repo(owner, name, s)
+        data = await _github_get(f"/repos/{owner}/{name}/contents/{clean}", s, params=params)
+    await _record(db, ctx, "reference_open", {"source": "github", "repo": f"{owner}/{name}", "tree": clean[:300]})
     if isinstance(data, dict):  # 파일 하나를 가리킨 경우
         return {"path": clean, "entries": [], "file": data.get("path")}
     entries = [
@@ -320,6 +396,8 @@ async def github_file(
     name: str,
     path: str = Query(min_length=1),
     ref: str = "",
+    attempt_id: uuid.UUID | None = None,
+    scenario_id: uuid.UUID | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -329,10 +407,13 @@ async def github_file(
     s = await get_reference_settings(db)
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
-    await _require_public_repo(owner, name, s)
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
     clean = "/".join(seg for seg in path.split("/") if seg and seg not in (".", ".."))
     params = {"ref": ref} if ref else None
-    data = await _github_get(f"/repos/{owner}/{name}/contents/{clean}", s, params=params)
+    async with audited(db, ctx, "github", {"repo": f"{owner}/{name}", "file": clean[:300]}):
+        await _require_public_repo(owner, name, s)
+        data = await _github_get(f"/repos/{owner}/{name}/contents/{clean}", s, params=params)
+    await _record(db, ctx, "reference_open", {"source": "github", "repo": f"{owner}/{name}", "file": clean[:300]})
     if isinstance(data, list):
         raise HTTPException(400, "디렉터리입니다")
     if data.get("encoding") != "base64":
@@ -418,7 +499,9 @@ async def github_clone(
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
 
-    repo = await _require_public_repo(owner, name, s)
+    ctx = AuditCtx(attempt, scenario_id, user)
+    async with audited(db, ctx, "github", {"clone": f"{owner}/{name}", "ref": ref[:100]}):
+        repo = await _require_public_repo(owner, name, s)
     # 이름이 바뀐 저장소는 API 가 새 경로로 알려준다 — 아카이브는 정식 이름으로 받아야 한다
     canonical = (repo.get("full_name") or f"{owner}/{name}").split("/")
     c_owner, c_name = (canonical + [name])[:2]
@@ -545,6 +628,7 @@ async def web_search(
     s = await get_reference_settings(db)
     if not s["web_enabled"]:
         raise HTTPException(403, "이 시험에서는 웹 검색이 비활성화되어 있습니다")
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
     key = f"web:{s['search_provider']}:{q}"
     results = _cache_get(key)
     if results is None:
@@ -556,7 +640,7 @@ async def web_search(
         except httpx.HTTPError as e:
             raise HTTPException(502, f"검색에 실패했습니다: {e}")
         _cache_put(key, results)
-    await _log(db, user, attempt_id, scenario_id, "reference_search", {"source": "web", "q": q[:200]})
+    await _record(db, ctx, "reference_search", {"source": "web", "q": q[:200]})
     return {"provider": s["search_provider"], "results": results}
 
 
@@ -590,9 +674,11 @@ async def web_page(
     s = await get_reference_settings(db)
     if not s["web_enabled"]:
         raise HTTPException(403, "이 시험에서는 웹 열람이 비활성화되어 있습니다")
-    _is_public_url(url)
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
     cached = _cache_get(f"page:{url}")
     if cached is None:
+      async with audited(db, ctx, "web", {"url": _url_for_log(url)}):
+        _is_public_url(url)
         try:
             resp = await safe_get(
                 url,
@@ -622,7 +708,7 @@ async def web_page(
             "text": text,
         }
         _cache_put(f"page:{url}", cached)
-    await _log(db, user, attempt_id, scenario_id, "reference_open", {"source": "web", "url": url[:300]})
+    await _record(db, ctx, "reference_open", {"source": "web", "url": _url_for_log(url), "final": _url_for_log(str(cached.get("url", "")))})
     return cached
 
 
@@ -674,13 +760,16 @@ async def web_render(
         raise HTTPException(403, "이 시험에서는 웹 열람이 비활성화되어 있습니다")
     if not _ASSET_BASE_RE.match(asset_base):
         raise HTTPException(400, "asset_base 형식이 올바르지 않습니다")
-    _is_public_url(url)
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
 
     global _LAST_ASSET_BASE
     _LAST_ASSET_BASE = asset_base
-    cache_key = f"render:{url}:{asset_base}"
+    scope = str(ctx.attempt.id) if ctx.attempt else f"u-{user.id}"
+    cache_key = f"render:{url}:{asset_base}:{scope}"
     cached = _cache_get(cache_key)
     if cached is None:
+      async with audited(db, ctx, "web", {"url": _url_for_log(url), "render": True}):
+        _is_public_url(url)
         try:
             resp = await safe_get(
                 url,
@@ -700,11 +789,11 @@ async def web_render(
         raw = resp.content[:_PAGE_MAX]
 
         charset = resp.charset_encoding  # Content-Type 헤더의 charset (없으면 None)
-        first = render_page(final_url, raw, asset_base=asset_base, secret=app_settings.jwt_secret, declared_charset=charset)
+        first = render_page(final_url, raw, asset_base=asset_base, secret=app_settings.jwt_secret, declared_charset=charset, scope=scope)
         css = await _fetch_css_bundle(first.stylesheets) if first.stylesheets else {}
         result = render_page(
             final_url, raw, asset_base=asset_base, secret=app_settings.jwt_secret,
-            inline_css=css, declared_charset=charset,
+            inline_css=css, declared_charset=charset, scope=scope,
         )
         cached = {
             "url": final_url,
@@ -715,7 +804,7 @@ async def web_render(
             "dropped": result.dropped,
         }
         _cache_put(cache_key, cached)
-    await _log(db, user, attempt_id, scenario_id, "reference_open", {"source": "web", "url": url[:300]})
+    await _record(db, ctx, "reference_open", {"source": "web", "url": _url_for_log(url), "final": _url_for_log(str(cached.get("url", ""))), "render": True})
     return cached
 
 
@@ -724,7 +813,7 @@ _ASSET_CACHE_MAX = 200
 
 
 @router.get("/reference/web/asset", dependencies=[Depends(limiter("ref-asset", 300, 150, "자산 요청"))])
-async def web_asset(u: str, exp: str, sig: str):
+async def web_asset(u: str, exp: str, sig: str, a: str = ""):
     """서명된 자산 프록시 — 이미지·CSS·폰트만. 쿠키가 아니라 서명으로 인증한다.
 
     샌드박스 iframe 은 출처가 불투명해 쿠키가 실리지 않을 수 있다. 렌더 단계에서
@@ -732,7 +821,7 @@ async def web_asset(u: str, exp: str, sig: str):
     """
     from ..web_render import rewrite_css, verify_asset
 
-    target = verify_asset(u, exp, sig, app_settings.jwt_secret)
+    target = verify_asset(u, exp, sig, app_settings.jwt_secret, scope=a)
     if not target:
         raise HTTPException(403, "서명이 맞지 않거나 만료되었습니다")
     _is_public_url(target)
@@ -758,7 +847,7 @@ async def web_asset(u: str, exp: str, sig: str):
         if ctype == "text/css":
             # CSS 안의 url() 도 프록시를 지나야 한다 — asset_base 는 이 요청의 경로에서 복원
             base = urllib.parse.urlsplit(target)
-            body = rewrite_css(body.decode("utf-8", errors="replace"), target, _asset_base_hint(), app_settings.jwt_secret).encode()
+            body = rewrite_css(body.decode("utf-8", errors="replace"), target, _asset_base_hint(), app_settings.jwt_secret, a).encode()
         if len(_ASSET_CACHE) >= _ASSET_CACHE_MAX:
             _ASSET_CACHE.pop(next(iter(_ASSET_CACHE)), None)
         _ASSET_CACHE[target] = (time.time(), body, ctype)

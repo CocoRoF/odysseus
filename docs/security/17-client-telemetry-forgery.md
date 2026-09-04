@@ -43,3 +43,12 @@ curl -sS -b "$COOKIE_JAR" \
 5. 누락·재생을 탐지하려면 서버 nonce heartbeat와 monotonic sequence를 사용할 수 있지만, 이것도 focus 상태의 진실성을 보장하지는 못한다.
 6. 강한 감독이 필수라면 통제된 kiosk/감독 클라이언트 등 별도 신뢰 경계를 사용하고 개인정보·법적 요건을 검토한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **출처 분리:** `events.source` 컬럼을 추가했다. 서버가 직접 관측한 사실(파일·실행·대화·참고자료·제출·마감·평가)은 `server`, 브라우저가 보고한 행동(포커스·탭·복사·페이지 진입/이탈·네트워크)은 `client_untrusted` 로 저장된다 (`models.Event`, `routers/attempts.post_events`). 리뷰 API 가 출처를 내보내고 리뷰 화면은 브라우저 보고 이벤트에 "브라우저 보고" 배지를 단다.
+- **위조 차단:** 클라이언트 종류 화이트리스트에서 `reference_search`/`reference_open` 을 뺐다 — 참고자료 조회는 서버(`reference.py`)만 기록한다. `scenario_id` 는 그 시험에 속한 것만 받고, payload 는 허용 키(`away_ms, chars, text, app, path, page, reason, seq, client_id`)·문자열 500자로 정제한다.
+- **순서·중복:** 클라이언트가 `seq`(세션 저장소에 이어짐)와 `client_id` 를 붙인다. 서버는 Redis 에 마지막 seq 를 두고 같은/과거 seq 는 버리며, 건너뛴 구간은 `telemetry_gap`(server) 이벤트로 남긴다. seq 없는 구버전은 그대로 받는다.
+- **평가기:** 자동평가 입력에서 화면 이탈 수를 `behavior_client_reported_untrusted` 로 이름 붙이고, 서버 메모로 "부정 신호의 단독 근거로 삼지 말라" 고 지시한다.
+- **검증:** `tests/security/test_telemetry.py` — 출처 표시(server/client_untrusted), 참고자료·서버 전용 종류·시험 밖 시나리오 버림, payload 키·길이 정제, seq 중복/재생 버림·gap 기록, 리뷰 API 의 source 필드.
+- **한계(문서 #5·#6):** seq 는 누락·재생을 드러낼 뿐 포커스 상태의 진실성은 보장하지 못한다. 강한 감독이 필요하면 별도 감독 클라이언트가 필요하다 — 제품 범위 밖.

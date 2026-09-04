@@ -51,10 +51,28 @@ ALLOWED_EVENT_TYPES = {
     "page_exit",
     "net_offline",
     "net_online",
-    "reference_search",
-    "reference_open",
     "exam_leave",
 }
+# 참고자료 검색·열람은 서버가 직접 기록한다 (reference.py) — 브라우저가 보고한 값을 받으면 위조가 된다.
+
+# 브라우저 보고 이벤트의 payload 는 이 키만, 이 크기까지만 남긴다 (ODY-017)
+CLIENT_PAYLOAD_KEYS = {"away_ms", "chars", "text", "app", "path", "page", "reason", "seq", "client_id"}
+CLIENT_TEXT_MAX = 500
+CLIENT_SEQ_KEY = "odysseus:attempt:{aid}:client_seq"
+
+
+def sanitize_client_payload(payload: dict) -> dict:
+    out: dict = {}
+    for k, v in (payload or {}).items():
+        if k not in CLIENT_PAYLOAD_KEYS:
+            continue
+        if isinstance(v, bool) or v is None:
+            out[k] = v
+        elif isinstance(v, (int, float)):
+            out[k] = v if abs(v) < 1e12 else None
+        else:
+            out[k] = str(v)[:CLIENT_TEXT_MAX]
+    return out
 
 
 async def check_expired(attempt: Attempt, db: AsyncSession) -> Attempt:
@@ -378,6 +396,12 @@ async def post_events(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """브라우저가 보고하는 행동 이벤트 — **신뢰할 수 없는 보조 신호**로만 저장한다 (ODY-017).
+
+    · source=client_untrusted 로 표시되어 서버 관측 이벤트(파일·실행·대화·참고자료·제출)와 구분된다
+    · 종류는 화이트리스트, 시나리오는 이 시험에 속한 것만, payload 는 허용 키·크기만 남긴다
+    · 클라이언트가 보내는 seq 로 중복은 버리고 빈틈은 서버 이벤트(telemetry_gap)로 남긴다
+    """
     attempt = await get_attempt_for(attempt_id, user, db)
     if attempt.user_id != user.id:
         raise HTTPException(403, "본인의 응시에만 기록할 수 있습니다")
@@ -386,13 +410,69 @@ async def post_events(
         ended = attempt.submitted_at or attempt.deadline_at
         if not ended or utcnow() > ended + EVENT_FLUSH_GRACE:
             return {"ok": True, "recorded": 0}
-    events = [e for e in body.events[: settings.max_event_batch] if e.type in ALLOWED_EVENT_TYPES]
-    for ev in events:
+    valid_scenarios = {
+        sid
+        for (sid,) in (
+            await db.execute(
+                select(AssessmentScenario.scenario_id).where(AssessmentScenario.assessment_id == attempt.assessment_id)
+            )
+        ).all()
+    }
+    # 순서 번호 — Redis 에 마지막 값을 둔다 (없으면 순서 검사를 건너뛴다)
+    last_seq: int | None = None
+    redis = None
+    try:
+        from ..runqueue import get_redis
+
+        redis = get_redis()
+        raw = await redis.get(CLIENT_SEQ_KEY.format(aid=attempt.id))
+        last_seq = int(raw) if raw else 0
+    except Exception:  # noqa: BLE001
+        redis = None
+
+    recorded = dropped = 0
+    for ev in body.events[: settings.max_event_batch]:
+        if ev.type not in ALLOWED_EVENT_TYPES:
+            dropped += 1
+            continue
+        if ev.scenario_id is not None and ev.scenario_id not in valid_scenarios:
+            dropped += 1
+            continue
+        payload = sanitize_client_payload(ev.payload)
+        seq = payload.get("seq")
+        if isinstance(seq, (int, float)) and last_seq is not None:
+            seq = int(seq)
+            if seq <= last_seq:
+                dropped += 1  # 재전송·재생
+                continue
+            if last_seq and seq > last_seq + 1:
+                db.add(
+                    Event(
+                        attempt_id=attempt.id,
+                        scenario_id=ev.scenario_id,
+                        type="telemetry_gap",
+                        source="server",
+                        payload={"expected": last_seq + 1, "got": seq, "missing": seq - last_seq - 1},
+                    )
+                )
+            last_seq = seq
         db.add(
-            Event(attempt_id=attempt.id, scenario_id=ev.scenario_id, type=ev.type, payload=ev.payload)
+            Event(
+                attempt_id=attempt.id,
+                scenario_id=ev.scenario_id,
+                type=ev.type,
+                source="client_untrusted",
+                payload=payload,
+            )
         )
+        recorded += 1
     await db.commit()
-    return {"ok": True, "recorded": len(events)}
+    if redis is not None and last_seq:
+        try:
+            await redis.set(CLIENT_SEQ_KEY.format(aid=attempt.id), str(last_seq), ex=6 * 3600)
+        except Exception:  # noqa: BLE001
+            pass
+    return {"ok": True, "recorded": recorded, "dropped": dropped}
 
 
 @router.post("/attempts/{attempt_id}/scenarios/{scenario_id}/complete", response_model=AttemptOut)

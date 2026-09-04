@@ -42,3 +42,12 @@ curl -sS -b "$COOKIE_JAR" --get \
 5. 잘못된 감사 문맥은 무시하지 말고 400/403으로 거부한다.
 6. 평가 정책이 웹 허용 여부를 시험별로 다르게 요구한다면 전역 setting이 아니라 assessment별 allowlist/policy를 사용한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **문맥 필수:** 모든 참고자료 엔드포인트(GitHub 검색·저장소·트리·파일, 웹 검색·페이지·렌더)가 `audit_ctx()` 를 먼저 지난다. 응시자는 `attempt_id`·`scenario_id` 가 없으면 403, 있으면 본인 소유·진행 중 응시와 **현재 순서의 시나리오**여야 한다(`require_own_active` + `scenario_in_attempt`). 잘못된 문맥은 조용히 무시되지 않고 403/404/423 으로 거부된다. 스태프는 문맥 없이 미리보기할 수 있고 그 경우 서버 로그로만 남는다.
+- **시작·실패 기록:** 외부 호출을 `audited()` 로 감싸 호출 전에 `reference_request`, 실패하면 `reference_failed`(status·오류 종류)를 남기고, 성공하면 `reference_open`/`reference_search`(결과 수·최종 URL)를 남긴다. 트리·파일 조회도 이제 기록된다. 모두 `source=server`.
+- **클라이언트 보고 차단:** ODY-017 에서 클라이언트 이벤트 화이트리스트에서 `reference_*` 를 뺐으므로 참고자료 기록은 서버 관측만 남는다.
+- **웹:** GitHub 앱의 트리·파일 요청에 응시 문맥을 붙였다.
+- **검증:** `tests/security/test_reference_audit.py` — 응시자 7개 엔드포인트 문맥 없음 403, 시험 밖 시나리오·남의 응시 거부, 정상 문맥에서 시작/완료 이벤트(저장소·트리·파일·검색 결과 수), 없는 호스트·없는 저장소의 `reference_failed`, 관리자 미리보기, 종료된 응시 문맥 400.
+- **미완:** 시험별 참고자료 허용 정책(#6)은 전역 설정을 유지 — 필요해지면 assessment 단위로 옮긴다.
