@@ -8,6 +8,7 @@ from sqlalchemy import text
 from .config import check_startup_security, https_only_enabled, settings
 from .db import Base, SessionLocal, engine
 from .routers import (
+    access,
     agent,
     assessments,
     attempts,
@@ -61,6 +62,8 @@ MIGRATIONS: list[str] = [
     )
     """,
     "CREATE UNIQUE INDEX IF NOT EXISTS attempts_one_active_per_user ON attempts (assessment_id, user_id) WHERE superseded = false",
+    # 게스트 로그인: 계정의 최초 접속 주소(정지시킨 게스트가 새 계정으로 돌아오는 것을 추적)
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_ip VARCHAR(64)",
     "DROP TRIGGER IF EXISTS workspace_files_frozen ON workspace_files",
     """
     CREATE TRIGGER workspace_files_frozen BEFORE INSERT OR UPDATE OR DELETE ON workspace_files
@@ -154,6 +157,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(access.router)
 app.include_router(scenarios.router)
 app.include_router(assessments.router)
 app.include_router(attempts.router)

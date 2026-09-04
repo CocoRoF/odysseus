@@ -4,7 +4,44 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
+#: 관리자가 직접 부여할 수 있는 역할. guest 는 여기 없다 — 게스트 계정은
+#: 게스트 로그인만이 만든다. 사람을 게스트로 "강등"하는 조작은 의미가 없고,
+#: 반대 방향(게스트 → candidate 승격)은 UserUpdate 로 가능하다.
 Role = Literal["admin", "evaluator", "candidate"]
+
+
+class GuestStartIn(BaseModel):
+    #: 화면에 보일 이름. 비우면 서버가 붙인다.
+    name: str = Field(default="", max_length=40)
+
+
+class GuestPolicyOut(BaseModel):
+    enabled: bool
+    max_new_per_hour_per_ip: int
+    chat_per_min: int
+    chat_total_per_attempt: int
+
+
+class GuestPolicyIn(BaseModel):
+    enabled: bool
+    max_new_per_hour_per_ip: int = Field(ge=0, le=1000)
+    chat_per_min: int = Field(ge=1, le=120)
+    chat_total_per_attempt: int = Field(ge=0, le=100000)
+
+
+class BlockedIpIn(BaseModel):
+    #: 단일 주소("203.0.113.7") 또는 대역("203.0.113.0/24")
+    cidr: str = Field(min_length=3, max_length=64)
+    reason: str = Field(default="", max_length=200)
+
+
+class BlockedIpOut(BaseModel):
+    id: uuid.UUID
+    cidr: str
+    reason: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 # ── auth / users ─────────────────────────────────────────────
@@ -21,6 +58,8 @@ class UserOut(BaseModel):
     name: str
     role: str
     is_active: bool
+    #: 게스트 계정이 어느 주소에서 만들어졌는지 (일반 계정은 비어 있다)
+    created_ip: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

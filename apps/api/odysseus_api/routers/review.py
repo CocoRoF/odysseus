@@ -11,7 +11,7 @@ from ..ai import provider as ai_provider
 from ..ai.autoeval import run_auto_eval, run_checks
 from ..ai.errors import redact
 from ..db import get_db
-from ..deps import require_staff
+from ..deps import is_staff, require_staff
 from ..models import (
     AiProvider,
     Assessment,
@@ -49,7 +49,7 @@ async def list_attempts(db: AsyncSession = Depends(get_db)):
             "assessment_title": a.assessment.title,
             "status": a.status,
             "superseded": a.superseded,
-            "is_staff": a.user.role in ("admin", "evaluator"),
+            "is_staff": is_staff(a.user),
             "started_at": a.started_at.isoformat(),
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
             "has_auto_eval": "auto" in eval_kinds.get(a.id, set()),

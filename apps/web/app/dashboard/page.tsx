@@ -11,7 +11,7 @@ import { useToast } from "@/components/toast";
 import { Badge, Button, Card, EmptyState, Spinner } from "@/components/ui";
 
 export default function DashboardPage() {
-  const { user, loading } = useUser(["candidate", "admin", "evaluator"]);
+  const { user, loading } = useUser(["candidate", "admin", "evaluator", "guest"]);
   const [assignments, setAssignments] = useState<MyAssignment[] | null>(null);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -19,6 +19,7 @@ export default function DashboardPage() {
   const router = useRouter();
 
   const isStaff = user?.role === "admin" || user?.role === "evaluator";
+  const isGuest = user?.role === "guest";
 
   const load = useCallback(() => {
     api.get<MyAssignment[]>("/my/assignments").then(setAssignments).catch((e) => setError(String(e.message)));
@@ -61,7 +62,9 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-black">
             Odysseus<span className="text-sky-500">.</span>
           </h1>
-          <p className="mt-1 text-sm text-slate-500">{user.name}님, 응시할 시험 목록입니다.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {user.name}님, {isGuest ? "둘러볼 수 있는 시험 목록입니다." : "응시할 시험 목록입니다."}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {isStaff && (
@@ -78,11 +81,18 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {isGuest && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="font-semibold">게스트로 접속 중입니다.</span> 이 계정은 비밀번호가 없어
+          다시 로그인할 수 없습니다 — 로그아웃하거나 브라우저를 닫으면 진행 중이던 응시로 돌아올 수 없어요.
+        </div>
+      )}
+
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {!assignments ? (
         <Spinner />
       ) : assignments.length === 0 ? (
-        <EmptyState message="배정된 시험이 없습니다." />
+        <EmptyState message={isGuest ? "지금 응시할 수 있는 시험이 없습니다." : "배정된 시험이 없습니다."} />
       ) : (
         <div className="space-y-4">
           {assignments.map((a) => {

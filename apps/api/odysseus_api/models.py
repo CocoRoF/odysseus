@@ -30,8 +30,39 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(20), default="candidate")  # admin | evaluator | candidate
+    # admin | evaluator | candidate | guest
+    #
+    # guest 도 진짜 행이다 — 인증 계층의 예외가 아니라. 그래야 다른 역할과 똑같은
+    # 도구로 목록에 뜨고, 정지되고, 삭제된다. 절반만 존재하는 계정은 손댈 수가 없다.
+    role: Mapped[str] = mapped_column(String(20), default="candidate")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: 이 계정이 처음 나타난 주소. 세션에도 ip 가 있지만 세션은 폐기되고 정리된다 —
+    #: 게스트에게는 '어디서 만들어졌나' 가 세션이 사라진 뒤에도 필요한 정보다.
+    created_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BlockedIp(Base):
+    """차단된 접속 주소 — 단일 IP 또는 CIDR 대역.
+
+    게스트 로그인은 이메일도 초대도 없이 계정을 만들어 준다. 그래서 남용의
+    단위는 '계정'이 아니라 '어디서 왔는가'가 된다: 정지시킨 게스트가 1초 뒤
+    새 계정으로 돌아오면 정지는 아무것도 막지 못한다. 주소를 막을 수 있어야
+    게스트 정지가 실제 조치가 된다.
+
+    ``cidr`` 로 저장하면 단일 IP(``/32``)와 대역을 한 컬럼으로 다룰 수 있고,
+    포함 여부 판정을 DB 가 아니라 파이썬에서 하더라도 표현이 하나로 남는다.
+    """
+
+    __tablename__ = "blocked_ips"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    #: 단일 주소는 "203.0.113.7", 대역은 "203.0.113.0/24" — 저장 형태는 그대로 둔다
+    cidr: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    reason: Mapped[str] = mapped_column(String(200), default="")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

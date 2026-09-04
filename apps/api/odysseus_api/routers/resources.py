@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..db import get_db
-from ..deps import get_current_user, require_admin
+from ..deps import get_current_user, is_staff, require_admin
 from ..models import Attempt, Event, Execution, User, WorkspaceFile, utcnow
 from ..runqueue import get_redis
 
@@ -55,7 +55,7 @@ async def my_resources(
     attempt = await db.get(Attempt, attempt_id)
     if not attempt:
         raise HTTPException(404, "attempt not found")
-    if attempt.user_id != user.id and user.role not in ("admin", "evaluator"):
+    if attempt.user_id != user.id and not is_staff(user):
         raise HTTPException(403, "권한이 없습니다")
 
     snap = await _snapshot()

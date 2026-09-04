@@ -12,7 +12,8 @@ from sqlalchemy.orm import selectinload
 
 from ..config import settings
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, is_staff
+from ..guests import GUEST_ROLE
 from ..models import (
     Assessment,
     AssessmentScenario,
@@ -87,7 +88,7 @@ async def get_attempt_for(attempt_id: uuid.UUID, user: User, db: AsyncSession) -
     attempt = await db.get(Attempt, attempt_id)
     if not attempt:
         raise HTTPException(404, "응시 정보를 찾을 수 없습니다")
-    if user.role == "candidate" and attempt.user_id != user.id:
+    if not is_staff(user) and attempt.user_id != user.id:
         raise HTTPException(403, "본인의 응시만 볼 수 있습니다")
     return await check_expired(attempt, db)
 
@@ -218,14 +219,17 @@ async def _attempt_out(attempt: Attempt, db: AsyncSession) -> AttemptOut:
 
 @router.get("/my/assignments", response_model=list[MyAssignmentOut])
 async def my_assignments(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    is_staff = user.role in ("admin", "evaluator")
+    # 게스트는 배정을 받지 않는다 — 배정할 상대가 미리 존재하지 않기 때문이다.
+    # 대신 열려 있는 시험을 전부 본다. 스태프와 같은 목록을 보지만 이유는 다르고
+    # (권한이 아니라 배정의 부재), 권한은 아무것도 따라오지 않는다.
+    sees_all = is_staff(user) or user.role == GUEST_ROLE
     assigned_ids: set[uuid.UUID] = {
         r
         for r in (
             await db.execute(select(Assignment.assessment_id).where(Assignment.user_id == user.id))
         ).scalars()
     }
-    if is_staff:
+    if sees_all:
         assessments = (
             await db.execute(
                 select(Assessment)
@@ -333,7 +337,7 @@ async def start_attempt(
             )
         )
     ).scalar_one_or_none()
-    if not assignment and user.role not in ("admin", "evaluator"):
+    if not assignment and not is_staff(user) and user.role != GUEST_ROLE:
         raise HTTPException(403, "이 시험에 배정되지 않았습니다")
 
     assessment = await db.get(Assessment, assessment_id)
@@ -536,7 +540,7 @@ async def retake_attempt(
     attempt = await db.get(Attempt, attempt_id)
     if not attempt:
         raise HTTPException(404, "응시 정보를 찾을 수 없습니다")
-    if user.role == "candidate":
+    if not is_staff(user):
         raise HTTPException(403, "재응시는 관리자가 허용해야 합니다")
     if user.role == "evaluator" and attempt.user_id != user.id:
         raise HTTPException(403, "평가자는 본인 체험 응시만 재응시할 수 있습니다")

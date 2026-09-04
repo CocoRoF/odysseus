@@ -25,7 +25,10 @@ export function useUser(requiredRoles?: Role[]) {
       })
       .catch((e) => {
         if (cancelled) return;
-        if (e instanceof ApiError && e.status === 401) {
+        // 401 = 세션 없음/만료. 403 = 이 주소가 차단됨 (deps.get_current_user).
+        // 둘 다 로그인 화면으로 보낸다 — 403 을 그냥 두면 화면이 영원히 로딩 상태로 남고,
+        // 로그인 화면에서는 차단 사유가 그대로 보인다.
+        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
           router.replace("/login");
         }
         setLoading(false);

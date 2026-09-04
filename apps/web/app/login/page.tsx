@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { User } from "@/lib/types";
@@ -12,7 +12,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // null = 아직 확인 전. 게스트 접속이 꺼져 있으면 버튼 자리도 만들지 않는다 —
+  // 눌러야 비로소 "비활성화되어 있습니다" 를 보는 버튼은 없느니만 못하다.
+  const [guestOn, setGuestOn] = useState<boolean | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    api
+      .get<{ enabled: boolean }>("/auth/guest")
+      .then((r) => setGuestOn(r.enabled))
+      .catch(() => setGuestOn(false));
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,6 +33,18 @@ export default function LoginPage() {
       router.replace(homeFor(user.role));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "로그인에 실패했습니다");
+      setBusy(false);
+    }
+  };
+
+  const startGuest = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const user = await api.post<User>("/auth/guest", { name: "" });
+      router.replace(homeFor(user.role));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "게스트로 시작할 수 없습니다");
       setBusy(false);
     }
   };
@@ -58,6 +80,22 @@ export default function LoginPage() {
           <Button type="submit" disabled={busy} className="w-full">
             {busy ? "로그인 중..." : "로그인"}
           </Button>
+
+          {guestOn && (
+            <div className="border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={startGuest}
+                disabled={busy}
+                className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-amber-400 hover:text-amber-700 disabled:opacity-50"
+              >
+                게스트로 둘러보기
+              </button>
+              <p className="mt-2 text-center text-xs text-slate-400">
+                계정 없이 바로 응시할 수 있어요. 로그아웃하면 다시 들어올 수 없습니다.
+              </p>
+            </div>
+          )}
         </form>
       </div>
     </div>

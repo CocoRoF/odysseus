@@ -23,6 +23,7 @@ export function Shell({ user, children, wide = false }: { user: User; children: 
     ...(user.role === "admin"
       ? [
           { href: "/admin/resources", label: "자원 관리" },
+          { href: "/admin/access", label: "접속 관리" },
           { href: "/admin/settings", label: "설정" },
         ]
       : []),

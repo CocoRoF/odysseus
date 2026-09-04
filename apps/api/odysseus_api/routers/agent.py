@@ -14,6 +14,7 @@ from ..ai import provider as ai_provider
 from ..config import settings
 from ..db import SessionLocal, get_db
 from ..deps import get_current_user
+from ..guests import guest_chat_gate
 from ..ratelimit import enforce
 from ..ai.errors import describe_error, public_meta
 from ..models import AgentMessage, Assessment, Attempt, Event, User
@@ -95,6 +96,7 @@ async def send_agent_message(
     if not scenario.agent_enabled:
         raise HTTPException(403, "이 시나리오에서는 AI 에이전트를 사용할 수 없습니다")
     enforce(f"agent:{attempt_id}", per_min=12, burst=6, what="에이전트 요청")  # ODY-010
+    await guest_chat_gate(db, user, attempt_id, what="에이전트 요청")
 
     assessment = await db.get(Assessment, attempt.assessment_id)
     if assessment.agent_max_turns <= 0:

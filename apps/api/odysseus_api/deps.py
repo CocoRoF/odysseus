@@ -7,7 +7,9 @@ from .db import get_db
 from datetime import timedelta
 
 from .config import settings
+from .guests import assert_ip_allowed
 from .models import Session, User, utcnow
+from .ratelimit import client_ip
 from .security import COOKIE_NAME, decode_token
 
 
@@ -40,11 +42,27 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     user = await db.get(User, uuid.UUID(payload["sub"]))
     if not user or not user.is_active:
         raise HTTPException(401, "유효하지 않은 사용자입니다")
+    # 주소 차단은 로그인 시점이 아니라 매 요청에 건다. 로그인 당시엔 멀쩡했던
+    # 세션이 지금도 그대로 살아 있으면, 차단은 "다음 로그인부터"가 되어
+    # 정작 막고 싶었던 진행 중인 남용을 그대로 통과시킨다.
+    await assert_ip_allowed(db, client_ip(request), role=user.role)
     # 마지막 활동 시각은 1분에 한 번만 갱신 (매 요청 쓰기 방지)
     if (now - session.last_seen_at).total_seconds() > 60:
         session.last_seen_at = now
         await db.commit()
     return user
+
+
+#: 남의 응시를 들여다보고 조작할 수 있는 역할.
+#:
+#: 권한 판정은 "스태프인가"로 쓰고, "응시자인가"로 쓰지 않는다. 후자는 역할이
+#: 하나 늘어날 때마다 조용히 열리는 쪽으로 틀린다 — guest 를 추가했을 때
+#: `role == "candidate"` 로 적힌 검사 세 곳이 전부 게스트를 통과시켰다.
+STAFF_ROLES = ("admin", "evaluator")
+
+
+def is_staff(user: User) -> bool:
+    return user.role in STAFF_ROLES
 
 
 def require_roles(*roles: str):

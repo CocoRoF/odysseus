@@ -31,7 +31,7 @@ from ..ratelimit import limiter
 from ..safe_fetch import UnsafeUrl, assert_public_url, safe_get
 from ..config import settings as app_settings
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, is_staff
 from ..models import AppSetting, Attempt, Event, User
 from .attempts import get_attempt_for, require_own_active, scenario_in_attempt
 
@@ -170,7 +170,7 @@ async def audit_ctx(
     from .attempts import require_own_active, scenario_in_attempt
 
     if attempt_id is None or scenario_id is None:
-        if user.role == "candidate":
+        if not is_staff(user):
             raise HTTPException(403, "참고자료는 진행 중인 시험 안에서만 열 수 있습니다")
         return AuditCtx(None, None, user)
     attempt = await require_own_active(attempt_id, user, db)

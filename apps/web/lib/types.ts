@@ -1,6 +1,9 @@
 // ── 공통 ─────────────────────────────────────────────────────
 
-export type Role = "admin" | "evaluator" | "candidate";
+export type Role = "admin" | "evaluator" | "candidate" | "guest";
+
+/** 관리자가 직접 부여할 수 있는 역할 — guest 는 게스트 로그인만이 만든다 */
+export type AssignableRole = Exclude<Role, "guest">;
 
 export interface User {
   id: string;
@@ -8,6 +11,31 @@ export interface User {
   name: string;
   role: Role;
   is_active: boolean;
+  /** 게스트 계정이 만들어진 주소 (일반 계정은 null) */
+  created_ip?: string | null;
+  created_at: string;
+}
+
+// ── 게스트 접속 ──────────────────────────────────────────────
+
+export interface GuestPolicy {
+  enabled: boolean;
+  max_new_per_hour_per_ip: number;
+  chat_per_min: number;
+  chat_total_per_attempt: number;
+}
+
+export interface GuestStats {
+  total: number;
+  active: number;
+  last_24h: number;
+  blocked_entries: number;
+}
+
+export interface BlockedIp {
+  id: string;
+  cidr: string;
+  reason: string;
   created_at: string;
 }
 

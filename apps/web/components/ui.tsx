@@ -42,6 +42,7 @@ const badgeColors: Record<string, string> = {
   admin: "bg-red-100 text-red-700",
   evaluator: "bg-blue-100 text-blue-700",
   candidate: "bg-slate-100 text-slate-700",
+  guest: "bg-amber-100 text-amber-800",
 };
 
 export function Badge({ value, label }: { value: string; label?: string }) {

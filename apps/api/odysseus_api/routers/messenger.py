@@ -14,6 +14,7 @@ from ..ai import npc
 from ..ai import provider as ai_provider
 from ..db import get_db
 from ..deps import get_current_user
+from ..guests import guest_chat_gate
 from ..ratelimit import enforce
 from ..ai.errors import describe_error
 from ..config import settings
@@ -71,6 +72,7 @@ async def send_message(
     character = _find_character(scenario, character_key)
     # ODY-010: 응시별 속도(분당 12, 순간 6)와 총량(LLM 비용 예산)
     enforce(f"messenger:{attempt_id}", per_min=12, burst=6, what="메시지 전송")
+    await guest_chat_gate(db, user, attempt_id, what="메시지 전송")
     sent = (
         await db.execute(
             select(func.count(MessengerMessage.id)).where(

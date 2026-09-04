@@ -227,7 +227,7 @@ export default function ExamDesktopPage() {
   const attemptId = params.attemptId;
   const router = useRouter();
   const { toast, confirm } = useToast();
-  const { user } = useUser(["candidate", "admin", "evaluator"]);
+  const { user } = useUser(["candidate", "admin", "evaluator", "guest"]);
 
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [error, setError] = useState("");
