@@ -96,6 +96,60 @@ def _make_preexec(cpu_s: int, nproc: int, uid: int | None, gid: int | None):
     return preexec
 
 
+class _PipeReader(threading.Thread):
+    """파이프를 스트리밍으로 비우되 상한까지만 보존한다 (ODY-005).
+
+    communicate() 는 프로세스가 끝날 때까지 모든 바이트를 메모리에 쌓는다. 여기서는
+    `keep` 바이트까지만 남기고 나머지는 세기만 하고 버린다. 총량이 `hard_cap` 을 넘으면
+    출력 폭주로 보고 `on_flood` 를 불러 프로세스를 끝낸다. select 로 0.5초씩 깨어나므로
+    자손이 파이프를 물고 있어도 stop 신호로 빠져나온다.
+    """
+
+    def __init__(self, fd: int, keep: int, hard_cap: int, on_flood, stop: threading.Event):
+        super().__init__(daemon=True)
+        self.fd = fd
+        self.keep = keep
+        self.hard_cap = hard_cap
+        self.on_flood = on_flood
+        self.stop = stop
+        self.chunks: list[bytes] = []
+        self.kept = 0
+        self.total = 0
+        self.flooded = False
+
+    def run(self) -> None:
+        import select
+
+        try:
+            while not self.stop.is_set():
+                r, _, _ = select.select([self.fd], [], [], 0.5)
+                if not r:
+                    continue
+                try:
+                    chunk = os.read(self.fd, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                self.total += len(chunk)
+                if self.kept < self.keep:
+                    take = chunk[: self.keep - self.kept]
+                    self.chunks.append(take)
+                    self.kept += len(take)
+                if self.total > self.hard_cap and not self.flooded:
+                    self.flooded = True
+                    self.on_flood()
+        finally:
+            pass  # fd 는 Popen 의 파일 객체가 소유한다 — execute() 가 마지막에 닫는다
+
+    def data(self) -> bytes:
+        return b"".join(self.chunks)
+
+
+# 보존 상한을 넘어 이만큼까지 쏟아내면 출력 폭주로 보고 실행을 끝낸다 (파이프 drain 비용 상한)
+OUTPUT_HARD_CAP = 64 * 1024 * 1024
+
+
 def execute(
     cmd: list[str],
     cwd: str,
@@ -135,26 +189,66 @@ def execute(
     if on_start:
         on_start(proc)  # 샘플러가 이 트리의 자원을 재고, 종료 요청을 집행한다
 
+    # 출력은 스트리밍으로 비운다 — 메모리에는 상한까지만 남고, 폭주하면 즉시 끝낸다
+    stop = threading.Event()
+    flood = {"hit": False}
+
+    def on_flood():
+        flood["hit"] = True
+        kill_tree(proc)
+
+    # 파이프는 fd 로 직접 읽는다. 파일 객체는 fd 소유자로 남겨 두었다가 끝에 닫는다 (이중 close 방지)
+    out_fd = proc.stdout.fileno()
+    err_fd = proc.stderr.fileno()
+    rd_out = _PipeReader(out_fd, OUTPUT_LIMIT, OUTPUT_HARD_CAP, on_flood, stop)
+    rd_err = _PipeReader(err_fd, STDERR_LIMIT, OUTPUT_HARD_CAP, on_flood, stop)
+    rd_out.start()
+    rd_err.start()
     try:
-        out, err = proc.communicate(stdin_data.encode(), timeout=wall_s)
+        if stdin_data:
+            proc.stdin.write(stdin_data.encode())
+        proc.stdin.close()
+    except (BrokenPipeError, OSError):
+        pass
+
+    status = "ok"
+    try:
+        proc.wait(timeout=wall_s)
         elapsed = int((time.monotonic() - start) * 1000)
     except subprocess.TimeoutExpired:
         kill_tree(proc)
-        # 파이프를 물고 있는 자손이 남으면 communicate 가 영영 돌아오지 않는다 —
-        # 슬롯을 잃지 않도록 회수 자체에도 상한을 둔다.
-        out = err = b""
-        for _ in range(2):
-            try:
-                out, err = proc.communicate(timeout=5)
-                break
-            except subprocess.TimeoutExpired:
-                proc.kill()
-        return ExecResult("timeout", -1, _decode(out), _decode(err, STDERR_LIMIT), int(wall_s * 1000))
+        status = "timeout"
+        elapsed = int(wall_s * 1000)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    # 파이프를 물고 있는 자손이 남아도 리더는 stop 으로 빠져나온다 — 슬롯을 잃지 않는다
+    rd_out.join(timeout=3)
+    rd_err.join(timeout=3)
+    stop.set()
+    rd_out.join(timeout=2)
+    rd_err.join(timeout=2)
+    for f in (proc.stdout, proc.stderr):
+        try:
+            f.close()
+        except OSError:
+            pass
 
-    stdout = _decode(out)
-    stderr = _decode(err, STDERR_LIMIT)
+    stdout = _decode(rd_out.data())
+    stderr = _decode(rd_err.data(), STDERR_LIMIT)
+    truncated = rd_out.total > rd_out.kept or rd_err.total > rd_err.kept
+    if flood["hit"]:
+        status = "error" if status == "ok" else status
+        stderr = (stderr + f"\n[출력이 {OUTPUT_HARD_CAP // (1024 * 1024)}MB 를 넘어 실행을 중단했습니다]").strip()
+    elif truncated:
+        stderr = (stderr + f"\n[출력이 너무 길어 앞 {OUTPUT_LIMIT // (1024 * 1024)}MB 만 보존했습니다]").strip()
 
-    # SIGXCPU/SIGKILL로 죽었으면 CPU 시간 초과로 간주
+    if status == "timeout":
+        return ExecResult("timeout", -1, stdout, stderr, elapsed)
+    # SIGXCPU/SIGKILL로 죽었으면 CPU 시간 초과로 간주 (폭주로 우리가 죽인 경우는 error)
+    if flood["hit"]:
+        return ExecResult("error", proc.returncode, stdout, stderr, elapsed)
     if proc.returncode in (-signal.SIGXCPU, -signal.SIGKILL):
         return ExecResult("timeout", proc.returncode, stdout, stderr, elapsed)
     return ExecResult("ok", proc.returncode, stdout, stderr, elapsed)

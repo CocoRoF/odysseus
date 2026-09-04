@@ -32,7 +32,7 @@ curl -sS -c "$COOKIE_JAR" \
 | ODY-002 | 치명적 | [내부 토큰 노출과 내부 도구 범위 우회](02-internal-token-exposure-and-scope-bypass.md) | 조치 완료 (2026-09-04) |
 | ODY-003 | 치명적 | [인증 없는 Redis에 응시자 코드가 접근](03-unauthenticated-redis-access.md) | 조치 완료 (2026-09-04) |
 | ODY-004 | 높음 | [러너 변경 수집기의 심볼릭 링크·특수 파일 처리](04-runner-output-file-special-file-abuse.md) | 조치 완료 (2026-09-04) |
-| ODY-005 | 높음 | [러너 stdout/stderr 무제한 메모리 수집](05-runner-unbounded-output-memory.md) | 미조치 |
+| ODY-005 | 높음 | [러너 stdout/stderr 무제한 메모리 수집](05-runner-unbounded-output-memory.md) | 조치 완료 (2026-09-04) |
 | ODY-006 | 높음 | [웹 참고자료 프록시 SSRF](06-reference-proxy-ssrf.md) | 미조치 |
 | ODY-007 | 높음 | [마감·제출 이후 결과 변경 가능성](07-post-deadline-and-post-submit-mutation.md) | 미조치 |
 | ODY-008 | 높음 | [NPC를 통한 숨은 목표 추출](08-npc-hidden-objective-extraction.md) | 미조치 |

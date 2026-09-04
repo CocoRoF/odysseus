@@ -42,3 +42,12 @@ PY
 4. 출력 속도 제한과 최대 총 출력량을 설정하고 결과에 `truncated=true`를 명시한다.
 5. OOM 종료를 감지해 해당 execution만 실패 처리하고 다른 작업을 재시도할 수 있게 runner 프로세스와 실행 프로세스를 별도 컨테이너로 분리한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **스트리밍 수집:** `execute()` 가 `communicate()` 대신 stdout/stderr 파이프를 각각 스레드(`_PipeReader`)로 비운다. 메모리에는 보존 상한(stdout 4MB, stderr 8KB)까지만 남기고 나머지는 세기만 하고 버린다 (`apps/runner/sandbox.py`).
+- **폭주 차단:** 두 파이프 합쳐 64MB(`OUTPUT_HARD_CAP`)를 넘으면 그 즉시 프로세스 트리를 죽이고 `error` 로 끝낸다 — 제한 시간(30초)까지 drain 하지 않는다. 여러 자식이 동시에 쏟아내도 총량 기준이라 같다.
+- **정직한 결과:** 잘렸으면 stderr 에 `[출력이 너무 길어 앞 4MB 만 보존했습니다]`, 끊었으면 `[출력이 64MB 를 넘어 실행을 중단했습니다]` 를 남긴다.
+- **슬롯 보호:** 리더는 `select` 로 0.5초마다 깨어나므로 자손이 파이프를 물고 있어도 stop 신호로 빠져나온다. 파이프 fd 는 Popen 파일 객체가 소유하고 마지막에 한 번만 닫는다 (이중 close 방지).
+- **검증:** `tests/security/test_runner_output_flood.py` — 20MB stdout 은 4MB 로 잘리고 stderr 유지, 5MB stderr 는 8KB 로, 300MB 폭주는 25초 안에 error 로 중단, 6개 자식 동시 폭주도 중단, 옆 응시자의 실행은 정상 완료, 이후 슬롯 정상. 하네스가 `docker stats` 로 러너 컨테이너 메모리가 폭주와 무관하게 낮게 유지되는지 같이 본다.
+- **미완:** 실행별 cgroup 메모리 한도(#3)는 컨테이너 안 cgroup 위임이 필요해 보류 — 현재는 컨테이너 `mem_limit` 과 출력·시간 상한으로 막는다. RLIMIT_AS 는 Go/JVM 을 시작조차 못 하게 해 쓰지 않는다.
