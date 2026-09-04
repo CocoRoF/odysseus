@@ -79,6 +79,8 @@ export interface Scenario {
   opening_messages: OpeningMessage[];
   initial_files: InitialFile[];
   objectives_md: string;
+  /** 이 시나리오의 NPC 기본 규칙(영문). 비어 있으면 전역 기본 */
+  npc_base_prompt?: string;
   checks: Check[];
   rubric: Rubric;
   agent_enabled: boolean;

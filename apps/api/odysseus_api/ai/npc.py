@@ -29,6 +29,7 @@ def npc_system_prompt(scenario: Scenario, character: dict) -> str:
         persona=str(character.get("persona") or ""),
         knowledge=str(character.get("knowledge") or ""),
         colleagues=colleagues,
+        base_rules=str(getattr(scenario, "npc_base_prompt", "") or ""),
     )
 
 

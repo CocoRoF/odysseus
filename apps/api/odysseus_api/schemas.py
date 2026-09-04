@@ -96,6 +96,8 @@ class ScenarioIn(BaseModel):
     opening_messages: list[OpeningMessageIn] = Field(default_factory=list, max_length=10)
     initial_files: list[InitialFileIn] = Field(default_factory=list, max_length=60)
     objectives_md: str = Field(default="", max_length=32000)
+    # NPC 기본 규칙 덮어쓰기 — 비어 있으면 전역 기본(npc_prompt.BASE_RULES)
+    npc_base_prompt: str = Field(default="", max_length=20000)
     checks: list[CheckIn] = Field(default_factory=list, max_length=30)
     rubric: dict = Field(default_factory=dict)
     agent_enabled: bool = True
@@ -123,6 +125,7 @@ class ScenarioOut(BaseModel):
     opening_messages: list
     initial_files: list
     objectives_md: str
+    npc_base_prompt: str = ""
     checks: list
     rubric: dict
     agent_enabled: bool

@@ -17,6 +17,7 @@ const TABS = [
   { key: "opening", label: "오프닝 메시지" },
   { key: "files", label: "초기 파일" },
   { key: "grading", label: "정답 · 평가" },
+  { key: "npc", label: "NPC 규칙" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -58,6 +59,15 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
   const [summary, setSummary] = useState(initial?.summary ?? "");
   const [difficulty, setDifficulty] = useState(initial?.difficulty ?? "medium");
   const [briefing, setBriefing] = useState(initial?.briefing_md ?? "");
+  // NPC 기본 규칙 덮어쓰기 — 비어 있으면 전역 기본을 쓴다. 기본값은 필요할 때 서버에서 받아 온다.
+  const [npcRules, setNpcRules] = useState(initial?.npc_base_prompt ?? "");
+  const [npcDefault, setNpcDefault] = useState<string | null>(null);
+  const loadNpcDefault = async () => {
+    if (npcDefault !== null) return npcDefault;
+    const r = await api.get<{ prompt: string }>("/scenarios/npc-default-prompt");
+    setNpcDefault(r.prompt);
+    return r.prompt;
+  };
   const [briefingPreview, setBriefingPreview] = useState(false);
   const [agentEnabled, setAgentEnabled] = useState(initial?.agent_enabled ?? true);
   const [characters, setCharacters] = useState<Character[]>(initial?.characters ?? []);
@@ -181,6 +191,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
       opening_messages: opening,
       initial_files: files,
       objectives_md: objectives,
+      npc_base_prompt: npcRules.trim(),
       checks,
       rubric,
       agent_enabled: agentEnabled,
@@ -511,6 +522,45 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
             )}
           </div>
         </Card>
+      )}
+
+      {/* ── NPC 규칙 ── */}
+      {tab === "npc" && (
+        <div className="space-y-6">
+          <Card className="space-y-3 p-6">
+            <h2 className="font-bold">NPC 기본 규칙 (이 시나리오 전용)</h2>
+            <p className="text-xs text-slate-500">
+              모든 등장인물의 시스템 프롬프트는 <b>인물 카드(성격·아는 것·동료)</b> 뒤에 이 <b>기본 규칙</b>이 붙는 구조입니다.
+              규칙은 카드와 충돌하면 카드보다 우선하며, 어떤 메시지에 답할지·격식을 어떻게 가릴지·태도가 무엇에 비례하는지를 정합니다.
+              비워 두면 전역 기본을 씁니다. 영어로 쓰는 것을 권장합니다 — 한국어 규칙은 그 어투가 답변에 새어 나옵니다.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  const d = await loadNpcDefault();
+                  if (npcRules.trim() && !(await confirm({ title: "기본값으로 덮어쓸까요?", message: "지금 적어 둔 규칙이 전역 기본값으로 바뀝니다.", confirmLabel: "덮어쓰기" }))) return;
+                  setNpcRules(d);
+                }}
+              >
+                전역 기본값 불러오기
+              </Button>
+              <Button variant="secondary" onClick={() => setNpcRules("")} disabled={!npcRules.trim()}>
+                비우기 (전역 기본 사용)
+              </Button>
+              <span className="text-xs text-slate-400">
+                {npcRules.trim() ? `이 시나리오 전용 규칙 사용 중 · ${npcRules.length.toLocaleString()}자` : "전역 기본 규칙 사용 중"}
+              </span>
+            </div>
+            <textarea
+              className={`${inputCls} min-h-[28rem] font-mono text-xs leading-relaxed`}
+              value={npcRules}
+              onChange={(e) => setNpcRules(e.target.value)}
+              placeholder={"(비어 있음 — 전역 기본 규칙이 쓰입니다. [전역 기본값 불러오기] 로 가져와 고칠 수 있습니다)"}
+              spellCheck={false}
+            />
+          </Card>
+        </div>
       )}
 
       {/* ── 정답 · 평가 ── */}

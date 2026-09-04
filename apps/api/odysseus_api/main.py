@@ -33,6 +33,8 @@ MIGRATIONS: list[str] = [
     "ALTER TABLE executions ADD COLUMN IF NOT EXISTS callback_token VARCHAR(64)",
     # ODY-007: 종료 시점 스냅샷 + 제출 뒤 워크스페이스 동결 (애플리케이션 버그·늦은 콜백과 무관하게 DB 가 막는다)
     "ALTER TABLE attempts ADD COLUMN IF NOT EXISTS snapshot JSONB",
+    # 시나리오별 NPC 기본 규칙 덮어쓰기 (비어 있으면 전역 기본)
+    "ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS npc_base_prompt TEXT NOT NULL DEFAULT ''",
     """
     CREATE OR REPLACE FUNCTION workspace_files_frozen_guard() RETURNS trigger AS $$
     DECLARE st TEXT;

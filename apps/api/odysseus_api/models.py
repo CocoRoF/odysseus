@@ -84,6 +84,8 @@ class Scenario(Base):
     opening_messages: Mapped[list] = mapped_column(JSONB, default=list)
     initial_files: Mapped[list] = mapped_column(JSONB, default=list)
     objectives_md: Mapped[str] = mapped_column(Text, default="")
+    # 이 시나리오의 NPC 기본 규칙(영문). 비어 있으면 전역 기본(npc_prompt.BASE_RULES)을 쓴다.
+    npc_base_prompt: Mapped[str] = mapped_column(Text, default="")
     checks: Mapped[list] = mapped_column(JSONB, default=list)
     rubric: Mapped[dict] = mapped_column(JSONB, default=dict)
     agent_enabled: Mapped[bool] = mapped_column(Boolean, default=True)

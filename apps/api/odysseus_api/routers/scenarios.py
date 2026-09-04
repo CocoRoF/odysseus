@@ -64,6 +64,7 @@ def _apply(row: Scenario, body: ScenarioIn) -> None:
     row.opening_messages = [m.model_dump() for m in body.opening_messages]
     row.initial_files = [f.model_dump() for f in body.initial_files]
     row.objectives_md = body.objectives_md
+    row.npc_base_prompt = body.npc_base_prompt.strip()
     row.checks = [c.model_dump() for c in body.checks]
     row.rubric = body.rubric or default_rubric()
     row.agent_enabled = body.agent_enabled
@@ -146,6 +147,14 @@ async def author_chat(body: AuthorChatIn, db: AsyncSession = Depends(get_db), _=
 @router.get("/rubric-default")
 async def rubric_default(_=Depends(require_staff)):
     return default_rubric()
+
+
+@router.get("/npc-default-prompt")
+async def npc_default_prompt(_=Depends(require_staff)):
+    """전역 NPC 기본 규칙 — 시나리오가 비워 두면 이것이 쓰인다. 편집기의 '기본값 불러오기' 가 읽는다."""
+    from ..ai.npc_prompt import BASE_RULES
+
+    return {"prompt": BASE_RULES}
 
 
 @router.post("", response_model=ScenarioOut)

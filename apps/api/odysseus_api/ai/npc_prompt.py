@@ -102,8 +102,12 @@ def build_system_prompt(
     persona: str,
     knowledge: str,
     colleagues: list[dict],
+    base_rules: str | None = None,
 ) -> str:
     """인물 카드 + 기본 규칙 → 시스템 프롬프트. 카드가 먼저, 규칙이 마지막 말이다.
+
+    base_rules 를 주면(시나리오별 덮어쓰기) 전역 BASE_RULES 대신 그것을 쓴다. 빈 문자열은 '없음'으로
+    보고 전역 기본을 쓴다.
 
     인물 고유 정보는 한국어(작성자가 쓴 그대로), 행동 규칙은 영어다.
 
@@ -130,6 +134,6 @@ def build_system_prompt(
             "",
             "---",
             "",
-            BASE_RULES,
+            (base_rules or "").strip() or BASE_RULES,
         ]
     )
