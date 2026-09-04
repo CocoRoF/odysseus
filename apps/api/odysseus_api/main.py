@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from .config import settings
+from .config import check_startup_security, settings
 from .db import Base, SessionLocal, engine
 from .routers import (
     agent,
@@ -23,7 +23,7 @@ from .routers import (
     settings as settings_router,
     users,
 )
-from .seed import seed_if_empty
+from .seed import bootstrap_if_empty, seed_demo_if_empty
 
 # create_all은 기존 테이블에 컬럼을 추가하지 않는다 — 스키마 변경은 여기에 idempotent DDL로 누적
 MIGRATIONS: list[str] = [
@@ -45,9 +45,13 @@ async def lifespan(app: FastAPI):
             if i == 29:
                 raise
             await asyncio.sleep(2)
-    if settings.seed_demo_data:
-        async with SessionLocal() as db:
-            await seed_if_empty(db)
+    # 빈 DB: 운영은 관리자 부트스트랩, 개발(명시적 플래그)은 데모 시드. 운영에서 데모 시드는 기동 거부.
+    check_startup_security()
+    async with SessionLocal() as db:
+        if settings.seed_demo_data:
+            await seed_demo_if_empty(db)
+        else:
+            await bootstrap_if_empty(db)
     yield
     await engine.dispose()
 

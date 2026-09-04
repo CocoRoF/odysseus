@@ -69,9 +69,11 @@ sudo ./scripts/restore.sh backups/<file>.sql.gz  # 되돌릴 수 없으므로 �
 | `JWT_SECRET` / `INTERNAL_TOKEN` | 운영 배포 시 반드시 교체 (`openssl rand -hex 32`) |
 | `POSTGRES_PASSWORD` | 기존 볼륨에 묶인 값 — 바꾸지 말 것 |
 | `RUNNER_CONCURRENCY` / `RUNNER_MEM_MB` | 동시 실행 수 / 러너 메모리 상한 (기본 2 / 4096) |
-| `SEED_DEMO_DATA` | 최초 기동 시 데모 계정·시나리오·시험 생성 (기본 true) |
+| `ODYSSEUS_ENV` | `production`(기본) 또는 `development` |
+| `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | 빈 DB 최초 기동 시 만들 관리자. 비밀번호를 비우면 무작위 생성 후 api 로그에 한 번 출력 |
+| `SEED_DEMO_DATA` | **개발 전용.** 고정 비밀번호의 데모 계정 3개를 만든다. `ODYSSEUS_ENV=development` 가 아니면 기동 거부 (기본 false) |
 
-데모 계정: `admin@odysseus.dev/admin1234` · `evaluator@odysseus.dev/eval1234` · `candidate@odysseus.dev/cand1234`
+데모 계정(개발 시드에서만 생성, 스모크 테스트가 사용): `admin@odysseus.dev` · `evaluator@odysseus.dev` · `candidate@odysseus.dev` — 비밀번호는 `apps/api/odysseus_api/seed.py` 의 `DEMO_ACCOUNTS`. 운영 데이터에 이 계정이 남아 있으면 안 된다 (`docs/security/01`).
 
 ## 테스트
 

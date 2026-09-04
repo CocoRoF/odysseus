@@ -43,3 +43,12 @@ HTTP 200과 관리자 사용자 정보가 반환되면 재현된다. 테스트�
 5. 이미 배포된 환경에서는 세 데모 계정을 삭제 또는 비활성화하고 모든 관련 세션/JWT를 폐기한다.
 6. CI에 `admin1234`, `eval1234`, `cand1234` 같은 금지 문자열 검사를 추가한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **기본값 반전:** `seed_demo_data` 기본 `False`, `ODYSSEUS_ENV` 기본 `production`. 운영 모드에서 `SEED_DEMO_DATA=true` 면 `check_startup_security()` 가 기동을 거부한다 (`apps/api/odysseus_api/config.py`, `main.py`).
+- **부트스트랩 분리:** 빈 DB 는 `bootstrap_if_empty()` 가 관리자 1명 + 기본 콘텐츠만 만든다. 비밀번호는 `BOOTSTRAP_ADMIN_PASSWORD` 또는 무작위(24자) 생성 후 **로그에 한 번만** 출력하고 저장하지 않는다 (`seed.py`). 데모 계정은 `seed_demo_if_empty()` 로 분리되어 development 에서만 만들어진다.
+- **고정 자격증명 제거:** 로그인 화면 안내 문구, README, `scripts/deploy.sh`, `scripts/snapshot.py` 에서 삭제. 배포 스크립트는 `.env` 의 `BOOTSTRAP_ADMIN_EMAIL/PASSWORD` 를 읽는다. `docker-compose.yml` 기본값도 `false`.
+- **재발 방지:** `tests/security/check_demo_credentials.py` 가 개발 시드·테스트·이 문서 밖의 `admin1234|eval1234|cand1234` 를 실패로 잡는다.
+- **운영 환경:** 세 데모 계정의 비밀번호를 무작위 값으로 교체했다(이전 값으로 로그인 401 확인). 기존 JWT 는 만료(12h)까지 유효하며, 세션 즉시 폐기는 ODY-023 에서 다룬다.
+- **검증:** 격리된 compose 프로젝트에서 (1) 운영 기본값 → 배너·무작위 비밀번호·데모 로그인 401, (2) 환경변수 지정 → 그 값으로 로그인, 로그 출력 0회, (3) 운영+데모 시드 → 기동 거부, (4) development+데모 시드 → 데모 계정 생성 을 확인했다.

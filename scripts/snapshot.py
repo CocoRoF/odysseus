@@ -13,8 +13,30 @@ import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
 
+import os
+from pathlib import Path
+
 API = "http://localhost:8100"
-ADMIN = {"email": "admin@odysseus.dev", "password": "admin1234"}
+
+
+def _admin_credentials() -> dict:
+    """관리자 자격증명 — 환경변수, 없으면 저장소 루트 .env. 코드에는 두지 않는다."""
+    env = dict(os.environ)
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            env.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    email, password = env.get("BOOTSTRAP_ADMIN_EMAIL", ""), env.get("BOOTSTRAP_ADMIN_PASSWORD", "")
+    if not email or not password:
+        raise SystemExit("BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD 가 필요합니다 (.env 또는 환경변수)")
+    return {"email": email, "password": password}
+
+
+ADMIN = _admin_credentials()
 
 
 def call(op, method, path, body=None):

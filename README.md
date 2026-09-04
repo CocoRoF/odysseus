@@ -88,7 +88,13 @@ cd odysseus
 docker compose up -d --build
 ```
 
-`http://localhost:3100` 에서 데모 계정 `admin@odysseus.dev / admin1234` 로 들어갑니다. 여섯 개의 시나리오와 세 개의 시험이 준비되어 있습니다.
+`http://localhost:3100` 에서 시작합니다. 첫 기동에 관리자 계정이 만들어지고, 비밀번호는 로그에 한 번만 출력됩니다.
+
+```bash
+docker compose logs api | grep bootstrap
+```
+
+여섯 개의 시나리오와 세 개의 시험이 준비되어 있습니다.
 
 만들고 운영하는 사람을 위한 내용은 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 에 있습니다.
 

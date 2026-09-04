@@ -59,9 +59,6 @@ export default function LoginPage() {
             {busy ? "로그인 중..." : "로그인"}
           </Button>
         </form>
-        <p className="mt-4 text-center text-xs text-slate-500">
-          데모: admin@odysseus.dev / admin1234 · candidate@odysseus.dev / cand1234
-        </p>
       </div>
     </div>
   );

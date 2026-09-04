@@ -26,32 +26,32 @@ curl -sS -c "$COOKIE_JAR" \
 
 ## 문서 목록
 
-| ID | 심각도 | 문제 |
-|---|---|---|
-| ODY-001 | 치명적 | [기본 데모 관리자 계정 자동 생성](01-default-demo-credentials.md) |
-| ODY-002 | 치명적 | [내부 토큰 노출과 내부 도구 범위 우회](02-internal-token-exposure-and-scope-bypass.md) |
-| ODY-003 | 치명적 | [인증 없는 Redis에 응시자 코드가 접근](03-unauthenticated-redis-access.md) |
-| ODY-004 | 높음 | [러너 변경 수집기의 심볼릭 링크·특수 파일 처리](04-runner-output-file-special-file-abuse.md) |
-| ODY-005 | 높음 | [러너 stdout/stderr 무제한 메모리 수집](05-runner-unbounded-output-memory.md) |
-| ODY-006 | 높음 | [웹 참고자료 프록시 SSRF](06-reference-proxy-ssrf.md) |
-| ODY-007 | 높음 | [마감·제출 이후 결과 변경 가능성](07-post-deadline-and-post-submit-mutation.md) |
-| ODY-008 | 높음 | [NPC를 통한 숨은 목표 추출](08-npc-hidden-objective-extraction.md) |
-| ODY-009 | 높음 | [LLM 자동평가 프롬프트 인젝션](09-llm-autoevaluation-prompt-injection.md) |
-| ODY-010 | 높음 | [요청 속도·동시성·비용 제한 부족](10-missing-rate-and-concurrency-limits.md) |
-| ODY-011 | 조건부 높음 | [공용 GitHub 토큰을 통한 비공개 저장소 노출](11-github-token-private-repository-exposure.md) |
-| ODY-012 | 높음 | [취약한 xlsx 0.18.5 의존성](12-vulnerable-xlsx-dependency.md) |
-| ODY-013 | 높음 | [잠금 없는 의존성과 원격 latest 설치](13-unpinned-build-and-remote-installer.md) |
-| ODY-014 | 높음 | [평문 HTTP와 Secure 없는 세션 쿠키](14-plaintext-http-and-insecure-session-cookie.md) |
-| ODY-015 | 중간 | [응시 생성 경쟁 조건](15-attempt-creation-race.md) |
-| ODY-016 | 높음 | [평문 비밀이 포함된 보호되지 않은 백업](16-unprotected-plaintext-backups.md) |
-| ODY-017 | 높음 | [클라이언트 행동 로그 위조·누락](17-client-telemetry-forgery.md) |
-| ODY-018 | 높음 | [참고자료 감사 로그 우회](18-reference-audit-log-bypass.md) |
-| ODY-019 | 높음 | [AI 에이전트 턴 제한 경쟁 조건](19-agent-turn-limit-race.md) |
-| ODY-020 | 중간 | [쿼리스트링과 서명 자산 URL 노출](20-query-string-and-signed-asset-leak.md) |
-| ODY-021 | 중간 | [응시자 명령을 이용한 러너 로그 인젝션](21-runner-log-injection.md) |
-| ODY-022 | 중간 | [AI 내부 오류 상세 노출](22-ai-error-detail-exposure.md) |
-| ODY-023 | 중간 | [로그아웃 후 JWT 재사용과 브라우저 잔존 데이터](23-jwt-logout-replay-and-client-cache.md) |
-| ODY-024 | 조건부 중간 | [보안 헤더·클릭재킹·CSRF 방어 부족](24-missing-security-headers-and-csrf.md) |
+| ID | 심각도 | 문제 | 상태 |
+|---|---|---|---|
+| ODY-001 | 치명적 | [기본 데모 관리자 계정 자동 생성](01-default-demo-credentials.md) | 조치 완료 (2026-09-04) |
+| ODY-002 | 치명적 | [내부 토큰 노출과 내부 도구 범위 우회](02-internal-token-exposure-and-scope-bypass.md) | 미조치 |
+| ODY-003 | 치명적 | [인증 없는 Redis에 응시자 코드가 접근](03-unauthenticated-redis-access.md) | 미조치 |
+| ODY-004 | 높음 | [러너 변경 수집기의 심볼릭 링크·특수 파일 처리](04-runner-output-file-special-file-abuse.md) | 미조치 |
+| ODY-005 | 높음 | [러너 stdout/stderr 무제한 메모리 수집](05-runner-unbounded-output-memory.md) | 미조치 |
+| ODY-006 | 높음 | [웹 참고자료 프록시 SSRF](06-reference-proxy-ssrf.md) | 미조치 |
+| ODY-007 | 높음 | [마감·제출 이후 결과 변경 가능성](07-post-deadline-and-post-submit-mutation.md) | 미조치 |
+| ODY-008 | 높음 | [NPC를 통한 숨은 목표 추출](08-npc-hidden-objective-extraction.md) | 미조치 |
+| ODY-009 | 높음 | [LLM 자동평가 프롬프트 인젝션](09-llm-autoevaluation-prompt-injection.md) | 미조치 |
+| ODY-010 | 높음 | [요청 속도·동시성·비용 제한 부족](10-missing-rate-and-concurrency-limits.md) | 미조치 |
+| ODY-011 | 조건부 높음 | [공용 GitHub 토큰을 통한 비공개 저장소 노출](11-github-token-private-repository-exposure.md) | 미조치 |
+| ODY-012 | 높음 | [취약한 xlsx 0.18.5 의존성](12-vulnerable-xlsx-dependency.md) | 미조치 |
+| ODY-013 | 높음 | [잠금 없는 의존성과 원격 latest 설치](13-unpinned-build-and-remote-installer.md) | 미조치 |
+| ODY-014 | 높음 | [평문 HTTP와 Secure 없는 세션 쿠키](14-plaintext-http-and-insecure-session-cookie.md) | 미조치 |
+| ODY-015 | 중간 | [응시 생성 경쟁 조건](15-attempt-creation-race.md) | 미조치 |
+| ODY-016 | 높음 | [평문 비밀이 포함된 보호되지 않은 백업](16-unprotected-plaintext-backups.md) | 미조치 |
+| ODY-017 | 높음 | [클라이언트 행동 로그 위조·누락](17-client-telemetry-forgery.md) | 미조치 |
+| ODY-018 | 높음 | [참고자료 감사 로그 우회](18-reference-audit-log-bypass.md) | 미조치 |
+| ODY-019 | 높음 | [AI 에이전트 턴 제한 경쟁 조건](19-agent-turn-limit-race.md) | 미조치 |
+| ODY-020 | 중간 | [쿼리스트링과 서명 자산 URL 노출](20-query-string-and-signed-asset-leak.md) | 미조치 |
+| ODY-021 | 중간 | [응시자 명령을 이용한 러너 로그 인젝션](21-runner-log-injection.md) | 미조치 |
+| ODY-022 | 중간 | [AI 내부 오류 상세 노출](22-ai-error-detail-exposure.md) | 미조치 |
+| ODY-023 | 중간 | [로그아웃 후 JWT 재사용과 브라우저 잔존 데이터](23-jwt-logout-replay-and-client-cache.md) | 미조치 |
+| ODY-024 | 조건부 중간 | [보안 헤더·클릭재킹·CSRF 방어 부족](24-missing-security-headers-and-csrf.md) | 미조치 |
 
 ## 권장 조치 순서
 

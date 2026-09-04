@@ -27,6 +27,13 @@ SNAP="/tmp/odysseus-snapshot-${STAMP}.json"
 
 say() { printf "\n\033[1m▸ %s\033[0m\n" "$*"; }
 
+# 관리자 자격증명은 .env 의 BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD 에서 읽는다 (코드에 두지 않는다)
+if [[ -f .env ]]; then set -a; source ./.env; set +a; fi
+if [[ -z "${BOOTSTRAP_ADMIN_EMAIL:-}" || -z "${BOOTSTRAP_ADMIN_PASSWORD:-}" ]]; then
+  echo ".env 에 BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD 가 필요합니다 (배포 전후 보존 검증에 사용)." >&2
+  exit 1
+fi
+
 # ── 0. 지금 무엇이 도는 중인지 알린다 ──────────────────────────
 if docker compose ps --status running --format '{{.Service}}' | grep -qx api; then
   ACTIVE="$(python3 - <<'PY' 2>/dev/null || echo "?"
@@ -40,7 +47,8 @@ def call(m, p, b=None):
     with op.open(r, timeout=10) as resp:
         raw = resp.read()
         return json.loads(raw) if raw else None
-call("POST", "/auth/login", {"email": "admin@odysseus.dev", "password": "admin1234"})
+import os
+call("POST", "/auth/login", {"email": os.environ["BOOTSTRAP_ADMIN_EMAIL"], "password": os.environ["BOOTSTRAP_ADMIN_PASSWORD"]})
 d = call("GET", "/admin/resources")
 print(f"{len(d['sessions'])}/{len(d['active'])}")
 PY
