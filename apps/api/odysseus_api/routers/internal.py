@@ -168,6 +168,11 @@ async def report_result(
     _verify_execution_token(execution, x_execution_token, request)
     if execution.status in ("done", "error"):
         return {"ok": True, "duplicate": True}
+    # 응시 행을 잠근 채 상태를 본다 — finalize_attempt 와 직렬화되어 "제출 직후 반영" 이 끼어들 수 없다
+    attempt = (
+        await db.execute(select(Attempt).where(Attempt.id == execution.attempt_id).with_for_update())
+    ).scalar_one_or_none()
+    frozen = attempt is None or attempt.status != "in_progress" or utcnow() > attempt.deadline_at
 
     execution.status = body.status
     execution.exit_code = body.exit_code
@@ -182,7 +187,14 @@ async def report_result(
 
     # 실행이 만든 파일 변경을 워크스페이스에 반영 (체크 실행은 채점용 — 반영하지 않는다)
     applied: list[dict] = []
-    if execution.source in ("ide", "agent"):
+    if frozen and body.changed_files:
+        log.warning(
+            "internal: late result after finalize — files discarded execution=%s attempt=%s changed=%d",
+            execution.id,
+            execution.attempt_id,
+            len(body.changed_files),
+        )
+    if execution.source in ("ide", "agent") and not frozen:
         for change in body.changed_files[:60]:
             path = str(change.get("path", ""))
             try:
@@ -219,6 +231,7 @@ async def report_result(
                 "status": body.status,
                 "changed": [c["path"] for c in applied],
                 "actor": execution.source,
+                **({"discarded_after_finalize": len(body.changed_files)} if frozen and body.changed_files else {}),
             },
         )
     )

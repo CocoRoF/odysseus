@@ -45,3 +45,12 @@ sleep 10; printf 'changed after submit\n' > final.txt
 5. DB 트랜잭션과 행 잠금으로 제출 상태 변경과 callback 반영이 경쟁하지 않게 한다.
 6. 평가기는 mutable 현재 워크스페이스가 아니라 제출 스냅샷만 사용한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **유예 분리:** `check_expired()` 는 `deadline_at` 이 지나면 즉시 종료한다 — 파일·실행·대화·clone 등 `require_own_active` 를 쓰는 모든 변경이 마감과 동시에 400 이다. 45초 유예는 `EVENT_FLUSH_GRACE` 로 이름을 바꿔 **행동 이벤트 플러시(`POST /attempts/{id}/events`)에만** 적용된다 (`routers/attempts.py`).
+- **종료의 단일 경로:** 제출(마지막 문제 완료·시험 종료)·마감·관리자 세션 종료가 모두 `lifecycle.finalize_attempt()` 를 지난다. 응시 행을 `SELECT … FOR UPDATE` 로 잠근 채 상태 변경 → 남은 queued/running 실행 취소(러너 취소 집합 + error 로 마감) → 시나리오별 스냅샷 → 이벤트를 한 트랜잭션으로 한다.
+- **스냅샷:** `attempts.snapshot` 에 시나리오별 `{digest(내용 해시), files, bytes, messages, executions}` 를 남기고 `attempt_submitted`/`attempt_expired` 이벤트 payload 에도 요약을 넣는다. 평가기(`autoeval.evaluate_scenario`)는 평가 시점에 해시를 다시 계산해 다르면 `integrity_flags` 에 "제출 후 변경 의심" 을 붙이고 `snapshot_verified=false` 를 남긴다.
+- **DB 동결 트리거:** `workspace_files_frozen` 트리거가 응시 상태가 `in_progress` 가 아니면 INSERT/UPDATE/DELETE 를 예외로 막는다 (`main.MIGRATIONS`). 애플리케이션 경로를 우회하는 늦은 콜백·버그·직접 SQL 도 워크스페이스를 바꾸지 못한다. 응시 삭제(CASCADE)는 그대로 된다.
+- **늦은 콜백:** `/internal/executions/{id}/result` 는 응시 행을 잠근 채 상태·마감을 보고, 종료됐으면 stdout/stderr 는 감사용으로 저장하되 `changed_files` 는 버리고 이벤트에 `discarded_after_finalize` 로 남긴다. 러너에도 취소가 전달된다.
+- **검증:** `tests/security/test_submission_freeze.py` — 제출 직전 시작한 `sleep 6; … > late.txt` 가 제출 뒤 반영되지 않음(실행은 취소), 제출 뒤 파일/실행/메신저/clone 400, 직접 SQL UPDATE/INSERT/DELETE 가 트리거로 거부, 마감 2초 뒤 저장 400(이전엔 45초 허용) + 이벤트 플러시는 45초만 허용, 정상 흐름 회귀.

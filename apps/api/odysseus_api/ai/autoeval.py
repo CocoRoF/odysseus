@@ -300,6 +300,15 @@ async def evaluate_scenario(
     points: int,
 ) -> dict:
     checks = await run_checks(db, attempt, scenario)
+    # 제출 스냅샷과 지금 워크스페이스가 같은지 — 다르면 평가 결과에 무결성 경고로 남긴다 (ODY-007)
+    from ..lifecycle import workspace_digest
+
+    integrity_note = None
+    snap = (attempt.snapshot or {}).get(str(scenario.id))
+    if snap:
+        now_digest = await workspace_digest(db, attempt.id, scenario.id)
+        if now_digest["digest"] != snap.get("digest"):
+            integrity_note = "제출 시점 스냅샷과 워크스페이스 내용이 다릅니다 — 제출 후 변경이 의심됩니다"
     context = await build_scenario_context(db, attempt, scenario, checks)
     raw = await provider.complete_text(
         res, [{"role": "user", "content": context}], system=EVAL_PROMPT, max_tokens=4096
@@ -337,7 +346,8 @@ async def evaluate_scenario(
         "summary": str(data.get("summary", ""))[:4000],
         "strengths": data.get("strengths", []),
         "concerns": data.get("concerns", []),
-        "integrity_flags": data.get("integrity_flags", []),
+        "integrity_flags": list(data.get("integrity_flags", [])) + ([integrity_note] if integrity_note else []),
+        "snapshot_verified": (integrity_note is None) if snap else None,
         "parse_error": parse_error,
     }
 

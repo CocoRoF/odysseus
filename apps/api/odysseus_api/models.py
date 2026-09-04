@@ -143,6 +143,8 @@ class Attempt(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 종료 시점의 시나리오별 워크스페이스 요약(내용 해시·파일 수·대화/실행 수) — lifecycle.finalize_attempt
+    snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     assessment: Mapped[Assessment] = relationship()
     user: Mapped[User] = relationship()

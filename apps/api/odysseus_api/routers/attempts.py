@@ -23,12 +23,13 @@ from ..models import (
     WorkspaceFile,
     utcnow,
 )
+from ..lifecycle import finalize_attempt
 from ..schemas import AttemptOut, AttemptScenarioOut, EventBatchIn, MyAssignmentOut
 
 router = APIRouter(tags=["attempts"])
 
-# 마감 후에도 이벤트 플러시가 도착할 수 있는 유예 시간
-DEADLINE_GRACE = timedelta(seconds=45)
+# 마감 뒤 **행동 이벤트 플러시만** 받아 주는 유예 (ODY-007). 파일·실행·대화 등 변경은 마감 즉시 거부된다.
+EVENT_FLUSH_GRACE = timedelta(seconds=45)
 
 # 응시 클라이언트가 기록할 수 있는 행동 이벤트 화이트리스트
 ALLOWED_EVENT_TYPES = {
@@ -55,11 +56,10 @@ ALLOWED_EVENT_TYPES = {
 
 
 async def check_expired(attempt: Attempt, db: AsyncSession) -> Attempt:
-    if attempt.status == "in_progress" and utcnow() > attempt.deadline_at + DEADLINE_GRACE:
-        attempt.status = "expired"
-        attempt.submitted_at = attempt.deadline_at
-        db.add(Event(attempt_id=attempt.id, type="attempt_expired", payload={}))
-        await db.commit()
+    """마감이 지났으면 그 자리에서 종료한다 — 유예 없음. 종료 절차는 lifecycle 이 한 곳에서 한다."""
+    if attempt.status == "in_progress" and utcnow() > attempt.deadline_at:
+        done = await finalize_attempt(db, attempt.id, "expired", actor="deadline", submitted_at=attempt.deadline_at)
+        return done or attempt
     return attempt
 
 
@@ -363,7 +363,10 @@ async def post_events(
     if attempt.user_id != user.id:
         raise HTTPException(403, "본인의 응시에만 기록할 수 있습니다")
     if attempt.status != "in_progress":
-        return {"ok": True, "recorded": 0}
+        # 종료 직후 도착하는 마지막 플러시(화면 이탈·탭 전환 등)만 짧게 받아 준다 — 변경은 아니다
+        ended = attempt.submitted_at or attempt.deadline_at
+        if not ended or utcnow() > ended + EVENT_FLUSH_GRACE:
+            return {"ok": True, "recorded": 0}
     events = [e for e in body.events[: settings.max_event_batch] if e.type in ALLOWED_EVENT_TYPES]
     for ev in events:
         db.add(
@@ -406,12 +409,11 @@ async def complete_scenario(
         )
     )
     if link.ordinal + 1 >= total:
-        attempt.status = "submitted"
-        attempt.submitted_at = utcnow()
-        db.add(Event(attempt_id=attempt.id, type="attempt_submitted", payload={}))
+        await db.commit()  # scenario_completed 이벤트를 먼저 남기고, 종료는 잠금 아래에서
+        attempt = await finalize_attempt(db, attempt.id, "submitted") or attempt
     else:
         attempt.current_ordinal = link.ordinal + 1
-    await db.commit()
+        await db.commit()
     return await _attempt_out(attempt, db)
 
 
@@ -423,10 +425,7 @@ async def finish_attempt(
     if attempt.user_id != user.id:
         raise HTTPException(403, "본인의 응시만 종료할 수 있습니다")
     if attempt.status == "in_progress":
-        attempt.status = "submitted"
-        attempt.submitted_at = utcnow()
-        db.add(Event(attempt_id=attempt.id, type="attempt_submitted", payload={}))
-        await db.commit()
+        attempt = await finalize_attempt(db, attempt.id, "submitted") or attempt
     return await _attempt_out(attempt, db)
 
 

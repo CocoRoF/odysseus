@@ -222,27 +222,18 @@ async def terminate_attempt(attempt_id: uuid.UUID, db: AsyncSession = Depends(ge
         raise HTTPException(404, "attempt not found")
     if attempt.status != "in_progress":
         return {"ok": True, "already": attempt.status}
+    from ..lifecycle import finalize_attempt
 
-    attempt.status = "submitted"
-    attempt.submitted_at = utcnow()
-    db.add(Event(attempt_id=attempt.id, type="attempt_submitted", payload={"actor": "admin"}))
-
-    rows = (
-        await db.execute(
-            select(Execution).where(
-                Execution.attempt_id == attempt_id, Execution.status.in_(("queued", "running"))
+    done = await finalize_attempt(db, attempt_id, "submitted", actor="admin")
+    killed = 0
+    if done and done.snapshot is not None:
+        ev = (
+            await db.execute(
+                select(Event).where(Event.attempt_id == attempt_id, Event.type == "attempt_submitted").order_by(Event.created_at.desc())
             )
-        )
-    ).scalars().all()
-    for e in rows:
-        try:
-            await get_redis().sadd(CANCEL_KEY, str(e.id))
-        except Exception:
-            pass
-        e.status = "error"
-        e.finished_at = utcnow()
-    await db.commit()
-    return {"ok": True, "killed_executions": len(rows)}
+        ).scalars().first()
+        killed = int((ev.payload or {}).get("cancelled_executions", 0)) if ev else 0
+    return {"ok": True, "killed_executions": killed}
 
 
 @router.post("/admin/resources/cleanup", dependencies=[Depends(require_admin)])
