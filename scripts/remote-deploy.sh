@@ -23,6 +23,10 @@ if [[ "${LOCAL}" != "${REMOTE_MAIN}" ]]; then
 fi
 
 echo "▸ ${HOST}:${PORT} ${DIR} 에 ${LOCAL} 배포"
-# sudo 비밀번호는 서버에서 한 번 묻는다 (SUDO_PW 환경변수로 넘길 수도 있다)
-ssh -t -p "${PORT}" "${HOST}" "cd ${DIR} && git fetch -q origin && git checkout -q main && git reset -q --hard origin/main && git log --oneline -1 && \
-  if [[ -n \"\${SUDO_PW:-${SUDO_PW:-}}\" ]]; then echo \"\${SUDO_PW:-${SUDO_PW:-}}\" | sudo -S -p '' -v; fi; sudo ./scripts/deploy.sh --yes $*"
+# sudo 비밀번호: SUDO_PW 환경변수가 있으면 표준입력으로 넘긴다(TTY 없이도 동작), 없으면 서버가 묻는다.
+# 로컬에 TTY 가 없는 자동화에서는 `SUDO_PW=... sshpass -p ... ./scripts/remote-deploy.sh` 로 쓴다.
+SUDO_CMD="sudo ./scripts/deploy.sh --yes $*"
+if [[ -n "${SUDO_PW:-}" ]]; then
+  SUDO_CMD="printf '%s\\n' '${SUDO_PW//\'/\'\\\'\'}' | sudo -S -p '' ./scripts/deploy.sh --yes $*"
+fi
+ssh -t -p "${PORT}" "${HOST}" "cd ${DIR} && git fetch -q origin && git checkout -q main && git reset -q --hard origin/main && git log --oneline -1 && ${SUDO_CMD}"
