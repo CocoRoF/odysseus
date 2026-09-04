@@ -13,6 +13,8 @@ import hashlib
 import hmac
 import json
 import os
+import stat
+import errno
 import sys
 import resource as _resource
 import shutil
@@ -91,23 +93,106 @@ def _own(path: str, uid: int, gid: int, mode: int) -> None:
         pass
 
 
-def collect_changes(workdir: str, before: dict[str, str]) -> list[dict]:
-    """실행 후 파일 트리를 훑어 생성/수정/삭제분을 수집 (텍스트 파일만)."""
-    changes: list[dict] = []
-    seen: set[str] = set()
-    for root, dirs, filenames in os.walk(workdir):
-        dirs[:] = [d for d in dirs if d != ".tmp"]  # 실행용 TMPDIR 은 산출물이 아니다
-        for name in filenames:
-            abspath = os.path.join(root, name)
-            rel = os.path.relpath(abspath, workdir).replace(os.sep, "/")
-            seen.add(rel)
+COLLECT_DEADLINE_S = 10.0
+
+
+def _read_regular(dfd: int, name: str, uid: int | None, limit: int) -> tuple[bytes | None, str | None]:
+    """디렉터리 fd 기준으로 열어 fstat 으로 확인한 **일반 파일**만 읽는다 (ODY-004).
+
+    · O_NOFOLLOW — 심볼릭 링크는 열지 않는다 (ELOOP)
+    · O_NONBLOCK — FIFO 에 writer 가 없어도 멈추지 않는다
+    · fstat 후 S_ISREG — 열린 fd 를 검사하므로 검사와 읽기 사이에 바꿔치기할 수 없다
+    · 소유자 검사 — 이번 실행의 UID 가 만든 파일만 (남의 파일에 건 하드링크 배제)
+    · limit+1 바이트까지만 읽는다 — 장치 파일처럼 EOF 가 없는 것도 메모리를 못 먹는다
+    반환: (내용 또는 None, 건너뛴 이유 또는 None)
+    """
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOCTTY | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(name, flags, dir_fd=dfd)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            return None, "symlink"
+        return None, f"open:{e.errno}"
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            kind = "fifo" if stat.S_ISFIFO(st.st_mode) else "socket" if stat.S_ISSOCK(st.st_mode) else "device" if stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode) else "special"
+            return None, kind
+        if uid is not None and st.st_uid != uid:
+            return None, "foreign-owner"
+        if st.st_size > limit:
+            return None, "too-large"
+        chunks: list[bytes] = []
+        remaining = limit + 1
+        while remaining > 0:
             try:
-                size = os.path.getsize(abspath)
-                if size > MAX_CHANGED_FILE_BYTES:
-                    continue
-                with open(abspath, "rb") as fh:
-                    data = fh.read()
+                chunk = os.read(fd, min(65536, remaining))
+            except BlockingIOError:
+                return None, "would-block"
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+        if len(data) > limit:
+            return None, "too-large"
+        return data, None
+    finally:
+        os.close(fd)
+
+
+def collect_changes(workdir: str, before: dict[str, str], uid: int | None = None) -> tuple[list[dict], list[str]]:
+    """실행 후 파일 트리를 훑어 생성/수정/삭제분을 수집 (텍스트 일반 파일만).
+
+    디렉터리 fd 를 들고 내려가며 경로 문자열을 다시 열지 않는다 — 순회 중 링크로 바꿔치기해도
+    작업 폴더 밖을 읽을 수 없다. 심볼릭 링크·FIFO·장치·남의 파일은 건너뛰고 사유를 남긴다.
+    반환: (변경 목록, 응시자에게 보여줄 안내 줄들)
+    """
+    changes: list[dict] = []
+    notes: list[str] = []
+    skipped: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    deadline = time.monotonic() + COLLECT_DEADLINE_S
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+
+    def walk(dfd: int, rel_dir: str) -> bool:
+        """False 를 돌려주면 상한(파일 수/시간)에 걸려 중단한 것."""
+        try:
+            entries = list(os.scandir(dfd))
+        except OSError:
+            return True
+        entries.sort(key=lambda e: e.name)
+        for entry in entries:
+            if time.monotonic() > deadline:
+                notes.append("[산출물 수집] 시간 상한에 걸려 나머지 파일은 반영하지 않았습니다")
+                return False
+            rel = f"{rel_dir}/{entry.name}" if rel_dir else entry.name
+            if rel == ".tmp":
+                continue  # 실행용 TMPDIR 은 산출물이 아니다
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+                is_link = entry.is_symlink()
             except OSError:
+                continue
+            if is_link:
+                skipped.setdefault("symlink", []).append(rel)
+                continue
+            if is_dir:
+                try:
+                    sub = os.open(entry.name, dir_flags, dir_fd=dfd)
+                except OSError:
+                    continue
+                try:
+                    if not walk(sub, rel):
+                        return False
+                finally:
+                    os.close(sub)
+                continue
+            seen.add(rel)
+            data, why = _read_regular(dfd, entry.name, uid, MAX_CHANGED_FILE_BYTES)
+            if data is None:
+                if why and why not in ("too-large",) and not why.startswith("open:"):
+                    skipped.setdefault(why, []).append(rel)
                 continue
             digest = _sha(data)
             if before.get(rel) == digest:
@@ -120,13 +205,38 @@ def collect_changes(workdir: str, before: dict[str, str]) -> list[dict]:
                 continue
             changes.append({"path": rel, "content": text})
             if len(changes) >= MAX_CHANGED_FILES:
-                return changes
-    for rel in before:
-        if rel not in seen:
-            changes.append({"path": rel, "deleted": True})
-            if len(changes) >= MAX_CHANGED_FILES:
-                break
-    return changes
+                return False
+        return True
+
+    try:
+        root_fd = os.open(workdir, dir_flags)
+    except OSError:
+        return changes, notes
+    try:
+        complete = walk(root_fd, "")
+    finally:
+        os.close(root_fd)
+
+    if complete:
+        for rel in before:
+            if rel not in seen:
+                changes.append({"path": rel, "deleted": True})
+                if len(changes) >= MAX_CHANGED_FILES:
+                    break
+    labels = {
+        "symlink": "심볼릭 링크",
+        "fifo": "FIFO",
+        "socket": "소켓",
+        "device": "장치 파일",
+        "special": "특수 파일",
+        "foreign-owner": "다른 소유자의 파일",
+        "would-block": "읽을 수 없는 파일",
+    }
+    for kind, paths in skipped.items():
+        shown = ", ".join(paths[:5]) + (f" 외 {len(paths) - 5}개" if len(paths) > 5 else "")
+        notes.append(f"[산출물 수집] {labels.get(kind, kind)}은 워크스페이스에 반영하지 않습니다: {shown}")
+        print(f"[runner] SECURITY skipped {kind} x{len(paths)}: {shown[:200]}", flush=True)
+    return changes, notes
 
 
 def run_job(job: dict, execution_id: str = "") -> dict:
@@ -173,11 +283,13 @@ def run_job(job: dict, execution_id: str = "") -> dict:
             gid=exec_gid,
             on_start=(lambda p: register_active(execution_id, job, p)) if execution_id else None,
         )
-        changed = collect_changes(workdir, before)
+        changed, collect_notes = collect_changes(workdir, before, uid if isolated else None)
         status = "done" if r.status in ("ok", "timeout") else "error"
         stderr = r.stderr
         if r.status == "timeout":
             stderr = (stderr + f"\n[제한 시간 {timeout_s}초 초과로 중단됨]").strip()
+        if collect_notes:
+            stderr = (stderr + "\n" + "\n".join(collect_notes)).strip()
         return {
             "status": status,
             "exit_code": r.returncode if r.status == "ok" else (r.returncode or 124),

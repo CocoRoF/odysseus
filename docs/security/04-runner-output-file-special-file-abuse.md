@@ -42,3 +42,12 @@ true
 5. 파일 수집에 별도 시간 제한을 두고 정해진 시간이 지나면 해당 작업을 실패 처리한다.
 6. 심볼릭 링크, FIFO, 소켓, block/character device를 명시적으로 무시하고 보안 이벤트로 기록한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **fd 기반 순회:** `collect_changes()` 는 작업 폴더를 `O_DIRECTORY|O_NOFOLLOW` 로 연 디렉터리 fd 를 들고 `scandir(fd)` 로 내려가며, 파일은 `os.open(name, O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_NOCTTY, dir_fd=…)` 로 연다. 경로 문자열을 다시 열지 않으므로 순회 중 바꿔치기(TOCTOU)로 작업 폴더 밖을 읽을 수 없다 (`apps/runner/worker.py`).
+- **일반 파일만:** 열린 fd 에 `fstat()` 해서 `S_ISREG` 인 것만 읽는다. 심볼릭 링크(ELOOP)·FIFO·소켓·장치·특수 파일은 종류별로 세어 건너뛴다. 이번 실행 UID 가 소유하지 않은 파일(남의 파일에 건 하드링크)도 제외한다.
+- **읽기 상한:** `st_size` 검사와 별개로 `MAX_CHANGED_FILE_BYTES+1` 까지만 반복 읽기 — EOF 가 없는 장치 파일도 메모리를 먹지 못한다. `O_NONBLOCK` 이라 writer 없는 FIFO 에서 멈추지 않는다.
+- **시간 상한:** 수집 전체에 10초 상한. 넘으면 그때까지의 변경만 반영하고 안내를 남긴다 (삭제 감지는 완전 순회했을 때만).
+- **가시성:** 건너뛴 항목은 러너 로그에 `SECURITY skipped <종류> xN` 으로, 응시자에게는 stderr 안내(`[산출물 수집] 심볼릭 링크는 워크스페이스에 반영하지 않습니다: …`)로 남긴다.
+- **검증:** `tests/security/test_runner_special_files.py` — `/etc/passwd`·`/dev/zero`·디렉터리 링크 미반영, FIFO/소켓에서 멈춤 없음(실행 20초 내 종료), 일반 파일·하위 폴더·삭제는 그대로, 크기 상한, 이후 슬롯 정상.
