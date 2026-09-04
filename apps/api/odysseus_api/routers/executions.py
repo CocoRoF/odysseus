@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import workspace as ws
@@ -11,6 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import Event, Execution, User
+from ..ratelimit import enforce
 from ..runqueue import enqueue_run, new_callback_token
 from ..schemas import ExecutionOut, RunIn
 from .attempts import get_attempt_for, require_own_active, scenario_in_attempt
@@ -33,6 +34,21 @@ async def run_command(
     command = body.command.strip()
     if len(command) > settings.run_command_max_len:
         raise HTTPException(400, "명령이 너무 깁니다")
+    # ODY-010: 응시별 속도(분당 30, 순간 10) + 동시 실행 수 — 한 응시자가 러너 슬롯을 독점하지 못한다
+    enforce(f"run:{attempt_id}", per_min=30, burst=10, what="실행 요청")
+    open_count = (
+        await db.execute(
+            select(func.count(Execution.id)).where(
+                Execution.attempt_id == attempt_id, Execution.status.in_(("queued", "running"))
+            )
+        )
+    ).scalar() or 0
+    if open_count >= settings.run_max_concurrent_per_attempt:
+        raise HTTPException(
+            429,
+            f"실행 중인 명령이 이미 {open_count}개 있습니다. 끝나기를 기다리거나 Ctrl+C 로 중단하세요",
+            headers={"Retry-After": "2"},
+        )
 
     execution = Execution(
         attempt_id=attempt_id,

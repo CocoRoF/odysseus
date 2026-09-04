@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     max_event_batch: int = 50
 
     # 대화/에이전트 제한
+    messenger_max_per_attempt: int = 300  # 응시 1건이 보낼 수 있는 메신저 메시지 총량 (LLM 비용 예산)
+    run_max_concurrent_per_attempt: int = 2  # 응시 1건의 동시 queued/running 실행 수
     messenger_history_limit: int = 60  # NPC 호출에 싣는 스레드 이력 상한
     agent_history_limit: int = 30  # 에이전트 호출에 싣는 이력 상한
     agent_max_tool_iterations: int = 10  # 에이전트 1턴의 도구 루프 한도

@@ -7,13 +7,15 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import npc
 from ..ai import provider as ai_provider
 from ..db import get_db
 from ..deps import get_current_user
+from ..ratelimit import enforce
+from ..config import settings
 from ..models import Assessment, Event, MessengerMessage, User
 from ..schemas import MessengerMessageOut, MessengerSendIn
 from .attempts import get_attempt_for, require_own_active, scenario_in_attempt
@@ -66,6 +68,17 @@ async def send_message(
     attempt = await require_own_active(attempt_id, user, db)
     scenario = await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     character = _find_character(scenario, character_key)
+    # ODY-010: 응시별 속도(분당 12, 순간 6)와 총량(LLM 비용 예산)
+    enforce(f"messenger:{attempt_id}", per_min=12, burst=6, what="메시지 전송")
+    sent = (
+        await db.execute(
+            select(func.count(MessengerMessage.id)).where(
+                MessengerMessage.attempt_id == attempt_id, MessengerMessage.sender == "candidate"
+            )
+        )
+    ).scalar() or 0
+    if sent >= settings.messenger_max_per_attempt:
+        raise HTTPException(429, f"이 시험에서 보낼 수 있는 메시지 한도({settings.messenger_max_per_attempt}건)에 도달했습니다")
 
     assessment = await db.get(Assessment, attempt.assessment_id)
     res = await ai_provider.resolve_ai(db, "chat", override_provider_id=assessment.npc_provider_id)

@@ -37,8 +37,8 @@ curl -sS -c "$COOKIE_JAR" \
 | ODY-007 | 높음 | [마감·제출 이후 결과 변경 가능성](07-post-deadline-and-post-submit-mutation.md) | 조치 완료 (2026-09-04) |
 | ODY-008 | 높음 | [NPC를 통한 숨은 목표 추출](08-npc-hidden-objective-extraction.md) | 조치 완료 (2026-09-04) |
 | ODY-009 | 높음 | [LLM 자동평가 프롬프트 인젝션](09-llm-autoevaluation-prompt-injection.md) | 조치 완료 (2026-09-04) |
-| ODY-010 | 높음 | [요청 속도·동시성·비용 제한 부족](10-missing-rate-and-concurrency-limits.md) | 미조치 |
-| ODY-011 | 조건부 높음 | [공용 GitHub 토큰을 통한 비공개 저장소 노출](11-github-token-private-repository-exposure.md) | 미조치 |
+| ODY-010 | 높음 | [요청 속도·동시성·비용 제한 부족](10-missing-rate-and-concurrency-limits.md) | 조치 완료 (2026-09-04) |
+| ODY-011 | 조건부 높음 | [공용 GitHub 토큰을 통한 비공개 저장소 노출](11-github-token-private-repository-exposure.md) | 조치 완료 (2026-09-04) |
 | ODY-012 | 높음 | [취약한 xlsx 0.18.5 의존성](12-vulnerable-xlsx-dependency.md) | 미조치 |
 | ODY-013 | 높음 | [잠금 없는 의존성과 원격 latest 설치](13-unpinned-build-and-remote-installer.md) | 미조치 |
 | ODY-014 | 높음 | [평문 HTTP와 Secure 없는 세션 쿠키](14-plaintext-http-and-insecure-session-cookie.md) | 미조치 |

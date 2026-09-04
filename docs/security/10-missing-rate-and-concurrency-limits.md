@@ -41,3 +41,16 @@ seq 1 10 | xargs -n1 -P5 -I{} \
 5. 캐시 miss 기준으로 외부 호출 quota를 차감하며 요청 취소·disconnect 시에도 비용을 추적한다.
 6. 429 응답에 `Retry-After`를 포함하고 운영 대시보드에 사용자별 소비량과 이상치를 노출한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **엣지(nginx):** `limit_req_zone`/`limit_conn_zone` 을 실제 클라이언트 주소(Cloudflare 뒤에서는 `CF-Connecting-IP`, 아니면 접속 주소)로 건다. `/api/` 는 초당 30·순간 60·연결 40, `/api/auth/login` 은 분당 10·순간 10. 넘으면 429 (`apps/edge/nginx.conf`).
+- **api 토큰 버킷(`ratelimit.py`):** 프로세스 내 버킷, 키는 로그인 사용자 id(없으면 IP), 429 에는 `Retry-After`. 엔드포인트별 예산 —
+  로그인 IP 분당 20·순간 10 + **이메일별 실패 잠금**(5회 뒤 30초부터 2배씩, 최대 15분, 성공 시 해제; 잠긴 동안은 맞는 비밀번호도 429) ·
+  메신저 응시별 분당 12·순간 6 + 응시 총량 `messenger_max_per_attempt`(300, LLM 비용 예산) ·
+  에이전트 응시별 분당 12·순간 6 (+ 기존 `agent_max_turns`) ·
+  실행 응시별 분당 30·순간 10 + **동시 queued/running ≤ 2**(`run_max_concurrent_per_attempt`) — 한 응시자가 러너 슬롯을 독점하지 못한다 ·
+  참고자료: 검색(GitHub·웹) 사용자별 분당 20·순간 10, 페이지/렌더 분당 30·순간 15, GitHub 조회 분당 60, clone 분당 10·순간 5, 자산 프록시 분당 300.
+- **로그:** 429 와 로그인 실패(이메일·IP·연속 횟수·잠금 길이)를 `odysseus.ratelimit` 로거에 남긴다.
+- **검증:** `tests/security/test_rate_limits.py` — 이메일 잠금(5회 401 → 429, 잠긴 동안 정답도 429, 다른 계정 무관), IP 로그인 속도, 메신저 순간 6 뒤 429, 실행 동시 2 초과 429 후 회복, 페이지 열기·clone 속도, 엣지 240 동시 요청 중 429, 다른 IP 무관.
+- **미완:** 다중 인스턴스용 Redis 버킷, 시험(assessment)별 토큰·검색 API 예산 대시보드(#4·#6)는 운영 규모가 커질 때 옮긴다.

@@ -43,3 +43,11 @@ curl -sS -b "$COOKIE_JAR" --get \
 5. 기존 토큰의 권한과 접근 로그를 검토하고 광범위한 PAT라면 폐기·교체한다.
 6. GitHub 조회를 모두 유효한 active attempt와 연결해 감사 로그에 남긴다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **공개 저장소만:** 저장소 단위 엔드포인트(`/reference/github/repo`·`/tree`·`/file`·`/github/clone`)는 먼저 `_require_public_repo()` 로 저장소 메타를 받아 `private == false` 이고 `visibility == "public"` 일 때만 진행한다. 비공개·internal 은 존재 여부를 드러내지 않도록 404 로 답하고 서버 로그에 남긴다 (`routers/reference.py`). 이름이 바뀐 저장소도 정식 이름으로 다시 확인된 메타를 쓴다.
+- **검색:** 검색어의 `is:private`/`is:internal` 한정자를 지우고 서버가 `is:public` 을 붙이며, 결과도 `_public_only()` 로 한 번 더 거른다.
+- **결과:** 관리자가 넓은 권한의 PAT 를 넣어도 응시자에게는 공개 저장소만 보인다 (confused deputy 차단). 토큰은 여전히 조회 한도(rate limit) 완화에만 쓰인다.
+- **검증:** `tests/security/test_github_visibility.py` — 가짜 GitHub 로 private·internal 저장소 404, 없는 저장소와 같은 응답, 검색 결과 필터·`is:private` 무력화, 네 엔드포인트가 헬퍼를 콘텐츠 조회보다 먼저 지나는지(소스 계약), 실제 공개 저장소(octocat/Hello-World)는 통과.
+- **권고(운영):** 토큰은 저장소 권한이 없는 fine-grained PAT 로 두는 것이 안전하다 — 설정 화면 안내에 반영.

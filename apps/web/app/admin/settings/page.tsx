@@ -870,7 +870,7 @@ function ReferenceCard() {
           hint={
             ref?.has_github_token
               ? `저장됨 ${ref.github_token_hint ?? ""} — 새 값을 넣으면 교체됩니다`
-              : "없으면 비인증으로 조회합니다 (시간당 60회 제한). 읽기 전용 토큰을 권장합니다."
+              : "없으면 비인증으로 조회합니다 (시간당 60회 제한). 응시자에게는 어떤 토큰이든 공개 저장소만 보이지만, 저장소 권한이 없는 fine-grained 토큰을 권장합니다."
           }
         >
           <div className="flex gap-2">

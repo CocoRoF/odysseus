@@ -13,6 +13,7 @@
 import asyncio
 import io
 import ipaddress
+import logging
 import re
 import socket
 import tarfile
@@ -26,12 +27,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import workspace as ws
+from ..ratelimit import limiter
 from ..safe_fetch import UnsafeUrl, assert_public_url, safe_get
 from ..config import settings as app_settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import AppSetting, Attempt, Event, User
 from .attempts import get_attempt_for, require_own_active, scenario_in_attempt
+
+log = logging.getLogger("odysseus.reference")
 
 router = APIRouter(tags=["reference"])
 
@@ -88,6 +92,23 @@ def _check_name(*parts: str) -> None:
     for p in parts:
         if not NAME_RE.match(p or ""):
             raise HTTPException(400, f"허용되지 않는 이름입니다: {p!r}")
+
+
+async def _require_public_repo(owner: str, name: str, settings_row: dict) -> dict:
+    """저장소 메타를 받아 **공개 저장소일 때만** 돌려준다 (ODY-011).
+
+    관리자 토큰이 비공개 저장소를 볼 수 있더라도 응시자에게는 공개 저장소만 보인다. 비공개면
+    존재 여부를 드러내지 않도록 404 로 답한다. 이름이 바뀐 저장소는 정식 이름으로 다시 확인한다.
+    """
+    repo = await _github_get(f"/repos/{owner}/{name}", settings_row)
+    if not isinstance(repo, dict) or repo.get("private") or (repo.get("visibility") or "public") != "public":
+        log.warning("github: non-public repo blocked %s/%s", owner, name)
+        raise HTTPException(404, "GitHub에서 찾을 수 없습니다")
+    return repo
+
+
+def _public_only(items: list) -> list:
+    return [r for r in items if isinstance(r, dict) and not r.get("private") and (r.get("visibility") or "public") == "public"]
 
 
 async def _github_get(path: str, settings_row: dict, *, params: dict | None = None) -> object:
@@ -207,7 +228,7 @@ def _repo_brief(r: dict) -> dict:
     }
 
 
-@router.get("/reference/github/search")
+@router.get("/reference/github/search", dependencies=[Depends(limiter("ref-search", 20, 10, "검색"))])
 async def github_search(
     q: str = Query(min_length=1, max_length=200),
     page: int = Query(1, ge=1, le=10),
@@ -219,17 +240,20 @@ async def github_search(
     s = await get_reference_settings(db)
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+    # 공개 저장소만 — 검색어의 is:private 같은 한정자는 무력화한다 (ODY-011)
+    public_q = re.sub(r"\bis:(private|internal)\b", "", q, flags=re.I).strip() + " is:public"
     data = await _github_get(
-        "/search/repositories", s, params={"q": q, "per_page": 20, "page": page}
+        "/search/repositories", s, params={"q": public_q, "per_page": 20, "page": page}
     )
     await _log(db, user, attempt_id, scenario_id, "reference_search", {"source": "github", "q": q[:200]})
+    items = _public_only(data.get("items", []))
     return {
         "total": data.get("total_count", 0),
-        "items": [_repo_brief(r) for r in data.get("items", [])],
+        "items": [_repo_brief(r) for r in items],
     }
 
 
-@router.get("/reference/github/repo")
+@router.get("/reference/github/repo", dependencies=[Depends(limiter("ref-github", 60, 30, "GitHub 조회"))])
 async def github_repo(
     owner: str,
     name: str,
@@ -242,7 +266,7 @@ async def github_repo(
     s = await get_reference_settings(db)
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
-    repo = await _github_get(f"/repos/{owner}/{name}", s)
+    repo = await _require_public_repo(owner, name, s)
     brief = _repo_brief(repo)
     readme = None
     try:
@@ -263,7 +287,7 @@ async def github_repo(
     return {"repo": brief, "readme": readme}
 
 
-@router.get("/reference/github/tree")
+@router.get("/reference/github/tree", dependencies=[Depends(limiter("ref-github", 60, 30, "GitHub 조회"))])
 async def github_tree(
     owner: str,
     name: str,
@@ -276,6 +300,7 @@ async def github_tree(
     s = await get_reference_settings(db)
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+    await _require_public_repo(owner, name, s)
     clean = "/".join(seg for seg in path.split("/") if seg and seg not in (".", ".."))
     params = {"ref": ref} if ref else None
     data = await _github_get(f"/repos/{owner}/{name}/contents/{clean}", s, params=params)
@@ -289,7 +314,7 @@ async def github_tree(
     return {"path": clean, "entries": entries}
 
 
-@router.get("/reference/github/file")
+@router.get("/reference/github/file", dependencies=[Depends(limiter("ref-github", 60, 30, "GitHub 조회"))])
 async def github_file(
     owner: str,
     name: str,
@@ -304,6 +329,7 @@ async def github_file(
     s = await get_reference_settings(db)
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+    await _require_public_repo(owner, name, s)
     clean = "/".join(seg for seg in path.split("/") if seg and seg not in (".", ".."))
     params = {"ref": ref} if ref else None
     data = await _github_get(f"/repos/{owner}/{name}/contents/{clean}", s, params=params)
@@ -373,7 +399,7 @@ def _extract_tar(blob: bytes) -> tuple[list[tuple[str, str]], dict]:
 CLONE_ROOT = "github"
 
 
-@router.post("/attempts/{attempt_id}/scenarios/{scenario_id}/github/clone")
+@router.post("/attempts/{attempt_id}/scenarios/{scenario_id}/github/clone", dependencies=[Depends(limiter("ref-clone", 10, 5, "clone"))])
 async def github_clone(
     attempt_id: uuid.UUID,
     scenario_id: uuid.UUID,
@@ -392,7 +418,7 @@ async def github_clone(
     if not s["github_enabled"]:
         raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
 
-    repo = await _github_get(f"/repos/{owner}/{name}", s)
+    repo = await _require_public_repo(owner, name, s)
     # 이름이 바뀐 저장소는 API 가 새 경로로 알려준다 — 아카이브는 정식 이름으로 받아야 한다
     canonical = (repo.get("full_name") or f"{owner}/{name}").split("/")
     c_owner, c_name = (canonical + [name])[:2]
@@ -508,7 +534,7 @@ async def _search_google(q: str, key: str, cx: str) -> list[dict]:
     ]
 
 
-@router.get("/reference/web/search")
+@router.get("/reference/web/search", dependencies=[Depends(limiter("ref-search", 20, 10, "검색"))])
 async def web_search(
     q: str = Query(min_length=1, max_length=300),
     attempt_id: uuid.UUID | None = None,
@@ -552,7 +578,7 @@ _BR = re.compile(r"<br\s*/?>", re.I)
 _TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.S | re.I)
 
 
-@router.get("/reference/web/page")
+@router.get("/reference/web/page", dependencies=[Depends(limiter("ref-page", 30, 15, "페이지 열기"))])
 async def web_page(
     url: str = Query(min_length=8, max_length=2000),
     attempt_id: uuid.UUID | None = None,
@@ -627,7 +653,7 @@ async def _fetch_css_bundle(urls: list[str]) -> dict[str, str]:
     return {u: css for u, css in pairs if css}
 
 
-@router.get("/reference/web/render")
+@router.get("/reference/web/render", dependencies=[Depends(limiter("ref-page", 30, 15, "페이지 열기"))])
 async def web_render(
     url: str = Query(min_length=8, max_length=2000),
     asset_base: str = Query(min_length=16, max_length=400),
@@ -697,7 +723,7 @@ _ASSET_CACHE: dict[str, tuple[float, bytes, str]] = {}
 _ASSET_CACHE_MAX = 200
 
 
-@router.get("/reference/web/asset")
+@router.get("/reference/web/asset", dependencies=[Depends(limiter("ref-asset", 300, 150, "자산 요청"))])
 async def web_asset(u: str, exp: str, sig: str):
     """서명된 자산 프록시 — 이미지·CSS·폰트만. 쿠키가 아니라 서명으로 인증한다.
 

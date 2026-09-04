@@ -14,6 +14,7 @@ from ..ai import provider as ai_provider
 from ..config import settings
 from ..db import SessionLocal, get_db
 from ..deps import get_current_user
+from ..ratelimit import enforce
 from ..models import AgentMessage, Assessment, Event, User
 from ..schemas import AgentMessageOut, AgentSendIn, AgentUsageOut
 from .attempts import get_attempt_for, require_own_active, scenario_in_attempt
@@ -84,6 +85,7 @@ async def send_agent_message(
     scenario = await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     if not scenario.agent_enabled:
         raise HTTPException(403, "이 시나리오에서는 AI 에이전트를 사용할 수 없습니다")
+    enforce(f"agent:{attempt_id}", per_min=12, burst=6, what="에이전트 요청")  # ODY-010
 
     assessment = await db.get(Assessment, attempt.assessment_id)
     if assessment.agent_max_turns <= 0:
