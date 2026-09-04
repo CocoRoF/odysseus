@@ -50,7 +50,7 @@ docker compose up -d --build
 # → http://localhost:3100   admin@odysseus.dev / admin1234
 ```
 
-이후 배포는 반드시 `sudo ./scripts/deploy.sh` 로 합니다 — 배포 전 DB 를 백업하고, 배포 뒤 계정·시나리오·응시 기록·**AI 공급자 키**가 그대로인지 검증합니다 ([운영](#운영)).
+운영 서버에서의 배포는 반드시 `sudo ./scripts/deploy.sh` 로 합니다 — 배포 전 DB 를 백업하고, 배포 뒤 계정·시나리오·응시 기록·**AI 공급자 키**가 그대로인지 검증합니다. 개발 워크스페이스에서는 `./scripts/remote-deploy.sh` 한 줄로 서버에 pull + 배포를 겁니다 ([운영](#운영)).
 
 ## 시험장
 
@@ -122,6 +122,7 @@ docker compose up -d --build
 ## 운영
 
 ```bash
+./scripts/remote-deploy.sh [api web ...]         # 워크스페이스 → 운영 서버: pull + 아래 deploy.sh
 sudo ./scripts/deploy.sh [--yes] [api web ...]   # 스냅샷 → 백업 → 빌드 → 기동 → 헬스체크 → 보존 검증
 sudo ./scripts/backup.sh [설명]                   # pg_dump.gz (최근 20개 보관)
 sudo ./scripts/restore.sh backups/<file>.sql.gz  # 되돌릴 수 없으므로 두 번 묻는다
