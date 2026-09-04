@@ -48,10 +48,12 @@ export function BootSequence({
 }) {
   const ws = useWorkspace();
   const [lines, setLines] = useState<Line[]>([]);
-  // logo: 검은 화면에 로고가 떠오른다 → run: 로그 → dim: 화면이 어두워진다 → reveal: OS 가 밝아진다
-  const [phase, setPhase] = useState<"logo" | "run" | "dim" | "reveal">("logo");
+  // run: CRT 로그 → dim: 화면이 어두워진다 → logo: 검은 화면에 로고가 떠올랐다 가라앉는다 → reveal: OS 가 밝아온다
+  const [phase, setPhase] = useState<"run" | "dim" | "logo" | "reveal">("run");
   const cancelled = useRef(false);
   const doneRef = useRef(false);
+  const phaseRef = useRef<"run" | "dim" | "logo" | "reveal">("run");
+  phaseRef.current = phase;
   const idRef = useRef(1);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sysRef = useRef<SystemInfo | null>(null);
@@ -59,16 +61,28 @@ export function BootSequence({
   const filesRef = useRef(ws.files.length);
   filesRef.current = ws.files.length;
 
+  const reveal = () => {
+    setPhase("reveal"); // 검은 막이 걷히며 OS 가 밝아온다
+    onReveal();
+    setTimeout(onDone, 1100);
+  };
+  /** 로그가 끝났을 때 — 어두워지고, 로고가 떠올랐다 가라앉고, 밝아온다 */
   const finish = () => {
     if (doneRef.current) return;
     doneRef.current = true;
     cancelled.current = true;
-    setPhase("dim"); // 로그가 어둠 속으로 가라앉는다
+    setPhase("dim");
     setTimeout(() => {
-      setPhase("reveal"); // 검은 막이 걷히며 OS 가 밝아온다
-      onReveal();
-      setTimeout(onDone, 1100);
+      setPhase("logo");
+      setTimeout(reveal, 2600);
     }, 520);
+  };
+  /** 건너뛰기 — 로고까지 생략하고 곧바로 밝아온다 */
+  const skip = () => {
+    if (phaseRef.current === "reveal") return;
+    doneRef.current = true;
+    cancelled.current = true;
+    reveal();
   };
 
   useEffect(() => {
@@ -78,7 +92,7 @@ export function BootSequence({
   // 아무 키 / Esc / 클릭 → 건너뛰기
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" || e.key === "Enter" || e.key === " ") finish();
+      if (e.key === "Escape" || e.key === "Enter" || e.key === " ") skip();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -124,9 +138,6 @@ export function BootSequence({
 
     (async () => {
       try {
-        // ── 로고 스플래시 — 어둠 속에서 떠올랐다가 가라앉는다 ──
-        await wait(2600);
-        setPhase("run");
         await wait(380);
 
         // ── POST ──
@@ -244,22 +255,22 @@ export function BootSequence({
   return (
     <div
       className={`boot-screen absolute inset-0 z-[9600] overflow-hidden ${phase === "reveal" ? "boot-reveal" : "bg-black"}`}
-      onClick={finish}
+      onClick={skip}
       data-boot
       data-phase={phase}
     >
-      {/* 로고 스플래시 */}
+      {/* 로고 스플래시 — 로그가 끝난 뒤, 데스크톱이 밝아오기 전 */}
       {phase === "logo" && (
         <div className="boot-logo absolute inset-0 flex items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/odysseus-logo.png" alt="Odysseus" className="w-[min(60vw,720px)] select-none" draggable={false} />
         </div>
       )}
-      {phase !== "logo" && phase !== "reveal" && <div className="boot-crt pointer-events-none absolute inset-0" />}
+      {(phase === "run" || phase === "dim") && <div className="boot-crt pointer-events-none absolute inset-0" />}
       <div
         ref={scrollRef}
         className={`boot-text absolute inset-0 overflow-hidden px-10 py-8 font-mono text-[15px] leading-[1.45] ${
-          phase === "logo" ? "opacity-0" : phase === "dim" ? "boot-dim" : phase === "reveal" ? "opacity-0" : "boot-text-in"
+          phase === "run" ? "boot-text-in" : phase === "dim" ? "boot-dim" : "hidden"
         }`}
       >
         {lines.map((l) => (
@@ -276,11 +287,11 @@ export function BootSequence({
         ))}
         {phase === "run" && <span className="boot-cursor inline-block h-[15px] w-[9px] bg-[#c8d3c8] align-middle" />}
       </div>
-      {(phase === "logo" || phase === "run") && (
+      {(phase === "run" || phase === "logo") && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            finish();
+            skip();
           }}
           className="absolute bottom-5 right-6 rounded-md border border-white/15 px-3 py-1.5 font-mono text-[11px] text-white/40 transition hover:border-white/40 hover:text-white/80"
         >

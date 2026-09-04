@@ -113,12 +113,13 @@ async def main():
         await pg.click(".intro-stage >> text=임무 시작")
         # 임무 시작 → 부팅 연출(실제 사양이 흐른다) → 데스크톱
         await pg.wait_for_selector("[data-boot]", timeout=8000)
-        assert await pg.locator('[data-boot] img[alt="Odysseus"]').count() == 1, "로고 스플래시 없음"
+        assert await pg.locator('[data-boot] img[alt="Odysseus"]').count() == 0, "로고가 로그보다 먼저 나옴"
         await pg.wait_for_selector("[data-boot] >> text=ODYSSEUS BIOS", timeout=15000)
         await pg.wait_for_selector("[data-boot] >> text=Started messenger daemon", timeout=20000)
-        boot = await pg.locator("[data-boot]").inner_text()
-        assert "김수진" in boot, boot[-300:]
+        await pg.wait_for_selector("[data-boot] >> text=김수진", timeout=10000)  # 인물 줄은 데몬 줄 뒤에 하나씩 붙는다
         ok.append("부팅 연출 — BIOS → 서비스 기동에 실제 등장인물이 흐른다")
+        await pg.wait_for_selector('[data-boot][data-phase="logo"] img[alt="Odysseus"]', timeout=30000)
+        ok.append("로그가 끝난 뒤 로고 스플래시")
         # 작업 표시줄은 부팅 화면 아래에 이미 있으므로, 부팅 화면이 **사라지는 것**을 기다린다
         await pg.wait_for_selector("[data-boot]", state="detached", timeout=40000)
         await pg.wait_for_selector("text=의 컴퓨터", timeout=10000)
