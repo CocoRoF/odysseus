@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import cookie_secure_enabled
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import User
@@ -33,6 +34,7 @@ async def login(body: LoginIn, request: Request, response: Response, db: AsyncSe
         COOKIE_NAME,
         token,
         httponly=True,
+        secure=cookie_secure_enabled(),  # 운영에서는 HTTPS 로만 실린다 (ODY-014)
         samesite="lax",
         max_age=60 * 60 * 12,
         path="/",

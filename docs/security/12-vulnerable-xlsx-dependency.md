@@ -49,3 +49,11 @@ lockfile이 없으므로 새 설치 전에는 별도 임시 디렉터리나 CI�
 5. `.csv`만으로 업무 요구가 충족되면 복잡한 workbook 형식을 비활성화한다.
 6. lockfile과 SCA를 CI에 추가해 취약 버전 재도입을 차단한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **버전 교체:** `xlsx` 를 npm 의 0.18.5 에서 SheetJS 공식 배포판 0.20.3(`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`, CVE-2023-30533·CVE-2024-22363 수정)으로 바꾸고 `package-lock.json` 에 integrity(sha512)를 고정했다.
+- **사전 제한:** 명단 업로드는 2MB 이하, 첫 시트만, `sheetRows` 로 5,001행까지만 읽고 40열까지만 쓴다. `dense` 모드에 `cellHTML/cellStyles` 를 끄고, 파싱 실패는 사용자 메시지로 끝난다 (`apps/web/app/admin/users/new/page.tsx`).
+- **CSV 는 라이브러리 없이:** `.csv` 는 작은 내장 파서(따옴표·개행 처리)로 읽어 스프레드시트 파서를 아예 거치지 않는다.
+- **재발 방지:** lockfile 이 생겼으므로 `npm ci` 가 다른 버전을 끌어오지 않는다 (ODY-013).
+- **미완:** Web Worker 격리(#4)는 관리자 전용 화면이고 입력 상한이 있어 보류.

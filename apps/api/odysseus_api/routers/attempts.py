@@ -1,10 +1,12 @@
 """응시 생명주기 — 시작(워크스페이스 물질화 + 오프닝 메시지), 상태, 행동 이벤트, 종료, 재응시."""
 
+import hashlib
 import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -285,6 +287,23 @@ async def _materialize(attempt: Attempt, db: AsyncSession) -> None:
             )
 
 
+async def _lock_attempt_slot(db: AsyncSession, assessment_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """(시험, 사용자) 슬롯에 트랜잭션 범위 advisory lock — 커밋/롤백과 함께 풀린다."""
+    key = int.from_bytes(hashlib.sha256(f"{assessment_id}:{user_id}".encode()).digest()[:8], "big", signed=True)
+    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": key})
+
+
+async def _active_attempt(db: AsyncSession, assessment_id: uuid.UUID, user_id: uuid.UUID) -> Attempt | None:
+    return (
+        await db.execute(
+            select(Attempt)
+            .where(Attempt.assessment_id == assessment_id, Attempt.user_id == user_id, Attempt.superseded.is_(False))
+            .order_by(Attempt.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 @router.post("/assessments/{assessment_id}/attempts", response_model=AttemptOut)
 async def start_attempt(
     assessment_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
@@ -308,18 +327,10 @@ async def start_attempt(
     if assessment.ends_at and now > assessment.ends_at:
         raise HTTPException(400, "시험 응시 기간이 종료되었습니다")
 
-    existing = (
-        await db.execute(
-            select(Attempt)
-            .where(
-                Attempt.assessment_id == assessment_id,
-                Attempt.user_id == user.id,
-                Attempt.superseded.is_(False),
-            )
-            .order_by(Attempt.started_at.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    # ODY-015: 같은 (시험, 사용자) 의 동시 시작은 트랜잭션 advisory lock 으로 줄 세운다.
+    # 잠금 아래에서 조회→생성이 원자적이고, 그래도 겹치면 부분 유일 인덱스가 막는다 (아래 IntegrityError).
+    await _lock_attempt_slot(db, assessment_id, user.id)
+    existing = await _active_attempt(db, assessment_id, user.id)
     if existing:
         await check_expired(existing, db)
         if existing.status != "in_progress":
@@ -331,16 +342,24 @@ async def start_attempt(
         deadline = assessment.ends_at
     attempt = Attempt(assessment_id=assessment_id, user_id=user.id, started_at=now, deadline_at=deadline)
     db.add(attempt)
-    await db.flush()
-    await _materialize(attempt, db)
-    db.add(
-        Event(
-            attempt_id=attempt.id,
-            type="attempt_started",
-            payload={"assessment_id": str(assessment_id), "deadline_at": deadline.isoformat()},
+    try:
+        await db.flush()
+        await _materialize(attempt, db)
+        db.add(
+            Event(
+                attempt_id=attempt.id,
+                type="attempt_started",
+                payload={"assessment_id": str(assessment_id), "deadline_at": deadline.isoformat()},
+            )
         )
-    )
-    await db.commit()
+        await db.commit()
+    except IntegrityError:
+        # 잠금을 우회한 경로(다른 인스턴스 등)에서 먼저 만들어졌다 — 그 응시를 그대로 돌려준다
+        await db.rollback()
+        existing = await _active_attempt(db, assessment_id, user.id)
+        if not existing:
+            raise
+        return await _attempt_out(existing, db)
     return await _attempt_out(attempt, db)
 
 
@@ -442,9 +461,26 @@ async def retake_attempt(
     if user.role == "evaluator" and attempt.user_id != user.id:
         raise HTTPException(403, "평가자는 본인 체험 응시만 재응시할 수 있습니다")
 
-    attempt.superseded = True
-    db.add(Event(attempt_id=attempt.id, type="attempt_superseded", payload={"by": str(user.id)}))
-    await db.commit()
+    # ODY-015: 같은 슬롯의 잠금 아래에서 '이전 것 superseded + 새 것 생성' 을 한 트랜잭션으로.
+    # 두 관리자가 동시에 재응시를 눌러도 활성 응시는 하나만 남는다.
+    await _lock_attempt_slot(db, attempt.assessment_id, attempt.user_id)
+    await db.refresh(attempt)
+    if attempt.superseded:
+        current = await _active_attempt(db, attempt.assessment_id, attempt.user_id)
+        if current:
+            return await _attempt_out(current, db)
+    for other in (
+        await db.execute(
+            select(Attempt).where(
+                Attempt.assessment_id == attempt.assessment_id,
+                Attempt.user_id == attempt.user_id,
+                Attempt.superseded.is_(False),
+            )
+        )
+    ).scalars().all():
+        other.superseded = True
+        db.add(Event(attempt_id=other.id, type="attempt_superseded", payload={"by": str(user.id)}))
+    await db.flush()
 
     assessment = await db.get(Assessment, attempt.assessment_id)
     now = utcnow()

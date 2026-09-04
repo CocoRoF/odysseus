@@ -105,7 +105,41 @@ export default function BulkAddUsersPage() {
   const setRow = (i: number, patch: Partial<DraftUser>) =>
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
-  // ── 가져오기 ─────────────────────────────────────────────
+  /** 따옴표·줄바꿈을 처리하는 작은 CSV 파서 — 명단 CSV 는 라이브러리 없이 읽는다. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else q = false;
+      } else cell += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else cell += ch;
+  }
+  if (cell || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ── 가져오기 ─────────────────────────────────────────────
   const loadGrid = (g: string[][]) => {
     const cleaned = g.map((r) => r.map((c) => String(c ?? "").trim())).filter((r) => r.some(Boolean));
     if (cleaned.length === 0) return toast("데이터가 없습니다", "info");
@@ -115,13 +149,35 @@ export default function BulkAddUsersPage() {
     setHasHeader(guess.headerRow);
   };
 
+  // 업로드 상한 (ODY-012) — 명단 파일은 작다. 큰 파일·큰 시트는 파싱 전에 거른다.
+  const MAX_FILE_BYTES = 2 * 1024 * 1024;
+  const MAX_ROWS = 5000;
+  const MAX_COLS = 40;
+
   const onFile = async (file: File) => {
-    const XLSX = await import("xlsx");
+    if (file.size > MAX_FILE_BYTES) return toast("파일이 너무 큽니다 (2MB 이하)", "error");
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf);
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const g = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, raw: false, defval: "" });
-    loadGrid(g as unknown as string[][]);
+    let g: string[][];
+    if (/\.csv$/i.test(file.name) || file.type === "text/csv") {
+      g = parseCsv(new TextDecoder("utf-8").decode(buf));
+    } else {
+      // SheetJS 0.20.x (CVE-2023-30533 · CVE-2024-22363 수정판). 첫 시트만, 범위를 잘라 읽는다.
+      const XLSX = await import("xlsx");
+      let wb;
+      try {
+        wb = XLSX.read(buf, { dense: true, sheetRows: MAX_ROWS + 1, cellHTML: false, cellStyles: false });
+      } catch {
+        return toast("읽을 수 없는 스프레드시트입니다", "error");
+      }
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      if (!sheet) return toast("시트가 없습니다", "info");
+      g = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, raw: false, defval: "" }) as unknown as string[][];
+    }
+    if (g.length > MAX_ROWS) {
+      toast(`행이 너무 많아 앞 ${MAX_ROWS}행만 읽었습니다`, "info");
+      g = g.slice(0, MAX_ROWS);
+    }
+    loadGrid(g.map((r) => r.slice(0, MAX_COLS)));
   };
 
   const importGrid = () => {

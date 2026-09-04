@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from .config import check_startup_security, settings
+from .config import check_startup_security, https_only_enabled, settings
 from .db import Base, SessionLocal, engine
 from .routers import (
     agent,
@@ -47,6 +47,16 @@ MIGRATIONS: list[str] = [
         RETURN NEW;
     END $$ LANGUAGE plpgsql
     """,
+    # ODY-015: 한 사용자는 한 시험에 활성 응시 하나 — 기존 중복은 최신만 남기고 superseded 처리한 뒤 유일 인덱스
+    """
+    UPDATE attempts a SET superseded = true
+    WHERE a.superseded = false AND EXISTS (
+        SELECT 1 FROM attempts b
+        WHERE b.assessment_id = a.assessment_id AND b.user_id = a.user_id AND b.superseded = false
+          AND (b.started_at > a.started_at OR (b.started_at = a.started_at AND b.id > a.id))
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS attempts_one_active_per_user ON attempts (assessment_id, user_id) WHERE superseded = false",
     "DROP TRIGGER IF EXISTS workspace_files_frozen ON workspace_files",
     """
     CREATE TRIGGER workspace_files_frozen BEFORE INSERT OR UPDATE OR DELETE ON workspace_files
@@ -80,6 +90,26 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Odysseus API", version="0.1.0", lifespan=lifespan)
+
+PROXY_MARKERS = ("x-forwarded-for", "x-forwarded-proto", "cf-visitor", "cf-connecting-ip")
+MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+@app.middleware("http")
+async def require_https_behind_proxy(request, call_next):
+    """운영 모드: 프록시를 거쳐 온 변경 요청은 HTTPS 였어야 한다 (ODY-014).
+
+    엣지가 실제 접속 스킴을 X-Forwarded-Proto 로 알려 준다(Cloudflare 뒤에서는 CF-Visitor 로 판단).
+    프록시 흔적이 전혀 없는 요청(러너·MCP 브리지·배포 스크립트의 직접 호출)은 대상이 아니다.
+    """
+    if https_only_enabled() and request.method in MUTATING and any(h in request.headers for h in PROXY_MARKERS):
+        proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+        if proto != "https":
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse({"detail": "HTTPS 로만 접속할 수 있습니다"}, status_code=403)
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,

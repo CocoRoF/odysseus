@@ -12,6 +12,27 @@ map $http_cf_connecting_ip $client_ip {
     default $http_cf_connecting_ip;
 }
 
+# 실제 접속 스킴 (ODY-014) — Cloudflare 뒤에서는 CF-Visitor 의 scheme, 그 외에는 이 서버의 스킴.
+# 임의의 X-Forwarded-Proto 는 믿지 않는다 (엣지 앞에 다른 프록시가 있으면 여기에 그 기준을 추가한다).
+map $http_cf_visitor $cf_scheme {
+    ~https    https;
+    default   "";
+}
+map "$cf_scheme:$scheme" $effective_proto {
+    ~^https   https;
+    ~^:https  https;
+    default   http;
+}
+# EDGE_HTTPS_ONLY=on 이면 평문 요청을 같은 호스트의 HTTPS 로 보낸다 (운영). 개발은 off.
+map "${EDGE_HTTPS_ONLY}:$effective_proto" $redirect_to_https {
+    "on:http" 1;
+    default   0;
+}
+map $effective_proto $hsts_value {
+    https "max-age=31536000; includeSubDomains";
+    default "";
+}
+
 # 속도·연결 상한. API 전체는 넉넉하게(초당 30, 순간 60), 로그인은 빡빡하게(분당 10).
 # 응시 화면은 폴링·SSE·WS 가 많아 상한이 낮으면 정상 사용이 막힌다 — 429 는 폭주만 잡는 값이다.
 limit_req_zone  $client_ip zone=api_req:10m  rate=30r/s;
@@ -23,6 +44,13 @@ limit_conn_status 429;
 server {
     listen 80;
     client_max_body_size 10m;
+
+    # 운영: 평문은 HTTPS 로 (Cloudflare 뒤에서는 이미 https 라 여기에 걸리지 않는다)
+    if ($redirect_to_https) {
+        return 301 https://$host$request_uri;
+    }
+    # HTTPS 로 왔을 때만 HSTS — 평문 개발 환경에서는 빈 값이라 헤더가 붙지 않는다
+    add_header Strict-Transport-Security $hsts_value always;
 
     # 내부 콜백(러너·MCP 브리지 전용)은 바깥에서 존재하지 않는 경로다 — 토큰과 무관하게 404
     location ^~ /api/internal/ {
@@ -37,7 +65,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $effective_proto;
     }
 
     # API — /api/ 프리픽스를 벗겨 FastAPI로 전달 (WS 업그레이드 + 무버퍼 스트리밍)
@@ -50,7 +78,7 @@ server {
         proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $effective_proto;
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 3600s;
@@ -63,6 +91,6 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $effective_proto;
     }
 }

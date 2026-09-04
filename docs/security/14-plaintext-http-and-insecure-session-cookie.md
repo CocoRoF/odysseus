@@ -42,3 +42,13 @@ curl -i \
 5. 신뢰할 reverse proxy 목록을 설정해 임의 `X-Forwarded-Proto` 위조를 막는다.
 6. 평문 환경에서 발급된 기존 JWT와 기본 계정 비밀번호를 폐기·교체한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **세션 쿠키:** `odysseus_token` 에 `Secure` 를 붙인다 (`cookie_secure`, 운영 모드 기본 on·개발 off). `HttpOnly`·`SameSite=Lax` 는 그대로 (`routers/auth.py`, `config.py`).
+- **HTTPS 강제:** 운영 모드의 api 미들웨어가 프록시를 거쳐 온 변경 요청(POST/PUT/PATCH/DELETE)에 `X-Forwarded-Proto: https` 가 없으면 403 으로 거부한다 (`main.require_https_behind_proxy`). 프록시 흔적이 없는 직접 호출(러너·MCP 브리지·배포 스크립트)은 대상이 아니다.
+- **실제 스킴 판정:** 엣지는 임의의 `X-Forwarded-Proto` 를 믿지 않는다. Cloudflare 뒤에서는 `CF-Visitor` 의 scheme, 아니면 자기 리스너의 스킴으로 `$effective_proto` 를 정해 업스트림에 넘긴다 (`apps/edge/templates/default.conf.template`).
+- **리다이렉트·HSTS:** `EDGE_HTTPS_ONLY=on`(운영 .env)이면 평문 요청을 같은 호스트의 HTTPS 로 301 하고, HTTPS 로 온 응답에만 `Strict-Transport-Security: max-age=31536000; includeSubDomains` 를 단다. 개발(off)에서는 둘 다 꺼진다. 엣지 설정은 nginx 공식 이미지의 envsubst 템플릿으로 바뀌었다 (`NGINX_ENVSUBST_FILTER=^EDGE_`).
+- **운영 배치:** TLS 종단은 Cloudflare 터널(브라우저↔Cloudflare HTTPS)이 하고, 터널→엣지 구간은 미니PC 로컬 루프백이다. 운영 `.env` 에 `EDGE_HTTPS_ONLY=on` 을 넣었다.
+- **검증:** `tests/security/test_tls_cookie.py` — 운영 모드 스택: 평문(프록시 경유) 로그인 403, CF-Visitor https 로그인 200 + `Secure; HttpOnly; SameSite=lax`, https 응답에 HSTS·http 응답에 없음, `EDGE_HTTPS_ONLY=on` 평문 GET 은 301 https, api 직접 호출은 영향 없음. 개발 모드 스택: Secure 없음·403 없음·리다이렉트 없음.
+- **미완:** 평문 시절 발급된 JWT 폐기(#6)는 ODY-023 의 세션 폐기 메커니즘과 함께 처리한다 (운영 비밀번호는 ODY-001 에서 이미 교체).

@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # 빈 DB 최초 기동 시 만들 관리자 — 비밀번호를 비우면 무작위로 만들어 로그에 한 번 출력한다
     bootstrap_admin_email: str = ""
     bootstrap_admin_password: str = ""
+    # 세션 쿠키 Secure 와 "프록시를 거친 변경 요청은 HTTPS 여야 한다" 규칙 (ODY-014).
+    # None 이면 운영 모드에서 켜지고 개발 모드에서 꺼진다.
+    cookie_secure: bool | None = None
+    https_only: bool | None = None
 
     # DB에 공급자가 없을 때의 env 폴백 (OpenAI 호환)
     ai_base_url: str = "https://api.openai.com/v1"
@@ -47,6 +51,14 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def cookie_secure_enabled() -> bool:
+    return settings.cookie_secure if settings.cookie_secure is not None else settings.odysseus_env != "development"
+
+
+def https_only_enabled() -> bool:
+    return settings.https_only if settings.https_only is not None else settings.odysseus_env != "development"
 
 
 # 코드·예시 파일에 한 번이라도 적혔던 값 — 어디에서든 시크릿으로 받지 않는다

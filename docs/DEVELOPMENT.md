@@ -59,7 +59,7 @@
 ./scripts/remote-deploy.sh [api web ...]         # 워크스페이스 → 운영 서버: pull + 아래 deploy.sh
 sudo ./scripts/deploy.sh [--yes] [api web ...]   # 스냅샷 → 백업 → 빌드 → 기동 → 헬스체크 → 보존 검증
 sudo ./scripts/backup.sh [설명]                   # pg_dump.gz (최근 20개 보관)
-sudo ./scripts/restore.sh backups/<file>.sql.gz  # 되돌릴 수 없으므로 두 번 묻는다
+sudo ./scripts/restore.sh /var/backups/odysseus/ (암호화, root 전용)<file>.sql.gz  # 되돌릴 수 없으므로 두 번 묻는다
 ```
 
 `docker compose down -v` 는 **절대 쓰지 마세요** — `pgdata` 볼륨에 계정·응시 기록·워크스페이스 파일·AI 공급자 키·관리자 설정이 전부 있습니다. `.env` 의 `POSTGRES_PASSWORD` 는 볼륨이 처음 만들어질 때 고정된 값이라 바꾸면 접속이 끊깁니다.

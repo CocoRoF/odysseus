@@ -39,3 +39,11 @@ seq 1 2 | xargs -P2 -I{} curl -sS -b "$COOKIE_JAR" \
 4. 클라이언트가 생성 요청에 idempotency key를 보내도록 하고 서버에서 소비 기록을 유지한다.
 5. 이미 존재하는 중복 응시는 자동 병합하지 말고 시간·파일·이벤트를 검토해 하나를 superseded 처리한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **유일 제약:** 부분 유일 인덱스 `attempts_one_active_per_user (assessment_id, user_id) WHERE superseded = false` 를 마이그레이션으로 만든다. 이미 중복이 있으면 최신 것만 남기고 나머지를 superseded 로 돌린 뒤 인덱스를 만든다 (`main.MIGRATIONS`).
+- **원자적 생성:** `start_attempt` 는 트랜잭션 advisory lock(`pg_advisory_xact_lock(hash(assessment, user))`) 아래에서 조회→생성을 하고, 그래도 겹치면(다른 인스턴스 등) `IntegrityError` 를 받아 롤백 후 기존 응시를 돌려준다 — 클라이언트 입장에서 idempotent.
+- **재응시:** 같은 잠금 아래에서 '기존 활성 응시 전부 superseded + 새 응시 생성' 을 한 트랜잭션으로 한다. 이미 superseded 된 응시로 다시 요청하면 현재 활성 응시를 돌려준다.
+- **검증:** `tests/security/test_attempt_race.py` — 응시자가 12개 요청을 동시에 보내도 전부 200·같은 id·DB 활성 1건·초기 파일 중복 없음, 관리자 6명이 동시에 재응시해도 활성 1건, 인덱스 존재(psql).
+- **미완:** 클라이언트 idempotency key(#4)는 잠금+유일 인덱스로 같은 효과를 내므로 두지 않았다.

@@ -39,3 +39,12 @@
 5. base/service 이미지를 digest로 고정하고 자동 업데이트 PR에서 SBOM·취약점 검사·회귀 테스트를 수행한다.
 6. 빌드는 최소 권한, 일시적 credential, 제한된 egress를 가진 격리 builder에서 수행한다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **프론트엔드 lockfile:** `apps/web/package-lock.json`(v3) 을 커밋하고 Dockerfile 은 `npm ci --ignore-scripts` 만 쓴다. 범위 지정(`^`)은 lockfile 이 고정한다.
+- **Python:** `apps/api/requirements.lock`(운영 이미지의 `pip freeze`, 전 패키지 `==`)을 두고 `pip install --no-deps -r requirements.lock` 으로만 설치한다. `requirements.txt` 는 사람이 읽는 범위 명세로 남긴다. 올릴 때는 새 이미지에서 freeze 를 다시 뜬다.
+- **Claude CLI:** `CLAUDE_CLI_VERSION` 기본값을 `latest` 에서 `2.1.260`(운영 설치본)으로 고정. 설치 스크립트는 파일로 받아(`--proto '=https' --tlsv1.2`) 실행하고, 설치 뒤 `claude --version` 이 고정 버전과 같지 않으면 빌드가 실패한다. `curl | bash` 제거.
+- **이미지 digest:** `python:3.12-slim`, `node:22-alpine`(3단계 모두), `nginx:1.27-alpine`, `ubuntu:24.04`, compose 의 `postgres:16-alpine`·`redis:7-alpine` 을 `@sha256:…` 로 고정했다. postgres/redis 는 운영이 지금 돌리는 digest 그대로라 배포로 DB 가 바뀌지 않는다.
+- **검증:** 격리 스택에서 다섯 이미지를 전부 다시 빌드해 기동하고 핵심 스모크(test_core·test_reference)를 통과시켰다. `npm ci` 는 lockfile 과 package.json 이 어긋나면 실패하므로 그 자체가 검사다.
+- **미완:** pip 해시 고정(`--require-hashes`)과 SBOM·취약점 스캔 CI(#5·#6)는 CI 파이프라인이 생길 때 붙인다. Claude CLI 배포판은 공급자 서명이 없어 버전 일치 확인까지만 한다.

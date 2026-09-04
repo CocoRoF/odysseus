@@ -13,7 +13,7 @@ networks:
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
     restart: unless-stopped
     environment:
       POSTGRES_USER: odysseus
@@ -30,7 +30,7 @@ services:
       - backplane
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     restart: unless-stopped
     # 인증 없는 접근은 없다 (ODY-003). default 사용자는 끄고, 서비스별 ACL 계정만 둔다:
     #   api    — 모든 키·명령 (큐 적재, 통계 조회, 취소 요청)
@@ -138,6 +138,9 @@ services:
 
   # 단일 오리진 엣지 — /api(SSE 포함)를 FastAPI로, 나머지는 Next.js로
   edge:
+    environment:
+      # 운영에서는 on — 평문 요청을 HTTPS 로 돌리고 HSTS 를 단다 (ODY-014)
+      EDGE_HTTPS_ONLY: ${EDGE_HTTPS_ONLY:-off}
     build: ./apps/edge
     restart: unless-stopped
     ports:
