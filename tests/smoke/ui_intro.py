@@ -113,7 +113,8 @@ async def main():
         await pg.click(".intro-stage >> text=임무 시작")
         # 임무 시작 → 부팅 연출(실제 사양이 흐른다) → 데스크톱
         await pg.wait_for_selector("[data-boot]", timeout=8000)
-        await pg.wait_for_selector("[data-boot] >> text=ODYSSEUS BIOS", timeout=8000)
+        assert await pg.locator('[data-boot] img[alt="Odysseus"]').count() == 1, "로고 스플래시 없음"
+        await pg.wait_for_selector("[data-boot] >> text=ODYSSEUS BIOS", timeout=15000)
         await pg.wait_for_selector("[data-boot] >> text=Started messenger daemon", timeout=20000)
         boot = await pg.locator("[data-boot]").inner_text()
         assert "김수진" in boot, boot[-300:]

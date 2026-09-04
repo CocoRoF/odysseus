@@ -32,7 +32,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-black tracking-tight text-white">
-            Odysseus<span className="text-sky-400">.</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/odysseus-icon.png" alt="" className="mr-2 inline-block h-7 w-7 rounded-lg align-[-6px]" />Odysseus<span className="text-sky-400">.</span>
           </h1>
           <p className="mt-2 text-sm text-slate-400">실무 시뮬레이션 기반 개발자 평가 플랫폼</p>
         </div>

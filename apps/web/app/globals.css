@@ -171,20 +171,21 @@ body {
   .ai-editing, .ai-caret, .ai-chip-live { animation: none; }
 }
 
-/* ── 부팅 연출: 옛 CRT 모니터 ── */
-.boot-screen { animation: none; }
-.boot-on .boot-text { animation: boot-power-on 0.55s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-.boot-off { animation: boot-power-off 0.42s ease-in forwards; }
-@keyframes boot-power-on {
-  0% { transform: scaleY(0.004) scaleX(1.1); filter: brightness(6); opacity: 0.9; }
-  45% { transform: scaleY(0.02) scaleX(1.02); filter: brightness(3); }
-  100% { transform: scale(1); filter: brightness(1); opacity: 1; }
+/* ── 부팅 연출: 어둠 → 로고 → 로그 → 어두워졌다가 OS 가 밝아온다 ── */
+.boot-logo { animation: boot-logo 2.6s ease-in-out both; }
+@keyframes boot-logo {
+  0% { opacity: 0; transform: scale(0.965); filter: blur(6px) brightness(0.4); }
+  22% { opacity: 1; transform: scale(1); filter: blur(0) brightness(1); }
+  78% { opacity: 1; transform: scale(1); filter: blur(0) brightness(1); }
+  100% { opacity: 0; transform: scale(1.01); filter: blur(4px) brightness(0.3); }
 }
-@keyframes boot-power-off {
-  0% { transform: scale(1); opacity: 1; filter: brightness(1); }
-  55% { transform: scaleY(0.01) scaleX(1.05); opacity: 1; filter: brightness(4); }
-  100% { transform: scaleY(0) scaleX(0.2); opacity: 0; }
-}
+.boot-text-in { animation: boot-text-in 0.5s ease-out both; }
+@keyframes boot-text-in { from { opacity: 0; } to { opacity: 1; } }
+.boot-dim { animation: boot-dim 0.5s ease-in forwards; }
+@keyframes boot-dim { from { opacity: 1; filter: brightness(1); } to { opacity: 0; filter: brightness(0.2); } }
+/* 검은 막이 걷힌다 — 아래에 이미 있는 데스크톱이 밝아 보인다 */
+.boot-reveal { background: #000; animation: boot-reveal 1.05s ease-out forwards; pointer-events: none; }
+@keyframes boot-reveal { 0% { opacity: 1; } 100% { opacity: 0; } }
 .boot-text { text-shadow: 0 0 6px rgba(200, 211, 200, 0.35), 0 0 1px rgba(255, 255, 255, 0.6); }
 .boot-crt {
   background:
@@ -196,5 +197,6 @@ body {
 @keyframes boot-flicker { 0%, 100% { opacity: 1; } 47% { opacity: 0.93; } 49% { opacity: 1; } 91% { opacity: 0.96; } }
 .boot-cursor { animation: ai-caret-blink 0.7s steps(1) infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .boot-on .boot-text, .boot-off, .boot-crt, .boot-cursor { animation: none; }
+  .boot-logo, .boot-text-in, .boot-dim, .boot-reveal, .boot-crt, .boot-cursor { animation: none; }
+  .boot-reveal { opacity: 0; }
 }

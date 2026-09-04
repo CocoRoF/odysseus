@@ -34,7 +34,7 @@ export function Shell({ user, children }: { user: User; children: React.ReactNod
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
           <div className="flex items-center gap-6">
             <Link href="/" className="font-black">
-              Odysseus<span className="text-sky-500">.</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/odysseus-icon.png" alt="" className="mr-2 inline-block h-7 w-7 rounded-lg align-[-6px]" />Odysseus<span className="text-sky-500">.</span>
             </Link>
             <div className="flex gap-1">
               {links.map((l) => (

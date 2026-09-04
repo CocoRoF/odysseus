@@ -645,7 +645,7 @@ export default function ExamDesktopPage() {
         />
 
         {/* 부팅 연출 — 임무 시작 뒤, 옛 기계가 켜지듯 실제 사양이 흐른다 */}
-        {showBriefing && booting && (
+        {booting && (
           <BootSequence
             userName={user?.name ?? ""}
             assessmentTitle={attempt.assessment_title}
@@ -653,10 +653,8 @@ export default function ExamDesktopPage() {
             characters={scenario.characters.map((c) => ({ name: c.name, role: c.role }))}
             agentEnabled={scenario.agent_enabled}
             durationMin={Math.max(1, Math.round(remainingSeconds / 60))}
-            onDone={() => {
-              setBooting(false);
-              startWork();
-            }}
+            onReveal={startWork}
+            onDone={() => setBooting(false)}
           />
         )}
 

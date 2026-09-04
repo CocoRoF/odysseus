@@ -32,6 +32,7 @@ export function BootSequence({
   characters,
   agentEnabled,
   durationMin,
+  onReveal,
   onDone,
 }: {
   userName: string;
@@ -40,11 +41,15 @@ export function BootSequence({
   characters: { name: string; role: string }[];
   agentEnabled: boolean;
   durationMin: number;
+  /** 화면이 밝아지기 시작할 때 — 이때 데스크톱을 열어 두면 밝아지는 동안 창이 떠오른다 */
+  onReveal: () => void;
+  /** 완전히 밝아진 뒤 — 이 컴포넌트를 내려도 된다 */
   onDone: () => void;
 }) {
   const ws = useWorkspace();
   const [lines, setLines] = useState<Line[]>([]);
-  const [phase, setPhase] = useState<"on" | "run" | "off">("on");
+  // logo: 검은 화면에 로고가 떠오른다 → run: 로그 → dim: 화면이 어두워진다 → reveal: OS 가 밝아진다
+  const [phase, setPhase] = useState<"logo" | "run" | "dim" | "reveal">("logo");
   const cancelled = useRef(false);
   const doneRef = useRef(false);
   const idRef = useRef(1);
@@ -58,8 +63,12 @@ export function BootSequence({
     if (doneRef.current) return;
     doneRef.current = true;
     cancelled.current = true;
-    setPhase("off");
-    setTimeout(onDone, 420); // 화면이 꺼지는 짧은 순간
+    setPhase("dim"); // 로그가 어둠 속으로 가라앉는다
+    setTimeout(() => {
+      setPhase("reveal"); // 검은 막이 걷히며 OS 가 밝아온다
+      onReveal();
+      setTimeout(onDone, 1100);
+    }, 520);
   };
 
   useEffect(() => {
@@ -115,8 +124,10 @@ export function BootSequence({
 
     (async () => {
       try {
-        await wait(260);
+        // ── 로고 스플래시 — 어둠 속에서 떠올랐다가 가라앉는다 ──
+        await wait(2600);
         setPhase("run");
+        await wait(380);
 
         // ── POST ──
         push("ODYSSEUS BIOS (C) 2026 Odysseus Systems, Inc.", "bright");
@@ -232,14 +243,24 @@ export function BootSequence({
 
   return (
     <div
-      className={`boot-screen absolute inset-0 z-[9600] overflow-hidden bg-black ${phase === "on" ? "boot-on" : phase === "off" ? "boot-off" : ""}`}
+      className={`boot-screen absolute inset-0 z-[9600] overflow-hidden ${phase === "reveal" ? "boot-reveal" : "bg-black"}`}
       onClick={finish}
       data-boot
+      data-phase={phase}
     >
-      <div className="boot-crt pointer-events-none absolute inset-0" />
+      {/* 로고 스플래시 */}
+      {phase === "logo" && (
+        <div className="boot-logo absolute inset-0 flex items-center justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/odysseus-logo.png" alt="Odysseus" className="w-[min(60vw,720px)] select-none" draggable={false} />
+        </div>
+      )}
+      {phase !== "logo" && phase !== "reveal" && <div className="boot-crt pointer-events-none absolute inset-0" />}
       <div
         ref={scrollRef}
-        className="boot-text absolute inset-0 overflow-hidden px-10 py-8 font-mono text-[15px] leading-[1.45]"
+        className={`boot-text absolute inset-0 overflow-hidden px-10 py-8 font-mono text-[15px] leading-[1.45] ${
+          phase === "logo" ? "opacity-0" : phase === "dim" ? "boot-dim" : phase === "reveal" ? "opacity-0" : "boot-text-in"
+        }`}
       >
         {lines.map((l) => (
           <div key={l.id} className={`whitespace-pre ${toneCls[l.tone]}`}>
