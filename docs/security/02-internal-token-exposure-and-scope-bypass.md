@@ -48,3 +48,13 @@ curl -sS -H 'Content-Type: application/json' \
 5. 실행 결과 콜백은 execution별 일회용 nonce와 작업 payload 해시를 검증하고 한 번만 소비한다.
 6. 토큰 비교·실패·내부 호출을 구조화 감사 로그로 남기되 토큰 값은 절대 기록하지 않는다.
 
+
+## 조치 (2026-09-04, 완료)
+
+- **경계:** 엣지 nginx 가 `/api/internal/` 을 토큰과 무관하게 404 로 막는다 (`apps/edge/nginx.conf`). api 컨테이너의 호스트 포트는 `127.0.0.1` 에만 묶인다 (`docker-compose.yml`). 라우터는 `X-Forwarded-*`/`Via` 등 프록시 흔적이 있는 요청을 404 로 거부한다 — 내부 호출자(러너·MCP 브리지)는 프록시를 지나지 않는다.
+- **토큰:** 코드·compose 의 기본값 `odysseus-internal-change-me` 를 제거했다. compose 는 `JWT_SECRET`/`INTERNAL_TOKEN` 이 없으면 `${VAR:?}` 로 멈추고, 운영 모드의 api 는 자리표시자·32자 미만 값을 기동 시 거부한다 (`config.check_startup_security`). 러너도 32자 미만이면 기동하지 않는다. 비교는 `secrets.compare_digest`.
+- **범위:** `/internal/agent-tool` 은 시나리오가 그 시험(`AssessmentScenario`)에 속하는지와 `ordinal == attempt.current_ordinal` 인지 다시 확인한다 — 잠긴/제출한 문제는 거부 결과, 시험 밖 시나리오는 404.
+- **일회용 콜백 토큰:** 실행마다 `Execution.callback_token`(32바이트 urlsafe) 을 발급해 큐로만 전달하고, 러너는 `X-Execution-Token` 으로 되돌려 준다. `/running`·`/result` 는 이 토큰이 맞아야 하고, 결과가 접수되면 토큰을 지워 재사용을 막는다. `ExecutionOut` 에는 나가지 않는다.
+- **감사 로그:** 프록시 경유·토큰 불일치·범위 위반을 `odysseus.internal` 로거에 경로·출처와 함께 남기되 토큰 값은 기록하지 않는다.
+- **검증:** `tests/security/test_internal_boundary.py` (격리 개발 스택에서 실행) — 엣지 404, 프록시 헤더 404, 빈/틀린/기본 토큰 401, 위조 결과 401 + 진짜 러너 결과 접수 + 위조 파일 미반영, 끝난 실행 재보고 401, 시험 밖 시나리오 404, 잠긴 시나리오 write 거부, 로그에 토큰 값 없음.
+- **미완(다른 항목으로 이관):** 서비스 신원별 mTLS 와 큐 payload 서명은 ODY-003(Redis 경계)과 함께 다룬다.

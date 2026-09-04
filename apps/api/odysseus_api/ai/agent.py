@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import workspace as ws
 from ..config import settings
 from ..models import Event, Execution
-from ..runqueue import enqueue_run
+from ..runqueue import enqueue_run, new_callback_token
 from . import provider
 
 SYSTEM_PROMPT = """당신은 사용자의 개발 작업을 돕는 AI 어시스턴트입니다. 당신은 사용자와 **같은 워크스페이스 파일 시스템에 연결되어 있습니다** — 도구로 파일을 찾고, 읽고, 만들고, 옮기고, 삭제하고, 명령을 실행할 수 있습니다.
@@ -237,6 +237,7 @@ async def execute_agent_tool(
                 user_id=user_id,
                 source="agent",
                 command=command,
+                callback_token=new_callback_token(),
             )
             db.add(execution)
             db.add(
@@ -257,6 +258,7 @@ async def execute_agent_tool(
                 attempt_id=str(attempt_id),
                 scenario_id=str(scenario_id),
                 source="agent",
+                callback_token=execution.callback_token or "",
             )
             done = await _wait_execution(db, execution.id)
             if not done or done.status not in ("done", "error"):

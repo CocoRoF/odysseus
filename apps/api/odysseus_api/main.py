@@ -29,6 +29,8 @@ from .seed import bootstrap_if_empty, seed_demo_if_empty
 MIGRATIONS: list[str] = [
     # 순차 진행(다중 시나리오) — 현재 시나리오 위치
     "ALTER TABLE attempts ADD COLUMN IF NOT EXISTS current_ordinal INTEGER NOT NULL DEFAULT 0",
+    # ODY-002: 실행 결과 콜백의 일회용 토큰
+    "ALTER TABLE executions ADD COLUMN IF NOT EXISTS callback_token VARCHAR(64)",
 ]
 
 

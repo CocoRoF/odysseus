@@ -12,6 +12,7 @@ Redis 큐(odysseus:run:queue)에서 워크스페이스 실행 잡을 꺼내:
 import hashlib
 import json
 import os
+import sys
 import resource as _resource
 import shutil
 import signal
@@ -34,7 +35,7 @@ from sandbox import execute, isolation_available, kill_tree, next_exec_uid, wrap
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
-INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN", "odysseus-internal-change-me")
+INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN", "")  # 기본값 없음 — main() 이 없으면 멈춘다
 CONCURRENCY = int(os.environ.get("RUNNER_CONCURRENCY", "2"))
 
 QUEUE_KEY = "odysseus:run:queue"
@@ -194,9 +195,14 @@ def run_job(job: dict, execution_id: str = "") -> dict:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
-def report(execution_id: str, payload: dict) -> None:
+def _headers(callback_token: str) -> dict:
+    # 서비스 토큰 + 실행별 일회용 토큰. 둘 다 맞아야 API 가 결과를 받는다.
+    return {"X-Internal-Token": INTERNAL_TOKEN, "X-Execution-Token": callback_token}
+
+
+def report(execution_id: str, payload: dict, callback_token: str = "") -> None:
     url = f"{API_BASE_URL}/internal/executions/{execution_id}/result"
-    headers = {"X-Internal-Token": INTERNAL_TOKEN}
+    headers = _headers(callback_token)
     for attempt in range(5):
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=15)
@@ -208,11 +214,11 @@ def report(execution_id: str, payload: dict) -> None:
     print(f"[runner] FAILED to report result for {execution_id}", flush=True)
 
 
-def mark_running(execution_id: str) -> None:
+def mark_running(execution_id: str, callback_token: str = "") -> None:
     try:
         requests.post(
             f"{API_BASE_URL}/internal/executions/{execution_id}/running",
-            headers={"X-Internal-Token": INTERNAL_TOKEN},
+            headers=_headers(callback_token),
             timeout=5,
         )
     except requests.RequestException:
@@ -221,10 +227,12 @@ def mark_running(execution_id: str) -> None:
 
 def handle(raw: str) -> None:
     execution_id = "?"
+    callback_token = ""
     try:
         job = json.loads(raw)
         execution_id = job["execution_id"]
-        mark_running(execution_id)
+        callback_token = str(job.get("callback_token", ""))
+        mark_running(execution_id, callback_token)
         started = time.monotonic()
         result = run_job(job, execution_id)
         print(
@@ -233,12 +241,13 @@ def handle(raw: str) -> None:
             f"({time.monotonic() - started:.1f}s)",
             flush=True,
         )
-        report(execution_id, result)
+        report(execution_id, result, callback_token)
     except Exception:
         traceback.print_exc()
         report(
             execution_id,
             {"status": "error", "exit_code": None, "stdout": "", "stderr": "internal runner error", "changed_files": []},
+            callback_token,
         )
 
 
@@ -434,6 +443,9 @@ def publish_environment(conn) -> None:
 
 
 def main() -> None:
+    if len(INTERNAL_TOKEN) < 32:
+        print("[runner] INTERNAL_TOKEN 이 없거나 너무 짧습니다 (최소 32자) — 기동하지 않습니다", flush=True)
+        sys.exit(2)
     print(f"[runner] starting, concurrency={CONCURRENCY}", flush=True)
     conn = redis.from_url(REDIS_URL, decode_responses=True)
     _conn_ref["conn"] = conn

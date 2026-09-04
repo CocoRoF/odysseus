@@ -11,7 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import Event, Execution, User
-from ..runqueue import enqueue_run
+from ..runqueue import enqueue_run, new_callback_token
 from ..schemas import ExecutionOut, RunIn
 from .attempts import get_attempt_for, require_own_active, scenario_in_attempt
 
@@ -40,6 +40,7 @@ async def run_command(
         user_id=user.id,
         source="ide",
         command=command,
+        callback_token=new_callback_token(),
     )
     db.add(execution)
     db.add(
@@ -62,6 +63,7 @@ async def run_command(
         attempt_id=str(execution.attempt_id),
         scenario_id=str(execution.scenario_id),
         source=execution.source,
+        callback_token=execution.callback_token or "",
     )
     return execution
 

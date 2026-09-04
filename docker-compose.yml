@@ -47,8 +47,9 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://odysseus:${POSTGRES_PASSWORD:-odysseus}@postgres:5432/odysseus
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: ${JWT_SECRET:-odysseus-dev-secret-change-me}
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-odysseus-internal-change-me}
+      # 시크릿에 기본값을 두지 않는다 — 없으면 compose 가 여기서 멈춘다 (openssl rand -hex 32)
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 이 필요합니다 — .env 에 `openssl rand -hex 32` 값을 넣으세요}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?INTERNAL_TOKEN 이 필요합니다 — .env 에 `openssl rand -hex 32` 값을 넣으세요}
       # 운영이 기본. 데모 시드(고정 비밀번호)는 ODYSSEUS_ENV=development 에서만 켜진다.
       ODYSSEUS_ENV: ${ODYSSEUS_ENV:-production}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
@@ -58,8 +59,10 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gpt-4o-mini}
       AI_EVAL_MODEL: ${AI_EVAL_MODEL:-gpt-4o-mini}
+    # 호스트 포트는 루프백에만 — 배포 스크립트의 보존 검증용. 외부는 엣지의 /api/ 만 본다
+    # (엣지는 /api/internal/ 을 404 로 막는다).
     ports:
-      - "${API_PORT:-8100}:8000"
+      - "127.0.0.1:${API_PORT:-8100}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,7 +78,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       API_BASE_URL: http://api:8000
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-odysseus-internal-change-me}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?INTERNAL_TOKEN 이 필요합니다}
       RUNNER_CONCURRENCY: ${RUNNER_CONCURRENCY:-2}
       RUNNER_MEM_MB: ${RUNNER_MEM_MB:-4096}
     # 메모리는 여기서 묶는다 — 실행별 RLIMIT_AS 는 Go/JVM 을 시작조차 못 하게 한다

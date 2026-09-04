@@ -26,7 +26,7 @@ from ..models import (
     MessengerMessage,
     Scenario,
 )
-from ..runqueue import enqueue_run
+from ..runqueue import enqueue_run, new_callback_token
 from . import provider
 
 DEFAULT_RUBRIC: dict = {
@@ -115,6 +115,7 @@ async def run_checks(
                     user_id=attempt.user_id,
                     source="check",
                     command=command,
+                    callback_token=new_callback_token(),
                 )
                 db.add(execution)
                 await db.commit()
@@ -126,6 +127,7 @@ async def run_checks(
                     attempt_id=str(attempt.id),
                     scenario_id=str(execution.scenario_id),
                     source="check",
+                    callback_token=execution.callback_token or "",
                 )
                 deadline = asyncio.get_event_loop().time() + CHECK_WAIT_S
                 done = None

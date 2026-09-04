@@ -210,6 +210,9 @@ class Execution(Base):
     stderr: Mapped[str | None] = mapped_column(Text, nullable=True)
     time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     changed_files: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # [{path, action}]
+    # 러너가 결과를 보고할 때 제시해야 하는 일회용 토큰 — 큐에 실려 러너에게만 전달되고,
+    # 결과가 접수되면 지워진다. API 응답(ExecutionOut)에는 나가지 않는다.
+    callback_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
