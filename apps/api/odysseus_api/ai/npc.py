@@ -67,20 +67,34 @@ def leak_guard(reply: str, objectives: str) -> tuple[str, bool]:
     return reply, False
 
 
-def thread_to_messages(history: list[MessengerMessage]) -> list[dict]:
-    """스레드 → LLM 메시지. candidate=user, npc=assistant.
+def build_turn_message(character: dict, history: list[MessengerMessage]) -> str:
+    """스레드 전체를 **하나의 user 메시지**로 만든다 — 이름 붙은 대화 기록 + 방금 온 메시지.
 
-    오프닝처럼 스레드가 NPC 메시지로 시작하면, '대화는 user로 시작'을 요구하는
-    벤더 정규화(_clean_messages)가 앞부분을 잘라내므로 합성 user 턴을 앞에 깐다 —
-    NPC가 자기 오프닝 메시지를 기억한 채 대화하게 하기 위함이다.
+    왜 role 턴이 아니라 이 봉투인가: 공급자에 따라(Claude Code CLI 등) 이력이 어차피 한 메시지로
+    평탄화되고, 그 형식("### Assistant")은 모델이 자기 발화를 자기 것으로 인식하지 못하게 한다.
+    우리가 봉투를 직접 만들면 어떤 공급자든 같은 계약을 본다: 누가 무엇을 말했고, 지금 답해야 할
+    메시지가 무엇인지가 분명하다. 시스템 프롬프트의 "방금 온 메시지에만 답한다" 가 이 봉투를 전제한다.
     """
-    out: list[dict] = []
-    for m in history[-settings.messenger_history_limit :]:
-        role = "user" if m.sender == "candidate" else "assistant"
-        out.append({"role": role, "content": m.content})
-    if out and out[0]["role"] == "assistant":
-        out.insert(0, {"role": "user", "content": "(상대가 대화방에 들어왔다)"})
-    return out
+    me = str(character.get("name") or "동료")
+    recent = history[-settings.messenger_history_limit :]
+    if not recent:
+        return "[메신저 대화 — 지금까지]\n(아직 없음)\n\n[방금 상대가 보낸 메시지]\n(대화방에 들어왔다)"
+    *earlier, last = recent
+    lines = []
+    for m in earlier:
+        who = "상대" if m.sender == "candidate" else me
+        lines.append(f"{who}: {m.content}")
+    thread = "\n".join(lines) if lines else "(아직 없음)"
+    if last.sender == "candidate":
+        return f"[메신저 대화 — 지금까지]\n{thread}\n\n[방금 상대가 보낸 메시지]\n{last.content}"
+    # 마지막이 내 말이면(오프닝 직후 등) 상대는 아직 아무 말도 하지 않은 것
+    thread = thread + ("\n" if lines else "") + f"{me}: {last.content}"
+    return f"[메신저 대화 — 지금까지]\n{thread}\n\n[방금 상대가 보낸 메시지]\n(대화방에 들어왔다)"
+
+
+def thread_to_messages(history: list[MessengerMessage]) -> list[dict]:
+    """(하위 호환) 스레드 → LLM 메시지 한 개. 봉투 형식은 build_turn_message 참조."""
+    return [{"role": "user", "content": build_turn_message({"name": "동료"}, history)}]
 
 
 async def generate_reply(
@@ -90,7 +104,7 @@ async def generate_reply(
     history: list[MessengerMessage],
 ) -> str:
     system = npc_system_prompt(scenario, character)
-    messages = thread_to_messages(history)
+    messages = [{"role": "user", "content": build_turn_message(character, history)}]
     reply = await provider.complete_text(res, messages, system=system, max_tokens=1024)
     reply = (reply or "").strip()
     reply, leaked = leak_guard(reply, str(scenario.objectives_md or ""))
