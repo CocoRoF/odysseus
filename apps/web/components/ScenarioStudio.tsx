@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import type { Character, Check, CheckType, InitialFile, OpeningMessage, Rubric, Scenario, ScenarioDraft } from "@/lib/types";
-import { ScenarioAuthorPanel } from "@/components/ScenarioAuthorPanel";
+import type { AuthorOp, Character, Check, CheckType, InitialFile, OpeningMessage, Rubric, Scenario, ScenarioDraft } from "@/lib/types";
+import { ScenarioAuthorChat } from "@/components/ScenarioAuthorChat";
 import { CodeEditor } from "@/components/CodeEditor";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
@@ -67,6 +67,25 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
   const [objectives, setObjectives] = useState(initial?.objectives_md ?? "");
   const [checks, setChecks] = useState<Check[]>(initial?.checks ?? []);
   const [rubric, setRubric] = useState<Rubric | null>(initial?.rubric ?? null);
+  // AI 가 지금 고치는 필드 — 키별 마지막 편집 시각. 잠깐 빛나고 꺼진다.
+  const [editing, setEditing] = useState<Record<string, number>>({});
+  const [aiBusy, setAiBusy] = useState(false);
+  const hl = (key: string) => (editing[key] ? "ai-editing" : "");
+  const mark = (...keys: string[]) => {
+    const now = Date.now();
+    setEditing((m) => ({ ...m, ...Object.fromEntries(keys.map((k) => [k, now])) }));
+  };
+  useEffect(() => {
+    if (Object.keys(editing).length === 0) return;
+    const t = setInterval(() => {
+      const cutoff = Date.now() - 2200;
+      setEditing((m) => {
+        const next = Object.fromEntries(Object.entries(m).filter(([, ts]) => ts > cutoff));
+        return Object.keys(next).length === Object.keys(m).length ? m : next;
+      });
+    }, 400);
+    return () => clearInterval(t);
+  }, [editing]);
 
   useEffect(() => {
     if (!rubric) api.get<Rubric>("/scenarios/rubric-default").then(setRubric);
@@ -83,9 +102,67 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
     setTitle(d.title); setSummary(d.summary); setDifficulty(d.difficulty); setBriefing(d.briefing_md);
     setCharacters(d.characters); setOpening(d.opening_messages); setFiles(d.initial_files);
     setActiveFile(d.initial_files[0]?.path ?? null); setObjectives(d.objectives_md); setChecks(d.checks);
-    setRubric(d.rubric); setAgentEnabled(d.agent_enabled); setTab("basic");
+    setRubric(d.rubric); setAgentEnabled(d.agent_enabled);
   };
   const hasContent = Boolean(title.trim() || characters.length || files.length || objectives.trim());
+
+  /** AI 편집 명령 하나를 즉시 반영한다 — 어느 탭의 무엇이 바뀌는지 보이게 */
+  const applyOp = (op: AuthorOp) => {
+    switch (op.op) {
+      case "set": {
+        const v = op.value;
+        if (op.field === "title") setTitle(String(v));
+        else if (op.field === "summary") setSummary(String(v));
+        else if (op.field === "difficulty") setDifficulty(String(v));
+        else if (op.field === "briefing_md") setBriefing(String(v));
+        else if (op.field === "objectives_md") setObjectives(String(v));
+        else if (op.field === "agent_enabled") setAgentEnabled(Boolean(v));
+        mark(op.field);
+        setTab(op.field === "objectives_md" ? "grading" : "basic");
+        return;
+      }
+      case "upsert_character":
+        setCharacters((arr) =>
+          arr.some((c) => c.key === op.value.key) ? arr.map((c) => (c.key === op.value.key ? op.value : c)) : [...arr, op.value],
+        );
+        mark(`character:${op.value.key}`);
+        setTab("characters");
+        return;
+      case "remove_character":
+        setCharacters((arr) => arr.filter((c) => c.key !== op.key));
+        setOpening((arr) => arr.filter((m) => m.character_key !== op.key));
+        setTab("characters");
+        return;
+      case "set_opening":
+        setOpening(op.value);
+        mark("opening");
+        setTab("opening");
+        return;
+      case "upsert_file":
+        setFiles((arr) =>
+          arr.some((f) => f.path === op.value.path) ? arr.map((f) => (f.path === op.value.path ? op.value : f)) : [...arr, op.value],
+        );
+        setActiveFile(op.value.path);
+        mark(`file:${op.value.path}`, "files");
+        setTab("files");
+        return;
+      case "remove_file":
+        setFiles((arr) => arr.filter((f) => f.path !== op.path));
+        setActiveFile((cur) => (cur === op.path ? null : cur));
+        setTab("files");
+        return;
+      case "set_checks":
+        setChecks(op.value);
+        mark("checks");
+        setTab("grading");
+        return;
+      case "set_rubric":
+        setRubric(op.value);
+        mark("rubric");
+        setTab("grading");
+        return;
+    }
+  };
 
   const save = async () => {
     if (!title.trim()) return toast("제목을 입력하세요", "info");
@@ -126,10 +203,18 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
   };
 
   return (
-    <div>
+    <div className="flex items-start gap-5">
+    <div className="min-w-0 flex-1">
       <div className="mb-4 flex items-center justify-between">
         <div className="min-w-0">
-          <h1 className="truncate text-xl font-bold">{scenarioId ? "시나리오 편집" : "새 시나리오"}</h1>
+          <h1 className="flex items-center gap-2 truncate text-xl font-bold">
+            {scenarioId ? "시나리오 편집" : "새 시나리오"}
+            {aiBusy && (
+              <span className="flex items-center gap-1.5 rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+                <span className="h-1.5 w-1.5 animate-ping rounded-full bg-violet-500" /> AI 편집 중
+              </span>
+            )}
+          </h1>
           <p className="mt-0.5 text-xs text-slate-400">
             문제는 지문이 아니라 <b>상황</b>입니다 — 인물별로 정보를 분산 배치해, 좋은 질문이 좋은 정보를 얻게 설계하세요.
           </p>
@@ -143,13 +228,13 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
           <Button variant="secondary" onClick={() => router.push("/admin/scenarios")}>
             취소
           </Button>
-          <Button onClick={save} disabled={busy}>
-            {busy ? "저장 중..." : "저장"}
-          </Button>
+          <span title={aiBusy ? "AI 편집이 끝나면 저장할 수 있습니다" : undefined}>
+            <Button onClick={save} disabled={busy || aiBusy}>
+              {busy ? "저장 중..." : "저장"}
+            </Button>
+          </span>
         </div>
       </div>
-
-      <ScenarioAuthorPanel hasContent={hasContent} getDraft={getDraft} apply={applyDraft} />
 
       {/* 탭 */}
       <div className="mb-5 flex gap-1 border-b border-slate-200">
@@ -181,11 +266,11 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="md:col-span-2">
               <Field label="시나리오 제목 (관리용 — 응시자에게 노출되지 않음)">
-                <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 주간 매출 리포트 이상" />
+                <input className={`${inputCls} ${hl("title")}`} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 주간 매출 리포트 이상" />
               </Field>
             </div>
             <Field label="난이도">
-              <select className={inputCls} value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
+              <select className={`${inputCls} ${hl("difficulty")}`} value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
                 <option value="easy">쉬움</option>
                 <option value="medium">보통</option>
                 <option value="hard">어려움</option>
@@ -193,7 +278,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
             </Field>
           </div>
           <Field label="한 줄 요약 (관리용)">
-            <input className={inputCls} value={summary} onChange={(e) => setSummary(e.target.value)} />
+            <input className={`${inputCls} ${hl("summary")}`} value={summary} onChange={(e) => setSummary(e.target.value)} />
           </Field>
           {/* 시작 화면(브리핑) — 짧게도, 아주 길게도 쓸 수 있다 */}
           <div>
@@ -225,7 +310,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
               </div>
             ) : (
               <textarea
-                className={`${inputCls} min-h-[13rem] font-mono text-xs`}
+                className={`${inputCls} min-h-[13rem] font-mono text-xs ${hl("briefing_md")}`}
                 value={briefing}
                 onChange={(e) => setBriefing(e.target.value)}
                 placeholder={"예)\n\n**화요일 오후 4시 20분.**\n\n당신은 ML 플랫폼팀의 엔지니어입니다. 팀은 추론 서비스를 쿠버네티스로 옮기는 중이고, 오늘은 스테이징에 처음 배포하는 날이었습니다.\n\n배포는 성공했다고 나왔습니다. 그런데 아무것도 응답하지 않습니다.\n\n온콜 SRE가 메신저로 당신을 찾았습니다."}
@@ -249,7 +334,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
       {tab === "characters" && (
         <div className="space-y-4">
           {characters.map((c, i) => (
-            <Card key={i} className="space-y-3 p-5">
+            <Card key={c.key || i} className={`space-y-3 p-5 ${hl(`character:${c.key}`)}`}>
               <div className="flex items-center gap-3">
                 <input
                   type="color"
@@ -320,7 +405,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
 
       {/* ── 오프닝 메시지 ── */}
       {tab === "opening" && (
-        <div className="space-y-4">
+        <div className={`space-y-4 rounded-2xl ${hl("opening")}`}>
           <p className="text-sm text-slate-500">
             응시 시작 시 메신저에 도착해 있는 메시지입니다 — 응시자의 <b>유일한 출발점</b>이므로, 상황의 실마리(증상·마감·누구에게 물을지)를 담되 요구사항 전체를 쓰지 마세요.
           </p>
@@ -390,7 +475,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
                   key={f.path}
                   className={`group flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 font-mono text-xs ${
                     activeFile === f.path ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-                  }`}
+                  } ${hl(`file:${f.path}`)}`}
                   onClick={() => setActiveFile(f.path)}
                 >
                   <span className="min-w-0 flex-1 truncate">{f.path}</span>
@@ -437,14 +522,14 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
               이 시나리오의 <b>정답 정의</b>입니다. 응시자에게 절대 노출되지 않으며, NPC의 배경 지식과 자동평가의 채점 기준으로만 쓰입니다. 정확한 명세·정답 수치·정보의 인물별 분포를 기록하세요.
             </p>
             <textarea
-              className={`${inputCls} min-h-64 font-mono text-xs`}
+              className={`${inputCls} min-h-64 font-mono text-xs ${hl("objectives_md")}`}
               value={objectives}
               onChange={(e) => setObjectives(e.target.value)}
               placeholder={"## 실제 요구사항\n1. ...\n\n### 정답 수치\n..."}
             />
           </Card>
 
-          <Card className="space-y-3 p-6">
+          <Card className={`space-y-3 p-6 ${hl("checks")}`}>
             <h2 className="font-bold">자동 체크 (결과물 검증)</h2>
             {checks.map((c, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 p-3">
@@ -523,7 +608,7 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
             </Button>
           </Card>
 
-          <Card className="space-y-4 p-6">
+          <Card className={`space-y-4 p-6 ${hl("rubric")}`}>
             <div className="flex items-center gap-4">
               <h2 className="font-bold">루브릭 (LLM 평가 기준)</h2>
               <label className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -597,6 +682,18 @@ export function ScenarioStudio({ initial, scenarioId }: { initial?: Scenario; sc
           </Card>
         </div>
       )}
+    </div>
+
+    {/* 우측: 설계 대화 — 화면에 붙어 따라온다 */}
+    <aside className="sticky top-[72px] h-[calc(100vh-96px)] w-[400px] shrink-0">
+      <ScenarioAuthorChat
+        hasContent={hasContent}
+        getDraft={getDraft}
+        applyOp={applyOp}
+        applyScenario={applyDraft}
+        onStreaming={setAiBusy}
+      />
+    </aside>
     </div>
   );
 }

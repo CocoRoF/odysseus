@@ -13,6 +13,37 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 REPLY = "정상 — 모의 LLM 응답입니다."
 
 
+def canned_chat_turn(request_text: str) -> str:
+    """대화형 설계 한 턴 — 산문 사이에 편집 명령을 섞고, 일부러 예쁘게 여러 줄로 찍고,
+    문자열 안에 중괄호도 넣어 추출기가 견디는지 본다. 두 번째 턴(따라가기)은 인물 추가만."""
+    if "QA" in request_text.split("[현재 시나리오 상태]")[0][-400:]:
+        return (
+            "QA 인물을 추가하고 재현 사례를 그쪽으로 옮기겠습니다.\n"
+            '{"op":"upsert_character","value":{"key":"qa_lee","name":"이지은","role":"QA 엔지니어","persona":"근거 중심. 무례에는 정색.","knowledge":"8/26 총액이 350,000원 크다 — 환불 2건 합과 일치."}}\n'
+            '{"op":"set","field":"summary","value":"QA 재현 사례 추가"}\n'
+            "완료입니다. 재현 사례가 이지은에게 있으니 리포트 담당자가 QA 에게 물어보도록 유도됩니다.\n"
+        )
+    return (
+        "커머스 매출 리포트 시나리오를 설계합니다. 함정은 환불·취소 상태와 기간 밖 데이터입니다.\n"
+        '{"op":"set","field":"title","value":"주간 매출 리포트 이상 (AI)"}\n'
+        '{"op": "set", "field": "difficulty", "value": "hard"}\n'
+        "{\n"
+        '  "op": "set",\n'
+        '  "field": "briefing_md",\n'
+        '  "value": "**월요일 오전 9시 12분.**\\n\\n당신은 합류 3주차다.\\n\\n메신저에 새 메시지가 와 있다."\n'
+        "}\n"
+        '{"op":"upsert_character","value":{"key":"PM Sujin","name":"김수진","role":"프로덕트 매니저","persona":"바쁘다. 반말에는 사무적으로.","knowledge":"오늘 오후까지 output/weekly_report.csv. 규칙은 박민호."}}\n'
+        '{"op":"upsert_character","value":{"key":"data_minho","name":"박민호","role":"데이터 엔지니어","persona":"정확하다.","knowledge":"paid 만 집계. 기간 2026-08-24~30. 형식은 {date,total_amount,order_count}."}}\n'
+        '{"op":"set_opening","value":[{"character_key":"pm_sujin","content":"안녕하세요! 리포트 숫자가 이상하대요 🙏"},{"character_key":"nobody","content":"버림?"}]}\n'
+        '{"op":"upsert_file","value":{"path":"/data/orders.csv","content":"order_id,date,amount,status\\n1,2026-08-24,100000,paid\\n2,2026-08-24,65000,paid\\n3,2026-08-26,50000,refunded\\n"}}\n'
+        '{"op":"upsert_file","value":{"path":"report.py","content":"print(\'todo {x}\')\\n"}}\n'
+        '{"op":"set","field":"objectives_md","value":"paid 만 집계. 8/24 = 165000, 2건."}\n'
+        '{"op":"set_checks","value":[{"label":"파일","type":"file_exists","path":"output/weekly_report.csv","points":10},{"label":"8/24","type":"file_contains","path":"output/weekly_report.csv","pattern":"^2026-08-24,165000,2$","points":20},{"label":"깨짐","type":"file_contains","path":"output/weekly_report.csv","pattern":"^(","points":5}]}\n'
+        '{"op":"remove_file","path":"없는파일.txt"}\n'
+        "설계를 마쳤습니다. 데이터 행 수와 8/24 합계를 확인해 주세요.\n"
+    )
+
+
 def canned_scenario(refining: bool) -> str:
     """작성 에이전트용 고정 시나리오 — 일부러 지저분하게(중복 키·깨진 정규식·잘못된 발신자)
     만들어 정규화가 실제로 일하는지 보게 한다. 앞뒤 잡담과 코드 펜스도 붙인다."""
@@ -61,6 +92,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _stream_text(self, model, text):
+        """OpenAI 스트리밍 형식으로 text 를 작은 조각으로 흘려보낸다 (줄·객체 경계를 일부러 가른다)."""
+        now = time.time()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        step = 17
+        for i in range(0, len(text), step):
+            piece = text[i : i + step]
+            chunk = {"id": "c", "object": "chat.completion.chunk", "created": now, "model": model,
+                     "choices": [{"index": 0, "delta": {"content": piece}, "finish_reason": None}]}
+            self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode())
+            self.wfile.flush()
+        self.wfile.write(f"data: {json.dumps({'id': 'c', 'object': 'chat.completion.chunk', 'created': now, 'model': model, 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n".encode())
+        self.wfile.write(b"data: [DONE]\n\n")
+
     def do_GET(self):
         if self.path.rstrip("/").endswith("/models"):
             self._json({"object": "list", "data": [{"id": "mock-model", "object": "model", "created": 0, "owned_by": "mock"}]})
@@ -76,6 +123,8 @@ class Handler(BaseHTTPRequestHandler):
         model = req.get("model", "mock-model")
         # 시나리오 작성 에이전트 — 시스템 프롬프트의 표식으로 구분한다
         all_text = json.dumps(req, ensure_ascii=False)  # system 이 어떤 필드로 오든 잡는다
+        if "odysseus-scenario-author/2" in all_text:
+            return self._stream_text(model, canned_chat_turn(all_text))
         if "odysseus-scenario-author" in all_text:
             last_user = [m for m in req.get("messages", []) if m.get("role") == "user"][-1]
             refining = "[draft]" in str(last_user.get("content", ""))

@@ -593,3 +593,14 @@ export interface AuthorResult {
   warnings: string[];
   provider: string;
 }
+
+/** 대화형 설계 — 서버가 검증해 흘려보내는 편집 명령 */
+export type AuthorOp =
+  | { op: "set"; field: "title" | "summary" | "difficulty" | "briefing_md" | "objectives_md" | "agent_enabled"; value: string | boolean }
+  | { op: "upsert_character"; value: Character }
+  | { op: "remove_character"; key: string }
+  | { op: "set_opening"; value: OpeningMessage[] }
+  | { op: "upsert_file"; value: InitialFile }
+  | { op: "remove_file"; path: string }
+  | { op: "set_checks"; value: Check[] }
+  | { op: "set_rubric"; value: Rubric | null };

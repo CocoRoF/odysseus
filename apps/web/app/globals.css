@@ -152,3 +152,21 @@ body {
   max-height: 28px;
   vertical-align: middle;
 }
+
+/* AI 가 지금 고치고 있는 필드 — 보라색 숨결 */
+.ai-editing {
+  animation: ai-editing-pulse 1.1s ease-in-out infinite;
+  border-color: rgb(167 139 250) !important;
+  border-radius: 0.75rem;
+}
+@keyframes ai-editing-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.28), 0 0 10px rgba(139, 92, 246, 0.18); }
+  50% { box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.6), 0 0 26px rgba(139, 92, 246, 0.42); }
+}
+.ai-caret { animation: ai-caret-blink 0.9s steps(1) infinite; }
+@keyframes ai-caret-blink { 50% { opacity: 0; } }
+.ai-chip-live { animation: ai-chip-pop 0.35s ease-out; }
+@keyframes ai-chip-pop { from { transform: scale(0.85); opacity: 0.4; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-editing, .ai-caret, .ai-chip-live { animation: none; }
+}

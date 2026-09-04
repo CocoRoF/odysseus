@@ -3,6 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,14 @@ from ..deps import require_admin, require_staff
 from ..models import AssessmentScenario, Scenario, User
 from ..schemas import ScenarioIn, ScenarioOut, ScenarioSummary
 from pydantic import BaseModel, Field
+
+
+class AuthorChatIn(BaseModel):
+    """대화형 편집 — 이전 턴 전체와 현재 초안을 보낸다."""
+
+    messages: list[dict] = Field(min_length=1, max_length=60)
+    draft: ScenarioIn | None = None
+    provider_id: uuid.UUID | None = None
 
 
 class AuthorIn(BaseModel):
@@ -105,6 +114,29 @@ async def author_with_ai(
     except Exception as e:  # noqa: BLE001 — 공급자 오류를 그대로 보여 준다
         raise HTTPException(502, f"AI 호출 실패: {str(e)[:300]}")
     return {"scenario": scenario, "notes": notes, "warnings": warnings, "provider": res.name}
+
+
+@router.post("/author/stream")
+async def author_chat(body: AuthorChatIn, db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
+    """여러 턴에 걸쳐 시나리오를 설계·고도화한다. 편집 명령을 검증해 실시간으로 흘려보낸다."""
+    import json as _json
+
+    from ..ai import provider as ai_provider
+    from ..ai.scenario_author import author_chat_stream
+
+    res = await ai_provider.resolve_ai(db, "chat", override_provider_id=body.provider_id)
+    if not res:
+        raise HTTPException(503, "LLM 공급자가 설정되어 있지 않습니다 — [설정]에서 먼저 등록하세요")
+    draft = body.draft.model_dump() if body.draft else None
+
+    async def gen():
+        try:
+            async for event in author_chat_stream(res, history=body.messages, draft=draft):
+                yield f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
+        except ValueError as e:
+            yield f"data: {_json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.get("/rubric-default")

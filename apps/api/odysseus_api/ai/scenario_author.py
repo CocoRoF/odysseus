@@ -347,3 +347,319 @@ async def author_scenario(
     scenario, warnings = normalize_scenario(raw)
     notes = str(raw.get("design_notes") or "").strip()[:6000]
     return scenario, notes, warnings
+
+
+# ═══════════════════════════════════════════════════════════════
+# 대화형 편집 — 여러 턴에 걸쳐 시나리오를 고도화한다
+#
+# 모델은 **대화 문장(일반 줄)** 과 **편집 명령(JSON 객체)** 을 섞어 스트리밍한다.
+# 서버는 흘러오는 텍스트에서 JSON 객체를 하나씩 잘라내 검증하고, 검증된 명령만
+# 클라이언트로 넘긴다. 클라이언트는 명령을 받는 즉시 그 필드에 반영하고 편집
+# 애니메이션을 띄운다. 그래서 "설계 중"이 눈에 보인다.
+# ═══════════════════════════════════════════════════════════════
+
+CHAT_MARKER = "odysseus-scenario-author/2"
+SCALAR_FIELDS = {"title", "summary", "difficulty", "briefing_md", "objectives_md", "agent_enabled"}
+
+CHAT_SYSTEM = SYSTEM.replace(AUTHOR_MARKER, CHAT_MARKER).split("## Output")[0] + f"""## How you work (conversation)
+You are in a **multi-turn conversation** with the scenario author. They may
+give a one-line brief, ask you to design everything, or ask for a specific
+change ("QA 인물을 하나 더", "데이터를 40행으로", "함정을 더 어렵게"). The current
+scenario state is attached to their latest message as JSON — always work from
+that state, not from memory.
+
+Reply in Korean. Be brief in prose: say in 1–3 lines what you are about to do
+(and what you assumed if the brief was thin), then **do it** with edit
+commands, then close with one line on what to check. Ask a clarifying
+question only when the request is genuinely undecidable; otherwise decide,
+state the assumption, and proceed.
+
+## Edit commands
+Write each command as **one JSON object on its own line**, between prose
+lines. Commands apply immediately, in order, so emit them in a sensible order
+(title → briefing → characters → opening → files → objectives → checks).
+Only emit commands for what changes; leave the rest alone.
+
+{{"op":"set","field":"title","value":"…"}}                      fields: title, summary,
+{{"op":"set","field":"difficulty","value":"easy|medium|hard"}}   difficulty, briefing_md,
+{{"op":"set","field":"briefing_md","value":"…"}}                 objectives_md, agent_enabled
+{{"op":"upsert_character","value":{{"key":"pm_sujin","name":"…","role":"…","persona":"…","knowledge":"…"}}}}
+{{"op":"remove_character","key":"pm_sujin"}}
+{{"op":"set_opening","value":[{{"character_key":"pm_sujin","content":"…"}}]}}
+{{"op":"upsert_file","value":{{"path":"data/orders.csv","content":"…"}}}}
+{{"op":"remove_file","path":"data/old.csv"}}
+{{"op":"set_checks","value":[{{"label":"…","type":"file_exists","path":"…","points":10}}, …]}}
+{{"op":"set_rubric","value":null}}
+
+Rules for commands: JSON strings must escape newlines as \\n. A file's whole
+content goes in one upsert_file. Recompute and re-emit set_checks whenever
+data or expected outputs change. Never put prose inside a command, never put
+a command inside prose."""
+
+
+def _label_for(op: dict) -> str:
+    kind = op.get("op")
+    if kind == "set":
+        return {
+            "title": "제목", "summary": "한 줄 요약", "difficulty": "난이도",
+            "briefing_md": "시작 화면 안내", "objectives_md": "숨은 요구사항", "agent_enabled": "에이전트 사용",
+        }.get(op.get("field", ""), op.get("field", ""))
+    if kind == "upsert_character":
+        return f"인물 · {op['value'].get('name', '')}"
+    if kind == "remove_character":
+        return f"인물 삭제 · {op.get('key', '')}"
+    if kind == "set_opening":
+        return "오프닝 메시지"
+    if kind == "upsert_file":
+        return f"파일 · {op['value'].get('path', '')}"
+    if kind == "remove_file":
+        return f"파일 삭제 · {op.get('path', '')}"
+    if kind == "set_checks":
+        return f"자동 체크 {len(op.get('value') or [])}개"
+    if kind == "set_rubric":
+        return "루브릭"
+    return str(kind)
+
+
+def validate_op(op: dict, draft: dict) -> tuple[dict | None, list[str]]:
+    """명령 하나를 검증·정규화하고 draft 에 적용한다. (정규화된 명령 | None, 경고)"""
+    warnings: list[str] = []
+    kind = str(op.get("op") or "")
+
+    if kind == "set":
+        field = str(op.get("field") or "")
+        value = op.get("value")
+        if field not in SCALAR_FIELDS:
+            return None, [f"알 수 없는 필드 '{field}'"]
+        if field == "difficulty":
+            value = str(value or "").strip().lower()
+            if value not in DIFFICULTIES:
+                warnings.append(f"난이도 '{value}' 를 medium 으로")
+                value = "medium"
+        elif field == "agent_enabled":
+            value = bool(value)
+        else:
+            limit = {"title": 200, "summary": 2000, "briefing_md": 40000, "objectives_md": 32000}[field]
+            value = str(value or "").strip()[:limit]
+            if field == "title" and not value:
+                return None, ["빈 제목은 무시"]
+        draft[field] = value
+        return {"op": "set", "field": field, "value": value}, warnings
+
+    if kind == "upsert_character":
+        c = op.get("value") or {}
+        if not isinstance(c, dict) or not str(c.get("name") or "").strip():
+            return None, ["이름 없는 인물은 무시"]
+        key = _slug(c.get("key") or c.get("name"), f"person_{len(draft['characters']) + 1}")
+        existing = next((x for x in draft["characters"] if x["key"] == key), None)
+        idx = draft["characters"].index(existing) if existing else len(draft["characters"])
+        if not existing and len(draft["characters"]) >= 8:
+            return None, ["인물은 8명까지"]
+        entry = {
+            "key": key,
+            "name": str(c.get("name")).strip()[:60],
+            "role": str(c.get("role") or (existing or {}).get("role") or "").strip()[:80],
+            "color": str(c.get("color") or (existing or {}).get("color") or COLORS[idx % len(COLORS)]),
+            "persona": str(c.get("persona") or (existing or {}).get("persona") or "").strip()[:4000],
+            "knowledge": str(c.get("knowledge") or (existing or {}).get("knowledge") or "").strip()[:8000],
+        }
+        if existing:
+            draft["characters"][idx] = entry
+        else:
+            draft["characters"].append(entry)
+        return {"op": "upsert_character", "value": entry}, warnings
+
+    if kind == "remove_character":
+        key = _slug(op.get("key") or "", "")
+        before = len(draft["characters"])
+        draft["characters"] = [c for c in draft["characters"] if c["key"] != key]
+        if len(draft["characters"]) == before:
+            return None, [f"없는 인물 '{key}' 삭제 무시"]
+        draft["opening_messages"] = [m for m in draft["opening_messages"] if m["character_key"] != key]
+        return {"op": "remove_character", "key": key}, warnings
+
+    if kind == "set_opening":
+        keys = {c["key"] for c in draft["characters"]}
+        out = []
+        for m in op.get("value") or []:
+            if not isinstance(m, dict):
+                continue
+            content = str(m.get("content") or "").strip()[:4000]
+            if not content:
+                continue
+            ck = _slug(m.get("character_key") or "", "")
+            if ck not in keys:
+                if not draft["characters"]:
+                    warnings.append("인물이 없어 오프닝을 둘 수 없음")
+                    continue
+                warnings.append(f"오프닝 발신자 '{ck}' 를 {draft['characters'][0]['name']} 으로")
+                ck = draft["characters"][0]["key"]
+            out.append({"character_key": ck, "content": content})
+        draft["opening_messages"] = out[:10]
+        return {"op": "set_opening", "value": draft["opening_messages"]}, warnings
+
+    if kind == "upsert_file":
+        f = op.get("value") or {}
+        path = _path(f.get("path") if isinstance(f, dict) else None)
+        if not path:
+            return None, ["경로 없는 파일은 무시"]
+        entry = {"path": path, "content": str(f.get("content") or "")[:400_000]}
+        for i, x in enumerate(draft["initial_files"]):
+            if x["path"] == path:
+                draft["initial_files"][i] = entry
+                break
+        else:
+            if len(draft["initial_files"]) >= 60:
+                return None, ["초기 파일은 60개까지"]
+            draft["initial_files"].append(entry)
+        return {"op": "upsert_file", "value": entry}, warnings
+
+    if kind == "remove_file":
+        path = _path(op.get("path"))
+        before = len(draft["initial_files"])
+        draft["initial_files"] = [x for x in draft["initial_files"] if x["path"] != path]
+        if len(draft["initial_files"]) == before:
+            return None, [f"없는 파일 '{path}' 삭제 무시"]
+        return {"op": "remove_file", "path": path}, warnings
+
+    if kind == "set_checks":
+        normalized, w = normalize_scenario({"title": "x", "checks": op.get("value") or []})
+        warnings += [x for x in w if "체크" in x]
+        draft["checks"] = normalized["checks"]
+        return {"op": "set_checks", "value": draft["checks"]}, warnings
+
+    if kind == "set_rubric":
+        normalized, _w = normalize_scenario({"title": "x", "rubric": op.get("value")})
+        draft["rubric"] = normalized["rubric"]
+        return {"op": "set_rubric", "value": draft["rubric"]}, warnings
+
+    return None, [f"알 수 없는 명령 '{kind}'"]
+
+
+class OpStream:
+    """흘러오는 텍스트에서 JSON 객체를 하나씩 잘라낸다. 나머지는 대화 텍스트다.
+
+    모델이 객체를 여러 줄로 예쁘게 찍어도, 문자열 안에 중괄호가 있어도 견딘다 —
+    문자열/이스케이프 상태를 추적하며 중괄호 깊이가 0 으로 돌아오는 지점을 찾는다.
+    """
+
+    MAX_OBJ = 600_000
+
+    def __init__(self) -> None:
+        self.buf = ""
+        self.in_obj = False
+        self.depth = 0
+        self.in_str = False
+        self.esc = False
+        self.start = 0
+
+    def feed(self, chunk: str):
+        self.buf += chunk
+        i = 0 if not self.in_obj else len(self.buf) - len(chunk)
+        while i < len(self.buf):
+            ch = self.buf[i]
+            if not self.in_obj:
+                j = self.buf.find("{", i)
+                if j < 0:
+                    text, self.buf = self.buf[i:], ""
+                    if text:
+                        yield ("text", text)
+                    return
+                if j > i:
+                    yield ("text", self.buf[i:j])
+                self.buf = self.buf[j:]
+                i = 0
+                self.in_obj, self.depth, self.in_str, self.esc, self.start = True, 0, False, False, 0
+                continue
+            if self.in_str:
+                if self.esc:
+                    self.esc = False
+                elif ch == "\\":
+                    self.esc = True
+                elif ch == '"':
+                    self.in_str = False
+            elif ch == '"':
+                self.in_str = True
+            elif ch == "{":
+                self.depth += 1
+            elif ch == "}":
+                self.depth -= 1
+                if self.depth == 0:
+                    segment = self.buf[: i + 1]
+                    self.buf = self.buf[i + 1 :]
+                    self.in_obj = False
+                    i = 0
+                    try:
+                        obj = json.loads(segment)
+                        if isinstance(obj, dict):
+                            yield ("obj", obj)
+                        else:
+                            yield ("text", segment)
+                    except json.JSONDecodeError:
+                        yield ("text", segment)
+                    continue
+            i += 1
+            if self.in_obj and len(self.buf) > self.MAX_OBJ:
+                text, self.buf, self.in_obj = self.buf, "", False
+                yield ("text", text)
+                return
+
+    def flush(self):
+        if self.buf:
+            text, self.buf, self.in_obj = self.buf, "", False
+            yield ("text", text)
+
+
+def empty_draft() -> dict:
+    return {
+        "title": "", "summary": "", "difficulty": "medium", "briefing_md": "",
+        "characters": [], "opening_messages": [], "initial_files": [],
+        "objectives_md": "", "checks": [], "rubric": default_rubric(), "agent_enabled": True,
+    }
+
+
+async def author_chat_stream(res: provider.ResolvedAi, *, history: list[dict], draft: dict):
+    """SSE 이벤트를 낸다: delta(대화) · edit(검증된 명령) · warning · done(최종 초안)."""
+    draft = {**empty_draft(), **{k: v for k, v in (draft or {}).items() if k in empty_draft()}}
+    # 리스트는 복사해 둔다 — 명령이 제자리에서 고친다
+    for k in ("characters", "opening_messages", "initial_files", "checks"):
+        draft[k] = [dict(x) for x in (draft.get(k) or []) if isinstance(x, dict)]
+
+    messages = [{"role": m["role"], "content": str(m.get("content") or "")} for m in history if m.get("role") in ("user", "assistant")]
+    if not messages or messages[-1]["role"] != "user":
+        raise ValueError("마지막 메시지는 사용자 메시지여야 합니다")
+    messages[-1] = {
+        "role": "user",
+        "content": messages[-1]["content"] + "\n\n[현재 시나리오 상태]\n" + json.dumps(draft, ensure_ascii=False),
+    }
+
+    warnings: list[str] = []
+    stream = OpStream()
+    raw_parts: list[str] = []
+    try:
+        async for delta in provider.stream_text(res, messages, system=CHAT_SYSTEM):
+            raw_parts.append(delta)
+            for kind, payload in stream.feed(delta):
+                if kind == "text":
+                    if payload.strip():
+                        yield {"delta": payload}
+                else:
+                    normalized, w = validate_op(payload, draft)
+                    warnings += w
+                    for x in w:
+                        yield {"warning": x}
+                    if normalized:
+                        yield {"edit": normalized, "label": _label_for(normalized)}
+        for kind, payload in stream.flush():
+            if kind == "text" and payload.strip():
+                yield {"delta": payload}
+    except Exception as e:  # noqa: BLE001
+        yield {"error": f"AI 호출 실패: {str(e)[:300]}"}
+        return
+
+    try:
+        final, w2 = normalize_scenario(draft)
+    except Exception as e:  # noqa: BLE001
+        yield {"error": f"초안 검증 실패: {str(e)[:300]}"}
+        return
+    yield {"done": True, "scenario": final, "warnings": warnings + w2, "raw": "".join(raw_parts)}

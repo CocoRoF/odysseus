@@ -90,3 +90,64 @@ export async function streamAgentChat(
   }
   handlers.onDone();
 }
+
+
+/** 시나리오 대화형 설계 SSE — 대화 텍스트(delta)와 검증된 편집 명령(edit)이 섞여 온다 */
+export async function streamScenarioAuthor(
+  body: { messages: { role: "user" | "assistant"; content: string }[]; draft: unknown; provider_id?: string },
+  handlers: {
+    onDelta: (text: string) => void;
+    onEdit: (op: import("./types").AuthorOp, label: string) => void;
+    onWarning: (text: string) => void;
+    onDone: (scenario: import("./types").ScenarioDraft, warnings: string[], raw: string) => void;
+    onError: (message: string) => void;
+  },
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`/api/scenarios/author/stream`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const data = await res.json();
+      if (typeof data.detail === "string") detail = data.detail;
+    } catch {
+      /* ignore */
+    }
+    handlers.onError(detail);
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try {
+        const data = JSON.parse(line.slice(5).trim());
+        if (data.delta) handlers.onDelta(data.delta);
+        if (data.edit) handlers.onEdit(data.edit, data.label ?? "");
+        if (data.warning) handlers.onWarning(data.warning);
+        if (data.error) handlers.onError(data.error);
+        if (data.done) {
+          finished = true;
+          handlers.onDone(data.scenario, data.warnings ?? [], data.raw ?? "");
+        }
+      } catch {
+        /* 부분 청크 무시 */
+      }
+    }
+  }
+  if (!finished) handlers.onError("응답이 끝나기 전에 연결이 끊겼습니다");
+}
