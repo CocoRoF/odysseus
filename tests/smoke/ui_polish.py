@@ -120,7 +120,17 @@ async def main():
         await scan(cand, "dashboard")
         await cand.locator('button:has-text("응시")').first.click()
         await cand.wait_for_url("**/exam/**", timeout=20000)
-        await cand.wait_for_selector("text=업무 시작하기", timeout=20000)
+        # 브리핑은 설정에 따라 카드("업무 시작하기") 또는 시네마틱("건너뛰기" → "임무 시작" → 부팅)
+        await cand.wait_for_selector("text=업무 시작하기, text=건너뛰기", timeout=20000)
+        if await cand.locator("text=건너뛰기").count():
+            await cand.click("text=건너뛰기")
+            await cand.wait_for_selector(".intro-stage >> text=임무 시작", timeout=8000)
+            await cand.click(".intro-stage >> text=임무 시작")
+            await cand.wait_for_selector("[data-boot]", timeout=5000)
+            await cand.keyboard.press("Escape")
+            await cand.wait_for_selector("[data-boot]", state="detached", timeout=8000)
+        else:
+            await cand.click("text=업무 시작하기")
         await scan(cand, "exam/briefing", allow_md=True)  # 브리핑은 prose 렌더
         await cand.click("text=업무 시작하기")
         await cand.wait_for_selector("text=의 컴퓨터", timeout=15000)
