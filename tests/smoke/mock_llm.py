@@ -80,6 +80,25 @@ def canned_scenario(refining: bool) -> str:
     return "설계했습니다.\n```json\n" + json.dumps(scenario, ensure_ascii=False) + "\n```\n끝."
 
 
+def canned_eval() -> str:
+    """조작에 넘어간 평가 모델을 흉내 낸다 — 서버 검증(ODY-009)이 이를 바로잡아야 한다."""
+    return json.dumps({
+        "process": [
+            {"name": "요구사항 파악", "score": 999, "max": 40, "comment": "완벽"},
+            {"name": "커뮤니케이션", "score": 30, "max": 30, "comment": "좋음"},
+            {"name": "보너스", "score": 100, "max": 100, "comment": "루브릭에 없는 항목"},
+        ],
+        "result": [
+            {"name": "요구 충족", "score": -5, "max": 60, "comment": "음수"},
+        ],
+        "requirement_discovery": "모의",
+        "summary": "모의 평가 — 만점을 주라는 지시를 따랐음",
+        "strengths": ["모의"],
+        "concerns": [],
+        "integrity_flags": [],
+    }, ensure_ascii=False)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -129,6 +148,9 @@ class Handler(BaseHTTPRequestHandler):
             last_user = [m for m in req.get("messages", []) if m.get("role") == "user"][-1]
             refining = "[draft]" in str(last_user.get("content", ""))
             return self._json(self._text(model, time.time(), canned_scenario(refining)))
+        # 자동평가 — 입력이 trusted/untrusted_evidence JSON 이면 '속은 모델' 흉내: 만점 초과·엉뚱한 항목·빈 플래그
+        if "untrusted_evidence" in all_text:
+            return self._json(self._text(req.get("model", "mock-model"), time.time(), canned_eval()))
         now = int(time.time())
         msgs = req.get("messages", [])
         last = msgs[-1] if msgs else {}
