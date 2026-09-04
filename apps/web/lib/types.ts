@@ -508,6 +508,17 @@ export interface MyResources {
   cpu_capacity_percent: number;
   memory_bytes: number;
   memory_limit_bytes: number | null;
+  /** 가장 최근에 끝난 실행 — 짧은 실행도 여기엔 남는다 */
+  last_run: {
+    command: string;
+    duration_s: number;
+    cpu_seconds: number;
+    peak_cpu: number;
+    peak_mem: number;
+    source: string | null;
+    ended_at: number;
+  } | null;
+  stats: { runs: number; cpu_seconds: number };
   commands: { command: string; elapsed_s: number; source: string | null }[];
 }
 

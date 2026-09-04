@@ -12,6 +12,7 @@ Redis 큐(odysseus:run:queue)에서 워크스페이스 실행 잡을 꺼내:
 import hashlib
 import json
 import os
+import resource as _resource
 import shutil
 import signal
 import threading
@@ -133,6 +134,8 @@ def run_job(job: dict, execution_id: str = "") -> dict:
     timeout_s = min(int(job.get("timeout_s", DEFAULT_TIMEOUT_S) or DEFAULT_TIMEOUT_S), MAX_TIMEOUT_S)
 
     uid, gid = next_exec_uid()
+    ru0 = None
+    r = None
     workdir = os.path.join(WORK_ROOT, uuid.uuid4().hex)
     os.makedirs(workdir, mode=0o700)
     try:
@@ -151,6 +154,7 @@ def run_job(job: dict, execution_id: str = "") -> dict:
             os.makedirs(tmpdir, exist_ok=True)
             _own(tmpdir, uid, gid, 0o700)
             tmp_env = {"TMPDIR": tmpdir}
+        ru0 = _resource.getrusage(_resource.RUSAGE_CHILDREN)
         r = execute(
             argv,
             cwd=workdir,
@@ -182,7 +186,11 @@ def run_job(job: dict, execution_id: str = "") -> dict:
         }
     finally:
         if execution_id:
-            unregister_active(execution_id)
+            rusage_delta = 0.0
+            if ru0 is not None:
+                ru1 = _resource.getrusage(_resource.RUSAGE_CHILDREN)
+                rusage_delta = max(0.0, (ru1.ru_utime + ru1.ru_stime) - (ru0.ru_utime + ru0.ru_stime))
+            unregister_active(execution_id, rusage_delta=rusage_delta, time_ms=int(r.time_ms) if r else 0)
         shutil.rmtree(workdir, ignore_errors=True)
 
 
@@ -257,12 +265,55 @@ def register_active(execution_id: str, job: dict, proc) -> None:
             "cpu_percent": 0.0,
             "memory_bytes": 0,
             "processes": 0,
+            "peak_cpu": 0.0,
+            "peak_mem": 0,
+            "cpu_seconds_sampled": 0.0,
+            "overlapped": len(_active) > 0,  # 시작 시점에 다른 실행이 돌고 있었는가
         }
+        # 이미 돌고 있던 쪽도 이제 겹친 것이다
+        for other in _active.values():
+            if other["execution_id"] != execution_id:
+                other["overlapped"] = True
 
 
-def unregister_active(execution_id: str) -> None:
+LASTRUN_TTL_S = 6 * 3600
+_conn_ref: dict = {}
+
+
+def unregister_active(execution_id: str, *, rusage_delta: float = 0.0, time_ms: int = 0) -> None:
+    """실행 종료 — 응시자 화면이 '방금 무엇이 얼마나 돌았는지' 보여 줄 수 있게 요약을 남긴다.
+
+    CPU 시간의 출처는 둘이다. 샘플러가 잰 프로세스 트리 누적치는 그 실행만의 값이지만
+    1초 간격이라 짧은 실행을 놓치고, getrusage(RUSAGE_CHILDREN) 증분은 정확하지만
+    워커 전체 자식의 합이라 **다른 실행과 겹치면 남의 몫이 섞인다**. 그래서 겹친
+    실행이 없었을 때만 getrusage 를 믿고, 겹쳤으면 샘플 누적치를 쓴다.
+    """
     with _active_lock:
-        _active.pop(execution_id, None)
+        entry = _active.pop(execution_id, None)
+        overlapped = bool(entry and entry.get("overlapped"))
+    cpu_seconds = (entry or {}).get("cpu_seconds_sampled", 0.0) if overlapped else max(rusage_delta, (entry or {}).get("cpu_seconds_sampled", 0.0))
+    conn = _conn_ref.get("conn")
+    if not entry or not conn or not entry.get("attempt_id"):
+        return
+    try:
+        aid = entry["attempt_id"]
+        last = {
+            "command": entry["command"],
+            "duration_s": round(time_ms / 1000, 2),
+            "cpu_seconds": round(cpu_seconds, 3),
+            "peak_cpu": entry.get("peak_cpu", 0.0),
+            "peak_mem": entry.get("peak_mem", 0),
+            "source": entry.get("source"),
+            "ended_at": time.time(),
+        }
+        pipe = conn.pipeline()
+        pipe.set(f"odysseus:attempt:{aid}:lastrun", json.dumps(last), ex=LASTRUN_TTL_S)
+        pipe.hincrby(f"odysseus:attempt:{aid}:stats", "runs", 1)
+        pipe.hincrbyfloat(f"odysseus:attempt:{aid}:stats", "cpu_seconds", round(cpu_seconds, 3))
+        pipe.expire(f"odysseus:attempt:{aid}:stats", LASTRUN_TTL_S)
+        pipe.execute()
+    except Exception:
+        traceback.print_exc()
 
 
 def _kill_execution(execution_id: str) -> bool:
@@ -291,7 +342,12 @@ def sampler_loop(conn) -> None:
                 eid = entry["execution_id"]
                 pid = pid_map.get(eid)
                 u = usage.get(pid, {}) if pid else {}
-                cpu = meter.percent(eid, ticks_to_seconds(u.get("cpu_ticks", 0)))
+                cpu_s = ticks_to_seconds(u.get("cpu_ticks", 0))
+                elapsed = max(0.05, time.time() - entry["started_at"])
+                # 첫 샘플은 증분이 없어 0 이 된다 — 시작부터의 누적으로 대신 잰다
+                cpu = meter.percent(eid, cpu_s) if eid in meter._last else round(min(cpu_s / elapsed * 100, 100 * (os.cpu_count() or 1)), 1)
+                if eid not in meter._last:
+                    meter._last[eid] = (time.monotonic(), cpu_s)
                 row = {
                     "execution_id": eid,
                     "attempt_id": entry["attempt_id"],
@@ -307,7 +363,12 @@ def sampler_loop(conn) -> None:
                 with _active_lock:
                     if eid in _active:
                         _active[eid].update(
-                            cpu_percent=cpu, memory_bytes=row["memory_bytes"], processes=row["processes"]
+                            cpu_percent=cpu,
+                            memory_bytes=row["memory_bytes"],
+                            processes=row["processes"],
+                            peak_cpu=max(_active[eid].get("peak_cpu", 0.0), cpu),
+                            peak_mem=max(_active[eid].get("peak_mem", 0), row["memory_bytes"]),
+                            cpu_seconds_sampled=max(_active[eid].get("cpu_seconds_sampled", 0.0), cpu_s),
                         )
 
             live = {r["execution_id"] for r in rows}
@@ -375,6 +436,7 @@ def publish_environment(conn) -> None:
 def main() -> None:
     print(f"[runner] starting, concurrency={CONCURRENCY}", flush=True)
     conn = redis.from_url(REDIS_URL, decode_responses=True)
+    _conn_ref["conn"] = conn
     publish_environment(conn)
     threading.Thread(target=sampler_loop, args=(conn,), daemon=True).start()
     slots = threading.Semaphore(CONCURRENCY)

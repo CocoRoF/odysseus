@@ -60,6 +60,17 @@ async def my_resources(
 
     snap = await _snapshot()
     mine = [r for r in (snap or {}).get("active", []) if r.get("attempt_id") == str(attempt_id)]
+    last_run = None
+    stats = {"runs": 0, "cpu_seconds": 0.0}
+    try:
+        raw_last = await get_redis().get(f"odysseus:attempt:{attempt_id}:lastrun")
+        if raw_last:
+            last_run = json.loads(raw_last)
+        h = await get_redis().hgetall(f"odysseus:attempt:{attempt_id}:stats")
+        if h:
+            stats = {"runs": int(h.get("runs", 0)), "cpu_seconds": round(float(h.get("cpu_seconds", 0)), 2)}
+    except Exception:
+        pass
     cpu = round(sum(r.get("cpu_percent", 0) for r in mine), 1)
     mem = sum(r.get("memory_bytes", 0) for r in mine)
     limit = (snap or {}).get("container", {}).get("memory_limit_bytes")
@@ -73,6 +84,9 @@ async def my_resources(
         "cpu_capacity_percent": cores * 100,
         "memory_bytes": mem,
         "memory_limit_bytes": limit,
+        # 실행이 짧아 순간값을 놓쳐도 '방금 무엇이 얼마나 돌았는지'는 보여 준다
+        "last_run": last_run,
+        "stats": stats,
         "commands": [
             {"command": r.get("command", ""), "elapsed_s": r.get("elapsed_s", 0), "source": r.get("source")}
             for r in mine
