@@ -116,16 +116,21 @@ export function IntroCinematic({
   // 문단은 처음부터 전체 길이로 그려 둔다 (레이아웃 고정). 아직 드러나지 않은 글자는
   // visibility:hidden 이라 자리는 차지하되 보이지 않는다 — 줄이 늘어도 화면이 밀리거나
   // 스크롤이 생기지 않는다. reveal = null 이면 전부 보이고, 0 이면 전부 숨긴다.
-  const renderParagraph = (segs: Seg[], reveal: number | null) => {
+  // 커서는 흐름 밖(absolute, 폭 0)에 두어 줄바꿈에 영향을 주지 않는다 — 드러난 글자 바로 뒤에 붙는다.
+  const renderParagraph = (segs: Seg[], reveal: number | null, caret = false) => {
     let left = reveal ?? Number.POSITIVE_INFINITY;
+    let caretPlaced = false;
     return segs.map((seg, i) => {
       const n = Math.max(0, Math.min(seg.text.length, left));
       left -= seg.text.length;
       const shown = seg.text.slice(0, n);
       const hidden = seg.text.slice(n);
+      const putCaret = caret && !caretPlaced && hidden.length > 0;
+      if (putCaret) caretPlaced = true;
       const inner = (
         <>
           {shown}
+          {putCaret && <span className="intro-caret absolute w-0 text-sky-400">▌</span>}
           {hidden && <span className="invisible">{hidden}</span>}
         </>
       );
@@ -180,9 +185,8 @@ export function IntroCinematic({
               const typing = stage === "typing" && i === para;
               const reveal = stage === "title" ? 0 : stage === "done" ? null : i < para ? null : typing ? chars : 0;
               return (
-                <p key={i}>
-                  {renderParagraph(segs, reveal)}
-                  {typing && <span className="intro-caret ml-0.5 text-sky-400">▌</span>}
+                <p key={i} className="relative">
+                  {renderParagraph(segs, reveal, typing)}
                 </p>
               );
             })}
