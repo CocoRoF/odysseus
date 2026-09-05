@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 /** 굵게(**…**)·코드(`…`)만 인지하는 최소 인라인 파서 — 타자기 연출과 함께 쓰려면
  *  마크다운 렌더러 대신 세그먼트 단위로 잘라 두어야 부분 노출이 가능하다. */
@@ -68,7 +68,6 @@ export function IntroCinematic({
   const [stage, setStage] = useState<"title" | "typing" | "done">("title");
   const [para, setPara] = useState(0); // 현재 타이핑 중인 문단
   const [chars, setChars] = useState(0); // 현재 문단에서 노출된 글자 수
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   /** 남은 연출을 건너뛰고 전부 노출 */
   const skip = useCallback(() => {
@@ -102,14 +101,6 @@ export function IntroCinematic({
     return () => clearTimeout(t);
   }, [stage, para, chars, lengths, paragraphs.length]);
 
-  // 글자가 늘어나는 내내 바닥에 붙여 둔다. 한 글자씩 자라므로 즉시 맞춰도
-  // 부드럽게 흐르고, 부드러운 스크롤(smooth)로 하면 26ms 마다 애니메이션이
-  // 다시 시작돼 오히려 떨린다.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [para, chars, stage]);
-
   // 클릭/스페이스/엔터로 건너뛰기, 완료 후에는 시작
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -122,23 +113,32 @@ export function IntroCinematic({
     return () => window.removeEventListener("keydown", onKey);
   }, [stage, skip, onStart]);
 
+  // 문단은 처음부터 전체 길이로 그려 둔다 (레이아웃 고정). 아직 드러나지 않은 글자는
+  // visibility:hidden 이라 자리는 차지하되 보이지 않는다 — 줄이 늘어도 화면이 밀리거나
+  // 스크롤이 생기지 않는다. reveal = null 이면 전부 보이고, 0 이면 전부 숨긴다.
   const renderParagraph = (segs: Seg[], reveal: number | null) => {
     let left = reveal ?? Number.POSITIVE_INFINITY;
     return segs.map((seg, i) => {
-      if (left <= 0) return null;
-      const text = seg.text.slice(0, Math.max(0, Math.min(seg.text.length, left)));
+      const n = Math.max(0, Math.min(seg.text.length, left));
       left -= seg.text.length;
-      if (!text) return null;
+      const shown = seg.text.slice(0, n);
+      const hidden = seg.text.slice(n);
+      const inner = (
+        <>
+          {shown}
+          {hidden && <span className="invisible">{hidden}</span>}
+        </>
+      );
       if (seg.code) {
         return (
           <code key={i} className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[0.92em] text-sky-200">
-            {text}
+            {inner}
           </code>
         );
       }
       return (
         <span key={i} className={seg.bold ? "font-semibold text-white" : undefined}>
-          {text}
+          {inner}
         </span>
       );
     });
@@ -174,16 +174,14 @@ export function IntroCinematic({
         </div>
 
         {/* 낭독 */}
-        <div ref={scrollRef} className="intro-read mt-8 min-h-0 flex-1 overflow-y-auto px-1">
+        <div className="intro-read mt-8 min-h-0 flex-1 overflow-y-auto px-1">
           <div className="space-y-5 text-[15px] leading-[1.9] text-slate-300 md:text-base">
             {paragraphs.map((segs, i) => {
-              if (stage === "title") return null;
-              if (i > para) return null;
               const typing = stage === "typing" && i === para;
-              if (typing && chars === 0) return null;
+              const reveal = stage === "title" ? 0 : stage === "done" ? null : i < para ? null : typing ? chars : 0;
               return (
-                <p key={i} className={typing ? "" : "intro-fade"}>
-                  {renderParagraph(segs, typing ? chars : null)}
+                <p key={i}>
+                  {renderParagraph(segs, reveal)}
                   {typing && <span className="intro-caret ml-0.5 text-sky-400">▌</span>}
                 </p>
               );
@@ -192,21 +190,24 @@ export function IntroCinematic({
         </div>
 
         {/* 완료 후: 안내 + 시작 */}
-        {stage === "done" && (
-          <div className="intro-rise mt-8 shrink-0" onClick={(e) => e.stopPropagation()}>
-            <ul className="space-y-1 text-[11px] leading-relaxed text-slate-500">
-              {notes.map((n, i) => (
-                <li key={i}>· {n}</li>
-              ))}
-            </ul>
-            <button
-              onClick={onStart}
-              className="mt-5 w-full rounded-xl border border-sky-400/30 bg-sky-500/10 py-3.5 text-sm font-bold tracking-wide text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 hover:text-white"
-            >
-              임무 시작
-            </button>
-          </div>
-        )}
+        <div
+          className={`mt-8 shrink-0 ${stage === "done" ? "intro-rise" : "invisible"}`}
+          aria-hidden={stage !== "done"}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ul className="space-y-1 text-[11px] leading-relaxed text-slate-500">
+            {notes.map((n, i) => (
+              <li key={i}>· {n}</li>
+            ))}
+          </ul>
+          <button
+            onClick={onStart}
+            disabled={stage !== "done"}
+            className="mt-5 w-full rounded-xl border border-sky-400/30 bg-sky-500/10 py-3.5 text-sm font-bold tracking-wide text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20 hover:text-white"
+          >
+            임무 시작
+          </button>
+        </div>
       </div>
     </div>
   );
