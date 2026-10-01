@@ -1,0 +1,1480 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+/* 응시 화면(다크 IDE) 전용 스크롤바 */
+.dark-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.dark-scroll::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+.dark-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.toast-in {
+  animation: toast-in 0.18s ease-out;
+}
+
+.prose pre {
+  @apply bg-slate-900 text-slate-100 rounded-lg;
+}
+/* 인라인 코드: 백틱 장식 제거 + 배지 스타일 */
+.prose :where(code)::before,
+.prose :where(code)::after {
+  content: none;
+}
+.prose :where(code):not(:where(pre code)) {
+  @apply rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.85em] font-semibold text-rose-600;
+}
+.prose-invert :where(code):not(:where(pre code)) {
+  @apply bg-slate-700/70 text-amber-300;
+}
+.prose pre code {
+  @apply text-slate-100 bg-transparent p-0 font-normal;
+}
+.prose-invert :where(h2) {
+  @apply mt-7 mb-3 border-b border-slate-700 pb-2 text-base;
+}
+.prose-invert :where(strong) {
+  @apply text-slate-100;
+}
+.prose-invert :where(li)::marker {
+  @apply text-slate-500;
+}
+
+
+/* ── Odysseus 데스크톱 ─────────────────────────────────── */
+.desktop-wallpaper {
+  background:
+    radial-gradient(1100px 600px at 75% -10%, rgba(99, 102, 241, 0.35), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(14, 165, 233, 0.22), transparent 55%),
+    linear-gradient(160deg, #0b1020 0%, #101a33 55%, #0b1226 100%);
+}
+
+/* 바탕화면 아이콘 독 — 세로로 채우다 높이를 넘으면 다음 열로 이어진다(열 단위 흐름).
+   컨테이너 높이는 top/bottom 인셋으로 정해지므로 auto-fill 이 "한 열에 몇 개" 를 스스로 센다.
+   화면이 낮으면(노트북·창 모드) 타일을 줄여 열 수를 억제한다. */
+.desktop-dock {
+  --dock-w: 92px;
+  --dock-h: 96px;
+  --dock-glyph: 56px;
+  --dock-svg: 30px;
+  --dock-pt: 10px;
+  --dock-pb: 6px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(auto-fill, var(--dock-h));
+  grid-auto-columns: var(--dock-w);
+  align-content: start;
+  column-gap: 6px;
+  row-gap: 6px;
+}
+@media (max-height: 760px) {
+  .desktop-dock {
+    --dock-w: 84px;
+    --dock-h: 82px;
+    --dock-glyph: 46px;
+    --dock-svg: 25px;
+    --dock-pt: 7px;
+    --dock-pb: 4px;
+  }
+}
+.desktop-dock .dock-item {
+  width: var(--dock-w);
+  height: var(--dock-h);
+  padding-top: var(--dock-pt);
+  padding-bottom: var(--dock-pb);
+}
+.desktop-dock .dock-glyph {
+  width: var(--dock-glyph);
+  height: var(--dock-glyph);
+}
+.desktop-dock .dock-glyph svg {
+  width: var(--dock-svg);
+  height: var(--dock-svg);
+}
+
+.window-shadow {
+  box-shadow: 0 24px 60px -18px rgba(2, 6, 23, 0.55), 0 4px 16px -6px rgba(2, 6, 23, 0.4);
+}
+
+@keyframes window-in {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.window-in { animation: window-in 0.16s ease-out; }
+
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.msg-in { animation: msg-in 0.15s ease-out; }
+
+@keyframes app-switcher-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.app-switcher-in { animation: app-switcher-in 0.12s ease-out; }
+
+@keyframes typing-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.typing-dot { animation: typing-dot 1.1s infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+.thin-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.4); border-radius: 3px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
+
+
+/* ── 시네마틱 인트로 ────────────────────────────────────── */
+
+/* 낭독 영역: 스크롤은 되지만 막대는 그리지 않는다.
+   글자가 한 자씩 늘어나는 연출이라 막대가 나타나는 순간 내용 폭이 줄고,
+   그 한 번의 폭 변화가 줄바꿈을 다시 계산시켜 문장 전체가 흔들린다.
+   막대를 없애면 깜빡임과 그 흔들림이 함께 사라진다. */
+.intro-read {
+  scrollbar-width: none; /* Firefox */
+}
+.intro-read::-webkit-scrollbar {
+  display: none;
+}
+
+.intro-stage {
+  animation: intro-in 0.5s ease-out;
+}
+@keyframes intro-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes intro-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.intro-fade { animation: intro-fade-in 0.7s ease-out both; }
+
+@keyframes intro-rise-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.intro-rise { animation: intro-rise-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes intro-caret-blink {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0.15; }
+}
+.intro-caret { animation: intro-caret-blink 1s steps(1, end) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-stage, .intro-fade, .intro-rise, .intro-caret { animation: none; }
+}
+
+/* 참고 자료 앱의 상단 로딩 바 — 진행률을 모르므로 왕복시킨다 */
+@keyframes gh-load {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(160%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* GitHub README — 어두운 배경 위 마크다운 여백/링크 톤 */
+.gh-readme :is(h1, h2) {
+  border-bottom: 1px solid #21262d;
+  padding-bottom: 0.3em;
+}
+.gh-readme a {
+  color: #4493f8;
+}
+.gh-readme img {
+  display: inline-block;
+  max-height: 28px;
+  vertical-align: middle;
+}
+
+/* AI 가 지금 고치고 있는 필드 — 보라색 숨결 */
+.ai-editing {
+  animation: ai-editing-pulse 1.1s ease-in-out infinite;
+  border-color: rgb(167 139 250) !important;
+  border-radius: 0.75rem;
+}
+@keyframes ai-editing-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.28), 0 0 10px rgba(139, 92, 246, 0.18); }
+  50% { box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.6), 0 0 26px rgba(139, 92, 246, 0.42); }
+}
+.ai-caret { animation: ai-caret-blink 0.9s steps(1) infinite; }
+@keyframes ai-caret-blink { 50% { opacity: 0; } }
+.ai-chip-live { animation: ai-chip-pop 0.35s ease-out; }
+@keyframes ai-chip-pop { from { transform: scale(0.85); opacity: 0.4; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-editing, .ai-caret, .ai-chip-live { animation: none; }
+}
+
+/* ── 부팅 연출: 어둠 → 로고 → 로그 → 어두워졌다가 OS 가 밝아온다 ── */
+.boot-logo { animation: boot-logo 2.6s ease-in-out both; }
+@keyframes boot-logo {
+  0% { opacity: 0; transform: scale(0.965); filter: blur(6px) brightness(0.4); }
+  22% { opacity: 1; transform: scale(1); filter: blur(0) brightness(1); }
+  78% { opacity: 1; transform: scale(1); filter: blur(0) brightness(1); }
+  100% { opacity: 0; transform: scale(1.01); filter: blur(4px) brightness(0.3); }
+}
+.boot-text-in { animation: boot-text-in 0.5s ease-out both; }
+@keyframes boot-text-in { from { opacity: 0; } to { opacity: 1; } }
+.boot-dim { animation: boot-dim 0.5s ease-in forwards; }
+@keyframes boot-dim { from { opacity: 1; filter: brightness(1); } to { opacity: 0; filter: brightness(0.2); } }
+/* 검은 막이 걷힌다 — 아래에 이미 있는 데스크톱이 밝아 보인다 */
+.boot-reveal { background: #000; animation: boot-reveal 1.05s ease-out forwards; pointer-events: none; }
+@keyframes boot-reveal { 0% { opacity: 1; } 100% { opacity: 0; } }
+.boot-text { text-shadow: 0 0 6px rgba(200, 211, 200, 0.35), 0 0 1px rgba(255, 255, 255, 0.6); }
+.boot-crt {
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, 0.22) 2px 3px),
+    radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.55) 100%);
+  mix-blend-mode: multiply;
+  animation: boot-flicker 2.6s steps(1) infinite;
+}
+@keyframes boot-flicker { 0%, 100% { opacity: 1; } 47% { opacity: 0.93; } 49% { opacity: 1; } 91% { opacity: 0.96; } }
+.boot-cursor { animation: ai-caret-blink 0.7s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .boot-logo, .boot-text-in, .boot-dim, .boot-reveal, .boot-crt, .boot-cursor { animation: none; }
+  .boot-reveal { opacity: 0; }
+}
+
+
+
+
+/* ── 사무실 · 페이지 뼈대와 목록 모드 ─────────────────── */
+/* 공간 모드가 어떻게 바뀌든 이쪽은 그대로다. 목록으로 응시하는 사람이
+   조용히 뒤처지는 일은 없어야 한다. */
+.office-page {
+  @apply flex min-h-screen flex-col text-slate-200;
+  background:
+    radial-gradient(1000px 520px at 78% -12%, rgba(56, 189, 248, 0.16), transparent 62%),
+    radial-gradient(820px 460px at 6% 108%, rgba(129, 140, 248, 0.14), transparent 58%),
+    linear-gradient(168deg, #080d1a 0%, #0d1526 58%, #080c18 100%);
+}
+.office-header {
+  @apply flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-white/10 px-4 py-3 sm:px-5;
+}
+.office-linkbtn {
+  @apply rounded-lg border border-white/15 px-3 py-2 text-sm font-medium text-slate-300 transition hover:border-white/30 hover:text-white;
+}
+/* 사무실 창이 머리글·필터·바닥글을 뺀 나머지를 전부 차지한다. 높이를 vh 로 셈하면 창 크기마다 아래에 빈 띠가 남았다. */
+.office-main {
+  @apply flex min-h-0 flex-1 flex-col px-5 pb-2 pt-3;
+}
+.office-error {
+  @apply rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200;
+}
+.office-empty {
+  @apply mx-auto max-w-xl rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-center text-sm text-slate-400;
+}
+.office-footer {
+  @apply shrink-0 border-t border-white/10 px-5 py-2 text-[11px] leading-relaxed text-slate-500;
+}
+.office-footer b {
+  @apply text-slate-300;
+}
+.office-ghostbtn {
+  @apply rounded-lg px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white;
+  min-height: 40px;
+}
+/* 시작 지점 버튼(.office-desk)은 그림을 그리지 않는 투명한 누름 자리다 — 스타일은 .office-desk-art 에만 둔다.
+   예전 목록 화면의 카드 스타일(어두운 배경·둥근 테두리)이 같이 붙어 있어, 가리키거나 누르면 그 배경이 책상 그림을
+   덮었다(2026-09-13 지적). */
+
+/* ── 사무실 ─────────────────────────────────────────────── */
+/*
+   층 전체가 DOM 이다. 캔버스도 타일맵도 게임 엔진도 쓰지 않는다. 방 여덟 개와 자리
+   스물 남짓은 브라우저가 이미 잘 그리는 규모이고, 무엇보다 방이 `<section>` 이고
+   자리가 `<button>` 이어야 키보드와 보조기술이 같은 트리를 읽는다.
+
+   그리는 법은 한 문장으로 요약된다: **바닥은 정사각으로 두고, 수직면만 윗면과 어두운
+   앞면으로 세운다.** 빛은 화면 위에서 하나만 온다. 아이소메트릭으로 기울이지 않는
+   이유는 `floorplan.ts` 머리에 적어 두었다.
+*/
+
+/* 여기서 정의하는 색은 전부 `.office-viewport` 안에서만 산다. 머리글과 하단 바는
+   앱의 기존 slate/sky 를 그대로 쓴다. 그 경계가 의도다 — 뷰포트는 다른 재질의
+   세계를 들여다보는 창이지, 앱을 다시 칠한 것이 아니다. */
+.office-viewport {
+  /* 바깥(건물 밖) — 벽 윗면이 검은 천장(0,1,3)이라 그보다 밝아야 벽이 띠로 읽힌다 */
+  --o-void: #171d2b;
+  --o-wall-side: #0e1626;
+  --o-wall-top: #1b2638;
+  --o-wall-rim: #4a5c81;
+  --o-corridor: #1a2438;
+  --o-contact: rgba(2, 6, 23, 0.45);
+  --o-lip: rgba(255, 255, 255, 0.14);
+  --o-text: #dce6f7;
+  --o-text-2: #93a4c0;
+  --o-state-open: #7fd4ff;
+  --o-state-resume: #e8b96a;
+  --o-state-done: #4a5670;
+
+  @apply relative min-h-[420px] w-full flex-1 overflow-hidden rounded-2xl;
+  background: var(--o-void);
+}
+
+/* 카메라 — 층 전체를 하나의 transform 으로 민다. 레이어가 여러 장인 이유는 z 때문이다:
+   방이 자기 안에 벽을 들고 있으면 그 벽은 형제인 아바타 위로 절대 못 올라온다.
+
+   월드 안의 그려지는 것은 **전부 스스로 absolute 여야 한다.** 부모에게서 물려받는
+   식으로 두면 방마다 감싸는 div 하나만 끼어들어도 전부 흐름으로 흘러내려 한자리에
+   쌓인다(실제로 그랬다). 그래서 아래 클래스마다 position 을 직접 박아 둔다. */
+.office-world {
+  @apply pointer-events-none absolute left-1/2 top-1/2;
+  transform-origin: center;
+}
+.office-world > * {
+  @apply absolute;
+}
+/* 층 그림 — 캔버스 한 장(OfficeCanvas). 크기·위치는 기기 픽셀 격자에 맞춰 인라인으로 받는다. 누름·글자 층보다 아래. */
+.office-canvas { position: absolute; z-index: 10; pointer-events: none; display: block; }
+.office-layer-base { z-index: 0; }
+.office-layer-floor { z-index: 10; }
+.office-layer-back { z-index: 20; }
+/* 세계 층 — 가로벽·벽걸이·소품·책상·사람이 한 층에서 발끝 y 를 z-index 로 삼아 깊이를 정한다 */
+.office-layer-world { z-index: 30; }
+.office-layer-zones { z-index: 30; @apply pointer-events-auto; }
+
+/* ── 복도 ─────────────────────────────────────────────── */
+/* 복도는 딱딱한 바닥재다 — 천장등 웅덩이가 차갑게 떨어지고 광택이 한 줄 지난다.
+   방은 카펫이라 광택이 없다. 문턱에서 재질과 색온도가 함께 바뀌는 것이,
+   애니메이션 없이 "들어왔다"를 만든다. */
+.office-corridor {
+  position: absolute;
+  /* 바닥은 타일 이미지가 깔고(CSS 가 반복), 그 위에 천장 조명만 얹는다.
+     칸마다 div 를 놓지 않는 이유는 방 열세 개면 바닥 div 가 팔백 개가 넘기 때문이다. */
+  background:
+    radial-gradient(ellipse 150px 70px at 64px 50%, rgba(255, 244, 214, 0.16), transparent 72%),
+    radial-gradient(ellipse 150px 70px at 288px 50%, rgba(255, 244, 214, 0.16), transparent 72%),
+    radial-gradient(ellipse 150px 70px at 512px 50%, rgba(255, 244, 214, 0.16), transparent 72%),
+    radial-gradient(ellipse 150px 70px at 736px 50%, rgba(255, 244, 214, 0.16), transparent 72%),
+    radial-gradient(ellipse 150px 70px at 960px 50%, rgba(255, 244, 214, 0.16), transparent 72%),
+    var(--office-hall);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+  /* 바닥 타일은 128px 그림 = 월드 96px (2×2 칸, 한 칸 48px) */
+  background-size: auto, auto, auto, auto, auto, 96px 96px;
+  /* image-rendering 은 기본(auto). 그림이 전부 월드의 2배 이상 해상도라 부드럽게 맞추는 쪽이 어느 DPR 에서도 낫다 —
+     pixelated 는 DPR 1 에서 줄이며 픽셀을 떨어뜨려 캐릭터가 거칠어졌다. */
+}
+
+/* ── 방 바닥 ──────────────────────────────────────────── */
+/* 바닥은 칸 줄(.o-tile)로 깐다 — 벽 선(칸 한가운데)까지 이어지고 도려낸 칸은 비운다(floorRuns). 그 위에 방 하나짜리
+   덮개(.o-floor-shade)가 조명·비네트를 얹는다. 분야 색은 바닥을 칠하지 않는다 — 아주 옅은 워시로 방끼리 구별만 되게 한다. */
+.o-floor-shade {
+  position: absolute;
+  pointer-events: none;
+  background: radial-gradient(ellipse 200px 140px at 50% 40%, rgba(255, 246, 220, 0.10), transparent 70%);
+  box-shadow: inset 0 0 24px -10px rgba(3, 5, 12, 0.6);
+}
+.o-floor-shade::after {
+  content: "";
+  @apply absolute inset-0;
+  background: radial-gradient(120% 120% at 50% 45%, transparent 68%, rgba(4, 7, 14, 0.26) 100%);
+}
+.o-floor-shade[data-entered] {
+  background:
+    radial-gradient(ellipse 220px 160px at 50% 40%, rgba(255, 246, 220, 0.20), transparent 72%),
+    linear-gradient(0deg, color-mix(in srgb, var(--accent) 3%, transparent), color-mix(in srgb, var(--accent) 3%, transparent));
+}
+
+/* 칸마다 다른 바닥 — 관리자가 칠한 타일. 방 바닥 위에 사각형으로 덮는다(무늬는 방 원점에 맞춘다). */
+.o-tile {
+  position: absolute;
+  background:
+    linear-gradient(0deg, color-mix(in srgb, var(--accent) 8%, transparent), color-mix(in srgb, var(--accent) 8%, transparent)),
+    var(--floor);
+  background-repeat: repeat, repeat;
+  background-size: auto, 96px 96px;
+}
+
+/* ── 벽 ───────────────────────────────────────────────── */
+/* 벽 칸은 윗면(검은 천장 + 밝은 테두리)이나 앞면(남쪽에서 보이는 벽면) 하나다 — RPG Maker A4 오토타일(구입 팩 Office-3).
+   칸마다 스타일 시트(--office-wall-<스타일>)에서 변형 하나를 background-position 으로 고른다(wall-draw.ts 가 인라인으로 준다).
+   픽셀 아트라 부드럽게 늘리지 않는다. */
+.o-wall {
+  position: absolute;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.o-prop { @apply pointer-events-none absolute; }
+
+/* ── 방 영역 (투명한 상호작용 층) ─────────────────────── */
+.o-zone { @apply pointer-events-none; }
+.o-zone-slots { @apply pointer-events-none absolute inset-0 z-10 m-0 list-none p-0; }
+.o-zone-enter { @apply pointer-events-auto absolute inset-0 z-0 cursor-pointer; }
+
+/* ── 자리 ─────────────────────────────────────────────── */
+.office-desk-art {
+  @apply pointer-events-auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  line-height: 0;
+  cursor: pointer;
+  overflow: visible;
+}
+/* 가리키면 그림 쪽(.o-desk[data-peeked])이 밝아진다 — 버튼 자체는 아무것도 칠하지 않는다.
+   키보드 포커스만 그림 둘레에 얇은 테를 두른다(무엇이 골라졌는지는 보여야 한다). */
+.office-desk-art:hover,
+.office-desk-art:active {
+  background: none;
+  box-shadow: none;
+}
+.office-desk-art:focus-visible {
+  outline: 2px solid var(--o-state-open);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.office-desk-art:disabled { cursor: default; }
+
+/* 시작 지점은 방 전체를 보는 배율에서도 놓치지 않게 한다. 화살표는 위치를, 테두리의
+   느린 점등은 눌러야 하는 대상을 알려 준다. 완료한 자리에는 표시하지 않는다. */
+.office-desk-art[data-state="open"]::after,
+.office-desk-art[data-state="resume"]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 2px solid rgba(108, 210, 255, 0.72);
+  border-radius: 7px;
+  box-shadow: 0 0 6px rgba(76, 201, 255, 0.45), inset 0 0 6px rgba(76, 201, 255, 0.18);
+  pointer-events: none;
+  animation: office-desk-beacon 2.6s ease-in-out infinite;
+}
+.office-desk-art[data-state="resume"]::after {
+  border-color: rgba(248, 193, 95, 0.8);
+  box-shadow: 0 0 7px rgba(248, 193, 95, 0.52), inset 0 0 6px rgba(248, 193, 95, 0.2);
+}
+.office-desk-marker {
+  position: absolute;
+  left: 50%;
+  top: -20px;
+  z-index: 2;
+  width: 18px;
+  height: 16px;
+  transform: translateX(-50%);
+  color: #dff7ff;
+  filter: drop-shadow(0 0 3px rgba(45, 190, 255, 0.95));
+  pointer-events: none;
+  animation: office-desk-arrow 1.8s ease-in-out infinite;
+}
+.office-desk-art[data-state="resume"] .office-desk-marker {
+  color: #fff1cf;
+  filter: drop-shadow(0 0 3px rgba(248, 193, 95, 0.95));
+}
+.office-desk-marker::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 11px;
+  height: 11px;
+  border-right: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+  transform: rotate(45deg);
+}
+@keyframes office-desk-beacon {
+  0%, 100% { opacity: .48; transform: scale(.98); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+@keyframes office-desk-arrow {
+  0%, 100% { transform: translate(-50%, -3px); }
+  50% { transform: translate(-50%, 3px); }
+}
+
+/* 시작 책상 그림 — 세계 층이 그린다. 가리키면 밝아지고, 응시 중이면 노트북이 숨 쉬듯 깜박인다. */
+.o-desk { transition: filter 140ms ease; }
+.o-desk[data-peeked] { filter: brightness(1.18) drop-shadow(0 0 4px rgba(127, 212, 255, 0.55)); }
+/* will-change: filter — 깜박임이 제 레이어 안에서 끝난다. 없으면 이 깜박임이 같은 층의 지도를 2.4초마다 다시 그리게 한다. */
+.o-desk[data-state="resume"] { animation: o-desk-pulse 2.4s ease-in-out infinite; will-change: filter; }
+.o-desk[data-state="done"] { filter: saturate(0.6) brightness(0.9); }
+@keyframes o-desk-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.22) drop-shadow(0 0 5px rgba(232, 185, 106, 0.6)); }
+}
+
+
+/* ── 글자 레이어 — 카메라는 타되 배율은 되돌린다 ────────── */
+/* `.office-world` 는 transform 을 갖고 있어 그 안에 넣으면 글자가 층 배율만큼
+   작아진다. 그래서 형제로 두고 배율만 역산한다. */
+/* 크기는 층에서 인라인으로 받는다. 여기에 숫자를 박아 두면 부서 수가 달라져 월드가
+   좁아졌을 때 글자 레이어만 옛 크기로 남아, 문패가 방에서 통째로 밀린다. */
+.office-labels {
+  @apply pointer-events-none absolute left-1/2 top-1/2;
+  z-index: 60;
+  transform-origin: center;
+}
+.office-labels > * {
+  @apply absolute;
+  transform: translate(-50%, -100%) scale(calc(1 / var(--cam-scale)));
+  transform-origin: bottom center;
+}
+/* 아래로 뒤집힌 이름표 — 기준점이 위쪽 가운데가 된다 */
+.office-labels > [data-below] {
+  transform: translate(-50%, 0) scale(calc(1 / var(--cam-scale)));
+  transform-origin: top center;
+}
+
+
+/* 내 아바타 표식 — 동료와 같은 그림이라 이름표가 없으면 어느 쪽이 나인지 알 수 없다.
+   바깥 span 은 office-labels 의 자리잡기 transform 을 그대로 쓰고, 안쪽 알약만 까닥인다. */
+.office-me {
+  @apply block;
+  pointer-events: none;
+}
+.office-me-pill {
+  @apply relative block whitespace-nowrap;
+  padding: 3px 9px 4px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #06131f;
+  background: #7fd4ff;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 8px 18px -8px rgba(0, 0, 0, 0.85);
+  animation: office-me-bob 1.9s ease-in-out infinite;
+}
+.office-me-pill::after {
+  content: "";
+  @apply absolute left-1/2 top-full;
+  width: 0;
+  height: 0;
+  margin-left: -5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #7fd4ff;
+}
+@keyframes office-me-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .office-me-pill { animation: none; }
+}
+
+/* 이름표 — 한 번에 하나만. 자리마다 붙이면 그건 다시 카드 격자다. */
+.office-plate {
+  @apply block;
+  max-width: 240px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: #0b111c;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.8);
+}
+.office-plate-title {
+  @apply block truncate;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e8effb;
+}
+.office-plate-meta { @apply block; font-size: 11px; color: var(--o-text-2); }
+
+/* ── 화면에 붙는 것들 ─────────────────────────────────── */
+.office-breadcrumb {
+  @apply absolute left-3 top-3 z-[70] flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold;
+  background: rgba(8, 12, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #93a4c0;
+}
+.office-breadcrumb-sep { color: #475569; }
+.office-breadcrumb-here { color: #dce6f7; }
+.office-breadcrumb-out {
+  @apply ml-1 rounded-md px-2 py-1 text-[11px] font-semibold transition;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #93a4c0;
+}
+.office-breadcrumb-out:hover { color: #fff; border-color: rgba(255, 255, 255, 0.3); }
+.office-breadcrumb-out kbd {
+  @apply ml-1 rounded border px-1 text-[10px];
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #64748b;
+}
+
+/* 하단 바 — 시나리오 수·제한시간·행동이 사는 곳. 월드가 아니라 화면에 붙는다. */
+.office-bar {
+  @apply absolute inset-x-0 bottom-0 z-[70] flex items-center gap-3 px-3.5;
+  height: 72px;
+  background: linear-gradient(180deg, rgba(8, 12, 22, 0), rgba(8, 12, 22, 0.88) 34%, rgba(8, 12, 22, 0.96));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.office-legend {
+  @apply hidden shrink-0 items-center gap-3 text-[11px] md:flex;
+  color: #93a4c0;
+}
+.office-legend span { @apply inline-flex items-center gap-1.5; }
+.office-legend-keys { @apply gap-0.5; }
+.office-legend-keys kbd {
+  @apply inline-flex h-4 w-4 items-center justify-center rounded border text-[9px] leading-none;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #cbd5e1;
+}
+.office-legend-keys kbd:last-of-type { @apply mr-1; }
+.office-legend-dot { @apply inline-block h-2.5 w-2.5 rounded-sm; }
+.office-legend-dot[data-state="open"] { background: #7fd4ff; }
+.office-legend-dot[data-state="resume"] { background: #e8b96a; }
+.office-legend-dot[data-state="done"] { background: #4a5670; }
+
+.office-bar-detail { @apply min-w-0 flex-1 leading-tight; }
+.office-bar-detail b { @apply block truncate text-sm font-bold; color: #dce6f7; }
+.office-bar-detail span { @apply block truncate text-xs; color: #93a4c0; }
+
+.office-bar-action {
+  @apply shrink-0 rounded-lg px-4 py-2.5 text-sm font-bold transition;
+  background: rgba(127, 212, 255, 0.16);
+  border: 1px solid rgba(127, 212, 255, 0.4);
+  color: #cdeeff;
+}
+.office-bar-action:hover:not(:disabled) { background: rgba(127, 212, 255, 0.26); color: #fff; }
+.office-bar-action:disabled { @apply cursor-not-allowed opacity-60; }
+.office-bar-action kbd {
+  @apply ml-1.5 rounded border px-1 text-[10px] font-semibold;
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #93a4c0;
+}
+
+.office-avatar { @apply absolute; }
+
+/* 시점 — 끌어서 둘러보고(손 모양), 휠·버튼으로 확대. 오른쪽 아래, 하단 바 위에 붙는다. */
+.office-viewport { cursor: grab; touch-action: none; }
+.office-viewport[data-panning] { cursor: grabbing; }
+.office-viewport[data-panning] * { cursor: grabbing !important; }
+.office-viewport [data-office-ui] { cursor: auto; }
+.office-zoom {
+  @apply absolute right-3 z-[70] flex items-center gap-0.5 rounded-xl p-1;
+  bottom: 84px;
+  background: rgba(8, 12, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.office-zoom button {
+  @apply flex h-8 min-w-8 cursor-pointer items-center justify-center rounded-lg px-1.5 text-xs font-semibold transition;
+  color: #cbd5e1;
+}
+.office-zoom button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.office-zoom button:disabled { @apply cursor-default opacity-35; }
+.office-zoom button:focus-visible { outline: 2px solid #7fd4ff; outline-offset: 1px; }
+.office-zoom .office-zoom-level { min-width: 3.25rem; font-variant-numeric: tabular-nums; }
+.office-zoom-sep { @apply mx-0.5 h-5 w-px; background: rgba(255, 255, 255, 0.12); }
+.office-legend-hint { color: #64748b; }
+
+@media (prefers-reduced-motion: reduce) {
+  .office-world,
+  .office-labels,
+  .office-desk-art {
+    transition: none;
+  }
+  .o-desk { animation: none; transition: none; }
+  .office-desk-art::after,
+  .office-desk-marker { animation: none !important; }
+}
+/* 가벼운 모드(lib/render-power) — GPU 가속이 꺼진 브라우저. 계속 도는 장식 애니메이션은 끈다: 합성기가 프레임마다 깨어나
+   CPU 로 그 자리를 다시 칠하고, 특히 drop-shadow 는 매 프레임 블러다. 표식은 멈춘 채로 남아 뜻은 그대로 전한다. */
+.office-viewport[data-lite] :is(.office-desk-marker, .office-me-pill, .o-desk, .o-person .o-person-sprite) { animation: none !important; }
+/* 가상 요소는 :is() 안에 못 넣는다(넣으면 규칙 전체가 버려진다) */
+.office-viewport[data-lite] .office-desk-art::after { animation: none !important; opacity: 0.85; }
+.office-viewport[data-lite] .office-desk-marker { filter: none; }
+.office-viewport[data-lite] :is(.office-world, .office-labels, .office-desk-art, .o-desk, .office-bar, .office-zoom, .office-breadcrumb, .office-veil-void) { transition: none; }
+
+/* ── 아틀라스 스프라이트 ─────────────────────────────────── */
+/* 픽셀 아트는 보간되면 흐려진다. 확대·축소해도 픽셀이 픽셀로 남아야 한다. */
+.o-sprite {
+  /* 팩(Office-3)은 48px 픽셀 아트 — 배율에서 뭉개지 않는다 */
+  image-rendering: pixelated;
+  position: absolute;
+  background-repeat: no-repeat;
+  
+  pointer-events: none;
+}
+/* 동료 — 숨 쉬듯 아주 느리게 오르내린다. 멈춰 있으면 인형처럼 보인다.
+   자리를 옮기는 바깥 칸(.o-person-slot)이 아니라 **안쪽 그림**에 건다: 둘 다 transform 이라 한 요소에 겹치면
+   애니메이션이 자리를 덮어써 사람이 원점으로 튄다. */
+.o-person .o-person-sprite { animation: o-breathe 4.2s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.73s); }
+@keyframes o-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .o-person .o-person-sprite { animation: none; }
+}
+
+/* 캐릭터 도트 — 가구와 다른 시트를 쓴다 (사람은 한 칸 반이다) */
+/* 사람의 **자리**(DOM 으로 그리는 곳 — 편집기 방 그림·스프라이트 실험실). 사무실은 캔버스가 그린다.
+   will-change: transform 을 걸지 않는다 — 배율이 걸린 부모(편집기 확대) 안에서 합성 레이어가 되면 작은 크기로 먼저 그린 뒤
+   늘려 도트가 뭉개진다(2026-09-13 선택창에서 같은 원인으로 지적). */
+.o-person-slot {
+  position: absolute;
+  pointer-events: none;
+}
+.o-person-sprite {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+/* 발밑 그림자 — 이게 있어야 바닥에 서 있는 것으로 보인다. 발끝 아래로 살짝 내려 발을 가리지 않는다. */
+.office-viewport .o-person-sprite::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 22px;
+  height: 7px;
+  margin-left: -11px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(2, 6, 20, 0.42), rgba(2, 6, 20, 0) 72%);
+  z-index: -1;
+}
+
+/* ── 메신저 초상 ───────────────────────────────────────────
+   대화를 열면 그 사람이 옆 칸에 선다. 말풍선 위에 겹치지 않는다 — 메신저는
+   이 시험의 유일한 문제 제시 통로라 글이 그림에 밀리면 안 된다. */
+.msg-portrait-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 168px;
+  width: 168px;
+  padding: 10px 8px 14px;
+  border-left: 1px solid rgb(226 232 240);
+  background: linear-gradient(180deg, rgb(248 250 252), rgb(241 245 249));
+  overflow: hidden;
+}
+.msg-portrait-art {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  margin-bottom: 6px;
+  filter: drop-shadow(0 6px 10px rgba(15, 23, 42, 0.18));
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* 초상이 없을 때의 도트 — 원본 픽셀 1배로(크기는 인라인 personSpriteAt). transform 으로 늘리지 않는다. */
+.msg-portrait-dot {
+  display: block;
+  margin-bottom: 26px;
+}
+.msg-portrait-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgb(30 41 59);
+  text-align: center;
+}
+.msg-portrait-role {
+  font-size: 11px;
+  color: rgb(100 116 139);
+  text-align: center;
+}
+/* 상대가 글을 쓰는 동안 살짝 다가온다 — 말하고 있다는 신호 */
+.msg-portrait-pane[data-typing] .msg-portrait-art { transform: translateY(-3px) scale(1.02); }
+/* 좁은 창에서는 접는다 */
+@container (max-width: 720px) { .msg-portrait-pane { display: none; } }
+@media (max-width: 860px) { .msg-portrait-pane { display: none; } }
+@media (prefers-reduced-motion: reduce) { .msg-portrait-art { transition: none; } }
+
+/* ── 말 걸기 ───────────────────────────────────────────────
+   초상은 왼쪽, 말은 그 옆. 층 위에 겹치되 층을 다 가리지는 않는다. */
+.talk-wrap {
+  position: absolute;
+  left: 50%;
+  bottom: 92px;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  width: min(760px, calc(100% - 48px));
+  pointer-events: none;
+  animation: talk-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes talk-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.talk-portrait { flex: 0 0 auto; width: 150px; display: flex; align-items: flex-end; justify-content: center; }
+.talk-art { width: 100%; height: auto; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.55)); }
+/* 초상이 없을 때의 도트 — 원본 픽셀 1배로(크기는 인라인 personSpriteAt). transform 으로 늘리지 않는다. */
+.talk-dot {
+  display: block;
+}
+.talk-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 176, 226, 0.35);
+  background: linear-gradient(180deg, rgba(14, 20, 34, 0.97), rgba(10, 15, 26, 0.97));
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.8);
+  padding: 12px 16px 13px;
+}
+.talk-name { font-size: 13px; font-weight: 800; color: #e7eefc; display: flex; align-items: baseline; gap: 8px; }
+.talk-role { font-size: 11px; font-weight: 600; color: #8ea4c8; }
+.talk-line { margin-top: 6px; font-size: 14px; line-height: 1.6; color: #dbe6f7; }
+.talk-hint { margin-top: 8px; font-size: 11px; color: #7e90ad; }
+.talk-hint b { color: #a9c2e8; }
+
+/* 다가가면 머리 위에 뜨는 표시 */
+.talk-prompt {
+  position: absolute;
+  z-index: 45;
+  transform: translate(-50%, -100%) scale(calc(1 / var(--cam-scale, 1)));
+  transform-origin: bottom center;
+  white-space: nowrap;
+  border-radius: 999px;
+  background: rgba(10, 15, 26, 0.92);
+  border: 1px solid rgba(148, 176, 226, 0.4);
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #dbe6f7;
+  pointer-events: none;
+  animation: talk-bob 1.6s ease-in-out infinite;
+}
+.talk-prompt b { color: #86c8e6; }
+@keyframes talk-bob {
+  0%, 100% { margin-top: 0; }
+  50% { margin-top: -3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .talk-wrap, .talk-prompt { animation: none; }
+}
+
+/* ── 캐릭터 시트 검사대 (/dev/sprites) ─────────────────────────
+   사무실에 넣기 전에 여덟 장을 눈으로 확인하는 곳. 배경은 사무실 카펫과 비슷한
+   어두운 남색 — 흰 바탕에서 맞아 보이던 것이 어두운 바닥에서 사라지는 일이 없게. */
+.sprite-lab { padding: 24px 32px 64px; background: #1a2236; color: #e2e8f0; min-height: 100vh; font-size: 14px; }
+.sprite-lab h1 { margin: 0 0 4px; font-size: 20px; }
+.sprite-lab h2 { margin: 28px 0 10px; font-size: 16px; }
+.sprite-lab h2 small { font-weight: 400; color: #94a3b8; margin-left: 8px; }
+.sprite-lab-meta { color: #94a3b8; margin: 0 0 8px; }
+.sprite-lab-meta code { color: #cbd5e1; }
+.sprite-lab-row { display: flex; gap: 14px; align-items: flex-end; margin-bottom: 14px; flex-wrap: wrap; }
+.sprite-lab-cell { margin: 0; text-align: center; }
+.sprite-lab-cell figcaption { color: #94a3b8; font-size: 12px; margin-top: 4px; }
+/* 무대: 칸 크기 그대로. 바닥선이 있어야 발이 닿는지 보인다. */
+.sprite-lab-stage { position: relative; background: #202b42; outline: 1px solid rgba(255,80,80,.55); box-shadow: inset 0 -1px 0 rgba(120,200,255,.6); overflow: hidden; }
+.sprite-lab-stage .o-person-sprite { position: absolute; }
+.sprite-lab-sheet {  background-repeat: no-repeat; outline: 1px solid rgba(255,80,80,.55); }
+
+/* ── 로고 전환막 — 게스트 로그인 → 사무실 ─────────────────────
+   시험 시작의 부팅 연출 끝에 뜨는 로고(.boot-logo)와 같은 움직임. enter 의 마지막
+   프레임과 hold 가 같아야 페이지가 바뀌어도 로고가 다시 떠오르지 않는다. */
+.logo-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+.logo-splash img { width: min(60vw, 720px); }
+.logo-splash[data-logo="false"][data-mode="enter"] { animation: logo-splash-veil 0.25s ease-out both; }
+.logo-splash[data-mode="enter"] { animation: logo-splash-veil 0.4s ease-out both; }
+.logo-splash[data-mode="enter"] img { animation: logo-splash-in 0.9s ease-out both; }
+@keyframes logo-splash-veil { from { opacity: 0; } to { opacity: 1; } }
+@keyframes logo-splash-in {
+  0% { opacity: 0; transform: scale(0.965); filter: blur(6px) brightness(0.4); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0) brightness(1); }
+}
+/* 아래에 이미 있는 사무실이 밝아 보인다 — 로고가 먼저 가라앉고 막이 걷힌다 */
+.logo-splash[data-mode="leave"] { animation: logo-splash-out 1.05s ease-out forwards; pointer-events: none; }
+.logo-splash[data-mode="leave"] img { animation: logo-splash-fade 0.7s ease-in forwards; }
+@keyframes logo-splash-out { to { opacity: 0; } }
+@keyframes logo-splash-fade { to { opacity: 0; transform: scale(1.01); filter: blur(4px) brightness(0.3); } }
+@media (prefers-reduced-motion: reduce) {
+  .logo-splash, .logo-splash img { animation: none; }
+  .logo-splash[data-mode="leave"] { opacity: 0; }
+}
+
+/* ── 분야 버튼 필터 ─────────────────────────────────────────
+   응시자 화면 상단. 밝은 화면(기본 화면)과 어두운 화면(사무실) 두 톤. */
+.cat-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-filter button {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px; padding: 6px 12px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; line-height: 1;
+  border: 1px solid transparent; transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.cat-filter button b { font-weight: 700; font-size: 11px; opacity: .75; }
+.cat-filter-light button { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+.cat-filter-light button:hover { background: #e2e8f0; color: #0f172a; }
+.cat-filter-light button[aria-pressed="true"] { background: #0f172a; color: #fff; border-color: #0f172a; }
+.cat-filter-dark button { background: rgba(255,255,255,.06); color: #94a3b8; border-color: rgba(255,255,255,.12); }
+.cat-filter-dark button:hover { background: rgba(255,255,255,.12); color: #e2e8f0; }
+.cat-filter-dark button[aria-pressed="true"] { background: rgba(56,189,248,.22); color: #bae6fd; border-color: rgba(56,189,248,.55); }
+.cat-chip {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569;
+}
+.office-filterbar { @apply shrink-0 border-b border-white/10 px-5 py-2.5; }
+
+/* ── 게스트 온보딩 (/welcome) — 검은 바탕, 캐릭터 만들듯이 ─────────
+   시네마틱 인트로(.intro-*)와 같은 재질: 검정, 비네트, 하늘색 한 줄, 얇은 구분선. */
+.welcome { position: fixed; inset: 0; z-index: 9400; overflow: hidden; background: #000; color: #e2e8f0; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.welcome-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 0%, rgba(56,189,248,.10), transparent 60%); }
+.welcome-panel { position: relative; width: 100%; max-width: 760px; }
+.welcome-brand { font-size: 11px; font-weight: 700; letter-spacing: .4em; text-transform: uppercase; color: rgba(56,189,248,.8); text-align: center; }
+.welcome-steps { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
+.welcome-steps i { width: 28px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.12); }
+.welcome-steps i[data-on] { background: #38bdf8; }
+.welcome-q { margin: 22px 0 6px; text-align: center; font-size: 26px; font-weight: 700; letter-spacing: -.01em; color: #f1f5f9; }
+.welcome-empty { text-align: center; font-size: 13px; color: #94a3b8; }
+.welcome-rule { margin: 22px auto 0; height: 1px; width: 96px; background: linear-gradient(to right, transparent, rgba(56,189,248,.5), transparent); }
+.welcome-body { margin-top: 26px; }
+.welcome-body input[type="text"] {
+  width: 100%; background: transparent; border: 0; border-bottom: 2px solid rgba(255,255,255,.18);
+  padding: 12px 4px; text-align: center; font-size: 28px; font-weight: 600; color: #fff; outline: none; caret-color: #38bdf8;
+}
+.welcome-body input[type="text"]:focus { border-bottom-color: #38bdf8; }
+.welcome-body input::placeholder { color: rgba(255,255,255,.22); font-weight: 400; }
+.welcome-avatars { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.welcome-avatar {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 8px 10px;
+  border-radius: 14px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); color: #cbd5e1;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.welcome-avatar:hover { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.06); }
+.welcome-avatar[aria-pressed="true"] { border-color: #38bdf8; background: rgba(56,189,248,.12); color: #fff; box-shadow: 0 0 0 1px rgba(56,189,248,.5); }
+.welcome-avatar-stage { width: 48px; height: 48px; position: relative; }
+.welcome-avatar-stage > div { transform: scale(1); transform-origin: 0 0; width: 100%; height: 100%; position: relative; }
+.welcome-avatar-name { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; }
+.welcome-preview { margin-top: 18px; display: flex; align-items: flex-end; justify-content: center; gap: 18px; min-height: 180px; }
+.welcome-preview img { height: 180px; width: auto; image-rendering: auto; filter: drop-shadow(0 8px 24px rgba(0,0,0,.6)); }
+.welcome-preview p { color: #94a3b8; font-size: 13px; padding-bottom: 12px; max-width: 260px; }
+/* 임무 고르기 — 분야 이름이 구분선처럼 서고, 그 아래 시험이 가로로 긴 카드로 한 줄씩 선다.
+   [꼬리표] 제목 + 한 줄 ........ 난이도 · 시간.  꼬리표는 색 없는 네모 하나 — 난이도는 글자로만 말한다. */
+.welcome-list { display: flex; flex-direction: column; gap: 22px; max-height: min(58vh, 560px); overflow-y: auto; padding: 2px 6px 2px 2px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+.welcome-section { display: flex; flex-direction: column; gap: 8px; }
+.welcome-section h2 { display: flex; align-items: center; gap: 12px; margin: 0 0 2px; font-size: 13px; font-weight: 700; letter-spacing: .12em; color: #94a3b8; text-transform: uppercase; }
+.welcome-section h2 i { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,.22), rgba(255,255,255,.04)); }
+.welcome-section h2 small { font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0; }
+.welcome-exam {
+  display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 16px; width: 100%; text-align: left;
+  padding: 13px 18px 13px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); color: #e2e8f0;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.welcome-exam:hover { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.06); }
+.welcome-exam[aria-pressed="true"] { border-color: #38bdf8; background: rgba(56,189,248,.12); box-shadow: 0 0 0 1px rgba(56,189,248,.5); }
+.welcome-exam-label {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); font-size: 12px; font-weight: 700; color: #cbd5e1; line-height: 1.2; text-align: center;
+}
+.welcome-exam-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.welcome-exam-text b { font-size: 15px; font-weight: 700; line-height: 1.3; }
+.welcome-exam-text small { font-size: 12.5px; color: #94a3b8; line-height: 1.4; }
+.welcome-exam-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; color: #94a3b8; white-space: nowrap; }
+.welcome-exam-meta em { font-style: normal; font-weight: 700; color: #cbd5e1; }
+.welcome-exam[aria-pressed="true"] .welcome-exam-label { border-color: rgba(56,189,248,.35); background: rgba(56,189,248,.10); }
+@media (max-width: 640px) {
+  .welcome-exam { grid-template-columns: 1fr auto; }
+  .welcome-exam-label { grid-column: 1 / -1; justify-self: start; }
+}
+.welcome-actions { margin-top: 28px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+/* 아이콘과 글자가 한 줄에 나란히 서도록 — 그림문자를 아이콘으로 바꾸며 필요해졌다 */
+.welcome-back { display: inline-flex; align-items: center; gap: 4px; color: #94a3b8; font-size: 13px; padding: 8px 4px; }
+.welcome-back:hover { color: #e2e8f0; }
+.welcome-next {
+  min-width: 160px; padding: 13px 22px; border-radius: 12px; font-size: 14px; font-weight: 700; letter-spacing: .02em;
+  border: 1px solid rgba(56,189,248,.3); background: rgba(14,165,233,.10); color: #bae6fd; transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+.welcome-next:hover:not(:disabled) { border-color: rgba(56,189,248,.6); background: rgba(14,165,233,.2); color: #fff; }
+.welcome-next:disabled { opacity: .35; cursor: default; }
+.welcome-error { margin-top: 12px; text-align: center; font-size: 13px; color: #fca5a5; }
+.welcome-step { animation: intro-rise-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@media (prefers-reduced-motion: reduce) { .welcome-step { animation: none; } }
+
+/* 온보딩 2단계 — 초상 먼저, 고르면 도트 */
+.welcome-portraits { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+@media (max-width: 720px) { .welcome-portraits { grid-template-columns: repeat(3, 1fr); } }
+.welcome-portrait {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px 8px;
+  border-radius: 14px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); color: #cbd5e1;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.welcome-portrait:hover { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.06); transform: translateY(-2px); }
+.welcome-portrait[aria-pressed="true"] { border-color: #38bdf8; background: rgba(56,189,248,.12); color: #fff; box-shadow: 0 0 0 1px rgba(56,189,248,.5); }
+.welcome-portrait img { height: 96px; width: auto; max-width: 100%; object-fit: contain; filter: drop-shadow(0 6px 14px rgba(0,0,0,.55)); }
+.welcome-portrait-blank { height: 96px; width: 60px; border-radius: 8px; background: rgba(255,255,255,.06); }
+.welcome-portrait-name { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; }
+.welcome-dot { margin-top: 18px; min-height: 150px; display: flex; justify-content: center; }
+/* 크기·그림은 인라인(personSpriteAt, 원본 정수 2배). 여기서 크기를 박아 두면 그림과 어긋난다. */
+.welcome-dot-stage { position: relative; display: block; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.55)); }
+
+/* ── 사무실 커스텀 편집기 (관리자) ───────────────────────────── */
+/* 밝은 관리자 화면 안의 어두운 작업대. 방 그림은 사무실과 같은 클래스(o-*)로 그려 화면과 한 픽셀도
+   다르지 않다. 편집 덮개(격자·유령·선택)는 oe-* 다. */
+.oe-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+.oe-sidebar { @apply rounded-xl border border-slate-200 bg-white p-3 text-sm; position: sticky; top: 72px; max-height: calc(100vh - 90px); overflow: auto; }
+.oe-sidebar h3 { @apply mt-3 mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-500; }
+.oe-sidebar h3:first-child { margin-top: 0; }
+.oe-sidebar h3 small { @apply ml-1 rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-500; }
+.oe-side-hint { @apply mb-2 text-xs text-slate-400; }
+.oe-list { @apply m-0 list-none space-y-0.5 p-0; }
+.oe-list li { @apply flex items-center gap-1; }
+.oe-list li > button:first-child { @apply flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-slate-50; }
+.oe-list li > button:first-child[data-on] { @apply bg-slate-900 text-white; }
+.oe-list li > button:first-child span { @apply min-w-0 truncate; }
+.oe-list li > button:first-child small { @apply shrink-0 text-[10px] opacity-60; }
+/* 템플릿·수정됨 태그 — 목록과 편집기 막대가 같은 모양을 쓴다 */
+.oe-chip { @apply inline-flex shrink-0 items-center rounded px-1.5 text-[10px] font-bold not-italic leading-4; }
+.oe-chip[data-kind="template"] { @apply bg-indigo-100 text-indigo-700; }
+.oe-chip[data-kind="modified"] { @apply bg-amber-100 text-amber-800; }
+.oe-list li > button:first-child .oe-chips { @apply flex shrink-0 items-center gap-1 overflow-visible; }
+.oe-list li > button:first-child[data-on] .oe-chip[data-kind="template"] { @apply bg-indigo-300/25 text-indigo-100; }
+.oe-list li > button:first-child[data-on] .oe-chip[data-kind="modified"] { @apply bg-amber-300/25 text-amber-100; }
+.oe-template-tags { @apply flex shrink-0 items-center gap-1; }
+/* 둘레 벽 위 — 허물 수 있는 벽이라는 표시 */
+.oe-hover[data-edge] { outline: 2px dashed #f59e0b; outline-offset: -2px; background: rgba(245, 158, 11, 0.16); }
+.oe-list-del { @apply h-6 w-6 shrink-0 rounded text-slate-400 hover:bg-red-50 hover:text-red-600; }
+.oe-empty { @apply px-2 py-1 text-xs text-slate-400; }
+.oe-defaults { @apply space-y-1.5; }
+/* 저장 버튼은 목록 아래에 붙어 따라온다 — 열 개를 스크롤하다 보면 버튼이 화면 밖으로 나간다 */
+.oe-defaults > button { @apply sticky bottom-0 w-full bg-white; }
+.oe-defaults label { @apply flex items-center gap-2 text-xs; }
+.oe-defaults label span { @apply w-20 shrink-0 text-slate-600; }
+.oe-defaults select { @apply min-w-0 flex-1 rounded-md border border-slate-300 px-1.5 py-1 text-xs; }
+.oe-defaults > button { @apply mt-1 w-full; }
+
+.oe { @apply flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white; min-height: calc(100vh - 170px); }
+.oe-toolbar { @apply flex flex-col gap-2 border-b border-slate-200 px-3 py-2; }
+/* 한 줄 = 한 갈래. 좁은 화면에서도 모드 탭이 이름·크기 칸 사이로 끼어들지 않는다 */
+.oe-row { @apply flex flex-wrap items-center gap-2; }
+.oe-modes { @apply flex overflow-hidden rounded-lg border border-slate-300; }
+.oe-modes button { @apply px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300; }
+.oe-modes button + button { @apply border-l border-slate-300; }
+.oe-modes button[data-on] { @apply bg-slate-900 text-white; }
+.oe-tools { @apply flex min-w-0 flex-1 flex-wrap items-center gap-2; }
+.oe-field { @apply flex items-center gap-1.5 text-xs text-slate-500; }
+.oe-field input, .oe-field select { @apply rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-800 disabled:bg-slate-50 disabled:text-slate-400; }
+.oe-stepper input { width: 44px; text-align: center; }
+.oe-stepper button { @apply h-7 w-7 rounded-md border border-slate-300 text-sm leading-none text-slate-600 hover:bg-slate-50 disabled:text-slate-300; }
+.oe-field input:not([type]) { width: 160px; }
+.oe-sep { @apply mx-1 h-5 w-px bg-slate-200; }
+.oe-grow { flex: 1; }
+.oe-btn { @apply rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300; }
+.oe-btn[data-on] { @apply border-slate-900 bg-slate-900 text-white; }
+.oe-btn.oe-danger { @apply border-red-200 text-red-600 hover:bg-red-50; }
+.oe-zoom { @apply rounded-md border border-slate-300 px-1.5 py-1 text-xs; }
+.oe-save { @apply rounded-md bg-sky-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-300; }
+
+.oe-body { display: grid; grid-template-columns: 220px minmax(0, 1fr) 260px; min-height: 0; flex: 1; }
+.oe-palette, .oe-inspector { @apply overflow-auto p-3 text-sm; max-height: calc(100vh - 230px); }
+.oe-palette { @apply border-r border-slate-200; }
+.oe-inspector { @apply border-l border-slate-200; }
+.oe-palette h4, .oe-inspector h4 { @apply mb-1.5 mt-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500; }
+.oe-palette h4:first-child, .oe-palette > div:first-child h4 { margin-top: 0; }
+.oe-help { @apply text-xs leading-relaxed text-slate-600; }
+.oe-help p { @apply mt-2; }
+.oe-hint { @apply mt-3 text-[11px] leading-relaxed text-slate-400; }
+.oe-swatches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.oe-swatches-wide { grid-template-columns: 1fr; }
+.oe-swatch { @apply flex flex-col items-center gap-1 rounded-lg border border-slate-200 p-1.5 text-[11px] leading-tight text-slate-700 hover:border-slate-400; }
+.oe-swatches-wide .oe-swatch { @apply flex-row justify-start px-2.5 py-1.5 text-xs font-medium; }
+.oe-swatch[data-on] { @apply border-sky-500 bg-sky-50 text-sky-800; }
+.oe-swatch-img { @apply flex h-11 w-full items-center justify-center overflow-hidden rounded bg-[#111827]; background-size: 44px 44px;  }
+.oe-swatch-wall { background: linear-gradient(#c3cbd9 0 25%, #7d8a9b 25% 100%); }
+.oe-swatch-unwall { background: repeating-linear-gradient(45deg, #7d8a9b 0 6px, #111827 6px 12px); }
+.oe-swatch-erase { background: repeating-linear-gradient(45deg, #e2e8f0 0 6px, #cbd5e1 6px 12px); }
+.oe-thumb { position: relative; display: block; }
+.oe-thumb .o-sprite { position: absolute; }
+
+/* 장면이 칸보다 작으면 가운데에 둔다 — 왼쪽 위에 붙여 두면 아래가 통째로 검은 여백이 된다 */
+.oe-canvas { @apply relative flex items-center justify-center overflow-auto; background: #0b1020 radial-gradient(circle at 30% 20%, rgba(80, 100, 140, 0.18), transparent 60%); min-height: 420px; }
+.oe-stage { position: relative; margin: 24px auto; user-select: none; touch-action: none; }
+.oe-stage[data-tool="pan"] { cursor: grab; }
+.oe-stage[data-tool="pan"]:active { cursor: grabbing; }
+.oe-stage[data-tool="paint"] { cursor: cell; }
+.oe-stage[data-tool="select"] { cursor: default; }
+.oe-stage[data-tool="prop"], .oe-stage[data-tool="decor"], .oe-stage[data-tool="npc"], .oe-stage[data-tool="start"], .oe-stage[data-tool="door"] { cursor: copy; }
+.oe-scaled { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.oe-room { position: relative; background: #171d2b; box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.9); }
+.oe-room > * { position: absolute; }
+.oe-room .o-floor-shade { box-shadow: none; }
+.oe-world { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.oe-world > * { position: absolute; }
+.oe-tag { position: absolute; transform: translateX(-50%); padding: 1px 4px; border-radius: 3px; font-size: 7px; font-weight: 700; line-height: 1.3; color: #fff; background: rgba(14, 116, 144, 0.9); white-space: nowrap; pointer-events: none; z-index: 5000; }
+.oe-tag-start { background: rgba(2, 132, 199, 0.9); }
+.oe-grid { pointer-events: none; z-index: 5001; background-image: linear-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.14) 1px, transparent 1px); background-size: 48px 48px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); }
+.oe-grid-wall { background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px); box-shadow: none; }
+.oe-problem { pointer-events: none; z-index: 5002; box-sizing: border-box; }
+.oe-problem[data-level="warn"] { background: rgba(250, 204, 21, 0.22); box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.7); }
+.oe-problem[data-level="error"] { background: rgba(239, 68, 68, 0.28); box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.85); }
+.oe-problem[data-focus] { animation: oe-blink 0.9s ease-in-out infinite; }
+@keyframes oe-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.oe-hover { pointer-events: none; z-index: 5003; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.9); }
+.oe-ghost { pointer-events: none; z-index: 5004; }
+.oe-ghost[data-ok="true"] { background: rgba(34, 197, 94, 0.28); box-shadow: inset 0 0 0 1.5px rgba(34, 197, 94, 0.9); }
+.oe-ghost[data-ok="false"] { background: rgba(239, 68, 68, 0.28); box-shadow: inset 0 0 0 1.5px rgba(239, 68, 68, 0.9); }
+.oe-selection { pointer-events: none; z-index: 5005; box-shadow: inset 0 0 0 2px #38bdf8, 0 0 0 1px rgba(56, 189, 248, 0.5); }
+.oe-doorhint { pointer-events: none; z-index: 5002; box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0.8); }
+.oe-selected { filter: drop-shadow(0 0 3px #38bdf8) brightness(1.1); }
+.oe-status { @apply pointer-events-none absolute bottom-2 left-3 rounded-md px-2 py-1 text-[11px] text-slate-200; background: rgba(8, 12, 22, 0.8); }
+
+.oe-selected-box { @apply mb-3 flex flex-col gap-1.5 rounded-lg border border-sky-200 bg-sky-50 p-2.5 text-xs text-slate-700; }
+.oe-selected-box b { @apply text-sm text-slate-900; }
+.oe-dirs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.oe-dirs button { @apply rounded border border-slate-300 bg-white py-1 text-[11px] text-slate-600; }
+.oe-dirs button[data-on] { @apply border-sky-500 bg-sky-500 text-white; }
+.oe-count { @apply rounded-full px-1.5 text-[10px] font-bold; }
+.oe-count[data-level="error"] { @apply bg-red-100 text-red-700; }
+.oe-count[data-level="warn"] { @apply bg-amber-100 text-amber-700; }
+.oe-ok { @apply rounded-full bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-700; }
+.oe-problems { @apply m-0 list-none space-y-1 p-0; }
+.oe-problem-row { @apply block w-full rounded-md border px-2 py-1.5 text-left text-xs leading-snug; }
+.oe-problem-row[data-level="error"] { @apply border-red-200 bg-red-50 text-red-800; }
+.oe-problem-row[data-level="warn"] { @apply border-amber-200 bg-amber-50 text-amber-800; }
+.oe-problem-row[data-on] { @apply ring-2 ring-sky-400; }
+.oe-legend { @apply mt-4 space-y-1 text-[11px] leading-snug text-slate-400; }
+.oe-preview { @apply p-3; }
+.oe-preview .office-viewport { height: calc(100vh - 260px); }
+.oe-preview-note { @apply mt-2 text-xs text-slate-500; }
+.oe-preview-note[data-level="error"] { @apply rounded-md bg-red-50 px-2 py-1 font-medium text-red-700; }
+
+/* 출근길: 월드는 고정, 카메라만 실제 아바타 위치를 추적한다. */
+.commute { position: fixed; inset: 0; z-index: 9600; overflow: hidden; background: #03060b; color: #e2e8f0; --hall-scale: 2; }
+@media (max-height: 760px), (max-width: 700px) { .commute { --hall-scale: 1.5; } }
+@media (max-width: 420px) { .commute { --hall-scale: 1; } }
+.commute-camera { position: absolute; left: 50%; top: 54%; transform: scale(var(--hall-scale)); transform-origin: 0 0; }
+.commute-world { position: absolute; image-rendering: pixelated; will-change: transform; }
+.commute-floor { position: absolute; background-repeat: repeat; background-size: 96px 96px; }
+.commute-person::after { content: ""; position: absolute; left: 30px; bottom: -2px; width: 24px; height: 6px; border-radius: 50%; background: #0005; }
+.commute-light-pool { position: absolute; left: 48px; width: 288px; height: 900px; z-index: 4000; pointer-events: none; background: linear-gradient(180deg, transparent, #dff5ff30 35%, #eaf7ffb0 70%, #fff); mix-blend-mode: screen; }
+.commute-darkness { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, #03060b 0%, #03060bf5 12%, #03060b80 32%, transparent 58%), linear-gradient(90deg, #03060b 0%, transparent 32% 68%, #03060b 100%); }
+.commute-light { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 68% at 50% 115%, #fff 0%, #e9f6ffe0 28%, #c4e7ff50 57%, transparent 82%); }
+.commute-caption { position: absolute; left: 20px; right: 20px; top: 10%; text-align: center; z-index: 2; animation: commute-caption-in 0.7s ease-out both; }
+@keyframes commute-caption-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.commute-brand { font-size: 10px; font-weight: 600; letter-spacing: 0.4em; color: #8bafc7; }
+.commute-title { margin-top: 12px; font-size: clamp(17px, 2vw, 22px); font-weight: 600; letter-spacing: -0.025em; color: #edf4fa; }
+.commute-sub { margin-top: 8px; font-size: 12px; color: #92a5b6; }
+.commute-skip { position: absolute; right: 24px; top: 24px; z-index: 3; border-radius: 8px; padding: 6px 12px; font-size: 12px; border: 1px solid #ffffff26; color: #a8bac9; background: #03060b50; }
+.commute-skip:hover { border-color: #ffffff60; color: #fff; }
+.commute-skip:focus-visible { outline: 2px solid #bae6fd; outline-offset: 4px; }
+.commute-veil { position: absolute; inset: 0; z-index: 4; opacity: 0; pointer-events: none; background: #f5fbff; }
+.commute[data-phase="flash"] .commute-veil { animation: commute-flash-in 0.65s ease-in forwards; }
+.commute[data-phase="reveal"] { background: transparent; pointer-events: none; }
+.commute[data-phase="reveal"] > :not(.commute-veil) { visibility: hidden; }
+.commute[data-phase="reveal"] .commute-veil { animation: commute-flash-out 0.9s ease-out both; }
+@keyframes commute-flash-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes commute-flash-out { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .commute-caption { animation: none; } }
+
+/* ── 사무실 출근 — 문 앞은 어둡고, 걸어 나오면 방마다 불이 켜진다 ── */
+.office-veil { z-index: 40; pointer-events: none; }
+.office-veil > * { background: #04060d; }
+.office-veil-void { opacity: 0.8; transition: opacity 0.7s ease; }
+.office-veil-room { opacity: 0.93; }
+.office-veil-room[data-corridor] { opacity: 0.5; }
+.office-veil[data-lit] .office-veil-void { opacity: 0; }
+.office-veil[data-lit] .office-veil-room { animation: office-light-on 0.64s steps(1, end) forwards; }
+.office-veil[data-lit] .office-veil-room[data-corridor] { animation: office-light-on-hall 0.44s steps(1, end) forwards; }
+@keyframes office-light-on {
+  0% { opacity: 0.93; } 16% { opacity: 0.3; } 28% { opacity: 0.78; } 40% { opacity: 0.12; } 52% { opacity: 0.5; } 64%, 100% { opacity: 0; }
+}
+@keyframes office-light-on-hall { 0% { opacity: 0.5; } 30% { opacity: 0.12; } 50% { opacity: 0.3; } 70%, 100% { opacity: 0; } }
+.office-entrance-shield { position: absolute; inset: 0; z-index: 65; cursor: default; }
+.office-bar, .office-zoom, .office-breadcrumb { transition: opacity 0.5s ease; }
+.office-viewport[data-entrance] :is(.office-bar, .office-zoom, .office-breadcrumb) { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .office-veil > * { animation: none; transition: none; }
+  .office-veil[data-lit] > * { opacity: 0; }
+}
+
+/* Office speech stays with its speaker; speaking opens only a compact input. */
+.office-viewport[data-talking] { touch-action: auto; }
+/* 사람이 두 칸 키다. 말풍선이 옆 사람을 가리지 않게 폭·글자·여백을 작게 잡는다 — 긴 말은 speech.ts 가 쪽으로 나눈다. */
+.office-speech { position: absolute; z-index: 58; transform: translateY(-100%); padding: 5px 9px 6px; border: 1px solid #c6d3d8; border-radius: 10px; background: #f7faf9f2; color: #273942; box-shadow: 0 4px 14px #07121c2e; pointer-events: none; }
+.office-speech[data-side="below"] { transform: none; }
+.office-speech::after { content: ""; position: absolute; left: var(--speech-tail); bottom: -6px; width: 10px; height: 10px; transform: translateX(-50%) rotate(45deg); background: inherit; border-right: 1px solid #c6d3d8; border-bottom: 1px solid #c6d3d8; }
+.office-speech[data-side="below"]::after { top: -6px; bottom: auto; transform: translateX(-50%) rotate(225deg); }
+.office-speech strong { display: block; margin-bottom: 1px; font-size: 9px; color: #5d7a87; font-weight: 650; }
+.office-speech p { font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+.office-speech small { display: block; margin-top: 2px; text-align: right; color: #7f949b; font-size: 8px; }
+.office-speech[data-kind="user_message"] { background: #deeff3; }
+.office-speech-wait { display: flex; justify-content: center; gap: 4px; padding: 4px 0; }
+.office-speech-wait i { width: 4px; height: 4px; border-radius: 50%; background: #6e8f9a; animation: office-speaking 1.2s ease-in-out infinite; }
+.office-speech-wait i:nth-child(2) { animation-delay: .15s; }
+.office-speech-wait i:nth-child(3) { animation-delay: .3s; }
+@keyframes office-speaking { 50% { opacity: .3; transform: translateY(-2px); } }
+.office-talk-action { position: absolute; z-index: 59; transform: translateX(-50%); padding: 8px 12px; border-radius: 20px; border: 1px solid #a4becb66; background: #172936ed; color: #edf6fa; font-size: 11px; box-shadow: 0 3px 12px #0003; }
+.office-talk-action kbd { margin-left: 6px; font-size: 9px; color: #a5c5d4; }
+.office-talk-action:focus-visible, .talk-interactive button:focus-visible { outline: 2px solid #a1d4de; outline-offset: 3px; }
+.office-talk-error { margin-bottom: 8px; font-size: 11px; color: #e4b9a6; }
+.office-talk-error button { margin-left: 8px; text-decoration: underline; }
+@media (max-width: 640px) { .office-talk-action kbd { display: none; } }
+@media (prefers-reduced-motion: reduce) { .office-speech-wait i { animation: none; } }
+
+/* Portrait dialogue retains one current NPC line; composing is an explicit action. */
+.talk-interactive { pointer-events: auto; bottom: 70px; width: min(860px, calc(100% - 32px)); }
+.talk-interactive .talk-portrait { width: clamp(105px, 20vw, 200px); pointer-events: none; }
+.talk-interactive .talk-panel { padding: 18px 22px; }
+.talk-interactive .talk-line { max-height: 28vh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.85; margin: 14px 0 8px; }
+.talk-user-line { color: #a5a7ad; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 15vh; overflow-y: auto; margin: 0 0 10px; }
+.talk-wait { margin: 0 0 10px; }
+.talk-wait .office-speech-wait { display: inline-flex; padding: 4px 0; }
+.talk-close { margin-left: auto; flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px; color: #a7bbcc; }
+.talk-close:hover { background: #ffffff12; }
+.talk-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.talk-actions small { font-size: 11px; color: #8ea4b9; }
+.talk-actions button { padding: 8px 22px; border: 1px solid #729aaa60; border-radius: 8px; color: #d9edf7; background: #244656; font-size: 13px; }
+.talk-actions button:hover:not(:disabled) { background: #305c6c; }
+.talk-actions button:disabled { opacity: .45; cursor: default; }
+.talk-compose { border-top: 1px solid #8da8bc25; padding-top: 12px; }
+.talk-compose textarea { width: 100%; min-height: 70px; max-height: 20vh; resize: vertical; border: 1px solid #6d8a9e55; border-radius: 8px; padding: 10px 12px; background: #080f1b; color: #e3edf7; font-size: 14px; line-height: 1.6; margin-bottom: 10px; }
+.talk-compose textarea:focus { outline: 2px solid #76b8d280; outline-offset: 1px; }
+@media (max-width: 600px) {
+  .talk-interactive { bottom: 76px; gap: 0; width: calc(100% - 24px); }
+  .talk-interactive .talk-portrait { position: absolute; width: 108px; bottom: calc(100% - 10px); left: 8px; }
+  .talk-interactive .talk-panel { padding: 14px 16px; }
+  .talk-interactive .talk-line { font-size: 14px; max-height: 24vh; }
+  .talk-interactive .talk-name { flex-wrap: wrap; }
+}
+
+/* ── OdyCell — 시험장의 표 계산 ─────────────────────────────────────
+   격자는 평범한 table 로 그리되, 눈에 익은 스프레드시트의 규칙을 지킨다:
+   머리글은 회색 띠, 고른 칸은 옅은 파랑, 지금 칸은 진한 테두리, 숫자는 오른쪽.
+   선이 겹쳐 두꺼워 보이지 않도록 경계는 한쪽 변에만 긋는다. */
+
+.odycell-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 12px;
+  color: #1e293b;
+}
+
+.odycell-scroll {
+  /* 격자 밖(표 오른쪽·아래)은 종이가 아니라 책상이다 */
+  background: #f8fafc;
+}
+
+.odycell-corner,
+.odycell-colhead,
+.odycell-rowhead {
+  position: sticky;
+  background: #f1f5f9;
+  border-right: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+  font-weight: 600;
+  font-size: 11px;
+  color: #64748b;
+  user-select: none;
+}
+
+.odycell-corner {
+  top: 0;
+  left: 0;
+  z-index: 30;
+  cursor: pointer;
+}
+
+.odycell-colhead {
+  top: 0;
+  z-index: 20;
+  cursor: pointer;
+  text-align: center;
+  padding: 0 4px;
+}
+
+.odycell-rowhead {
+  left: 0;
+  z-index: 20;
+  cursor: pointer;
+  text-align: center;
+  width: 44px;
+  padding: 0 4px;
+}
+
+.odycell-colhead[data-selected],
+.odycell-rowhead[data-selected] {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+/* 열 너비 손잡이 — 머리글 오른쪽 끝의 좁은 띠 */
+.odycell-grip {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 25;
+}
+
+.odycell-cell {
+  position: relative;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0;
+  background: #ffffff;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: cell;
+}
+
+/* 머리글 행 — 고정한 첫 줄은 살짝 짙게 두어 본문과 구분한다 */
+.odycell-cell[data-head] {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.odycell-cell[data-picked] {
+  background: #eff6ff;
+}
+
+.odycell-cell[data-head][data-picked] {
+  background: #e0ecff;
+}
+
+/* 지금 칸 — 엑셀의 굵은 초록 테두리 자리. 칸 안쪽에 그려 줄이 밀리지 않게 한다. */
+.odycell-cell[data-focus]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid #047857;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.odycell-text {
+  display: block;
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 숫자는 오른쪽 — 자릿수가 눈으로 맞아야 표가 표답다 */
+.odycell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.odycell-input {
+  width: 100%;
+  height: 100%;
+  padding: 3px 6px;
+  border: 0;
+  outline: 0;
+  background: #ffffff;
+  font: inherit;
+  color: inherit;
+  position: relative;
+  z-index: 6;
+}
+
+/* 격자의 포커스를 드는 보이지 않는 입력. display:none 이면 포커스를 못 받는다. */
+.odycell-proxy {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  z-index: -1;
+}
+
+/* 격자의 스크롤 막대 — 기본 막대는 두껍고 표보다 눈에 띈다 */
+.odycell-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.odycell-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+.odycell-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border: 2px solid #f1f5f9;
+  border-radius: 5px;
+}
+.odycell-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.odycell-scroll::-webkit-scrollbar-corner { background: #f1f5f9; }
+
+/* 고정한 머리글 줄 — 본문이 그 아래로 지나가도 가려지지 않는다.
+   sticky 는 배경이 없으면 비쳐 보이므로 반드시 칠해 둔다. */
+.odycell-cell[data-head] {
+  background: #f8fafc;
+  font-weight: 600;
+  box-shadow: inset 0 -1px 0 #cbd5e1;
+}
+
+/* 시트 탭 — 엑셀의 아래쪽 탭. 고른 탭만 종이처럼 희고 위로 붙는다. */
+.odycell-tab {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 12px;
+  font-size: 11.5px;
+  color: #64748b;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  margin-bottom: -1px;
+}
+
+.odycell-tab:hover { background: #eef2f7; color: #334155; }
+
+.odycell-tab[data-active] {
+  background: #ffffff;
+  color: #047857;
+  font-weight: 700;
+  border-color: #cbd5e1;
+  box-shadow: 0 -2px 0 #047857 inset;
+}
+
+.odycell-tabs { overflow-x: auto; overflow-y: hidden; }
+.odycell-tabs::-webkit-scrollbar { height: 0; }
+
+/* ── 좁아져도 깨지지 않는 막대 ────────────────────────────────────
+   시험장의 창은 사람이 끌어 줄인다. 도구 막대의 단추가 flex 자식이면 자리가 모자랄 때
+   **글자 단위로 줄바꿈**되어 "행 삽 입" 처럼 세로로 늘어진다. 한 번 겪으면 화면이 망가진
+   것처럼 보이고, 실제로 누를 수도 없다.
+
+   그래서 막대는 한 줄을 지킨다: 감싸지 않고(nowrap), 자식은 줄어들지 않고(shrink-0),
+   글자는 쪼개지지 않는다(nowrap). 자리가 모자라면 **가로로 밀린다** — 줄바꿈이 아니라
+   스크롤이 맞다. 스크롤 막대는 숨긴다(막대 안에 또 막대가 보이면 그게 더 어지럽다).
+
+   줄어들어도 되는 자리(파일 이름처럼 말줄임으로 처리할 것)는 .app-bar-shrink 로 표시한다. */
+.app-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.app-bar::-webkit-scrollbar { height: 0; width: 0; }
+
+.app-bar > * { flex-shrink: 0; }
+.app-bar > .app-bar-shrink { flex-shrink: 1; min-width: 0; }
+
+/* 막대 안의 글자는 어떤 깊이에 있든 쪼개지지 않는다 */
+.app-bar :where(button, span, a, label, select, div) { white-space: nowrap; }

@@ -1,0 +1,9 @@
+Required Notice: Copyright (c) 2026 CocoRoF (JangHaryeom) (https://github.com/CocoRoF/odysseus)
+
+Odysseus is licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE).
+Any commercial or business use requires a separate written commercial license
+agreement with the licensor. See COMMERCIAL.md.
+
+Third-party art: the prop and wall sheets under apps/web/public/office/licensed come
+from a commercially licensed asset pack. They live in a separate private repository
+(git submodule), are not part of this repository, and are not licensed under these terms.

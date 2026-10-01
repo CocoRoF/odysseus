@@ -1,0 +1,216 @@
+name: odysseus
+
+# 러너는 응시자 코드를 돌린다. 그래서 외부 인터넷도, 데이터베이스도 닿으면 안 된다.
+#   backplane — 기본 망(외부 egress 가능). api 가 GitHub·검색을 대리 조회하는 통로.
+#   sandbox   — internal: true. 게이트웨이가 없어 컨테이너가 밖으로 나갈 수 없다.
+#               러너는 여기에만 붙으므로 redis(잡 큐)·api(콜백)까지만 닿는다.
+networks:
+  backplane:
+    driver: bridge
+  sandbox:
+    driver: bridge
+    internal: true
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: odysseus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-odysseus}
+      POSTGRES_DB: odysseus
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odysseus -d odysseus"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - backplane
+
+  redis:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    restart: unless-stopped
+    # 인증 없는 접근은 없다 (ODY-003). default 사용자는 끄고, 서비스별 ACL 계정만 둔다:
+    #   api    — 모든 키·명령 (큐 적재, 통계 조회, 취소 요청)
+    #   runner — 큐 소비와 자기 통계 키만, 명령도 필요한 것만 (LPUSH/KEYS/FLUSH* 불가)
+    environment:
+      REDIS_API_PASSWORD: ${REDIS_API_PASSWORD:-odysseus-default-redis-api-password}
+      REDIS_RUNNER_PASSWORD: ${REDIS_RUNNER_PASSWORD:-odysseus-default-redis-runner-password}
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        printf 'user default off\n' > /tmp/users.acl
+        printf 'user api on >%s ~* &* +@all\n' "$$REDIS_API_PASSWORD" >> /tmp/users.acl
+        # runner 는 pending/processing 큐와 자기 통계·취소·전달횟수 키만 쓴다. FLUSH/KEYS 같은 광역 명령은 없다.
+        # (LPUSH 는 콜백 실패 시 되돌려 넣기용 — 작업은 HMAC 서명이라 위조 적재는 api 가 버린다)
+        printf 'user runner on >%s ~odysseus:run:* ~odysseus:runner:* ~odysseus:attempt:* -@all +brpop +brpoplpush +rpoplpush +lrem +lpush +incr +llen +set +hincrby +hincrbyfloat +expire +smembers +sismember +srem +ping +multi +exec +client|setinfo\n' "$$REDIS_RUNNER_PASSWORD" >> /tmp/users.acl
+        chmod 600 /tmp/users.acl
+        exec redis-server --aclfile /tmp/users.acl --save "" --appendonly no
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --user api --pass \"$$REDIS_API_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - backplane
+      - sandbox
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    environment: &api-environment
+      DATABASE_URL: postgresql+asyncpg://odysseus:${POSTGRES_PASSWORD:-odysseus}@postgres:5432/odysseus
+      REDIS_URL: redis://api:${REDIS_API_PASSWORD:-odysseus-default-redis-api-password}@redis:6379/0
+      # 기본값이 있어 준비 없이 바로 돈다. 공개된 값이라 비밀이 아니므로 운영 전 .env 에서 바꾼다
+      # (api 가 기동 때마다 크게 알린다). `openssl rand -hex 32`
+      JWT_SECRET: ${JWT_SECRET:-odysseus-default-jwt-secret-CHANGE-ME-before-production}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-odysseus-default-internal-token-CHANGE-ME-before-production}
+      # DB 안의 AI 공급자 키·관리자 설정을 AES-GCM 으로 감싸는 키. 운영(production)은 없으면 기동 거부,
+      # 개발은 경고만. 백업과 한 세트 — 잃으면 저장된 자격증명을 되살릴 수 없다 (docs/RELIABILITY-HARDENING.md §7).
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-odysseus-default-data-encryption-key-CHANGE-ME-before-production}
+      # 운영이 기본. 데모 시드(고정 비밀번호)는 ODYSSEUS_ENV=development 에서만 켜진다.
+      ODYSSEUS_ENV: ${ODYSSEUS_ENV:-production}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gpt-4o-mini}
+      AI_EVAL_MODEL: ${AI_EVAL_MODEL:-gpt-4o-mini}
+      OFFICE_DIALOGUE_ENABLED: ${OFFICE_DIALOGUE_ENABLED:-true}
+      OFFICE_AMBIENT_ENABLED: ${OFFICE_AMBIENT_ENABLED:-true}
+      OFFICE_EXAM_BRIDGE_ENABLED: ${OFFICE_EXAM_BRIDGE_ENABLED:-true}
+      OFFICE_WORKER_CONCURRENCY: ${OFFICE_WORKER_CONCURRENCY:-4}
+      OFFICE_PROVIDER_CONCURRENCY: ${OFFICE_PROVIDER_CONCURRENCY:-3}
+      OFFICE_LLM_TIMEOUT_S: ${OFFICE_LLM_TIMEOUT_S:-25}
+      OFFICE_JOB_TIMEOUT_S: ${OFFICE_JOB_TIMEOUT_S:-90}
+      OFFICE_AMBIENT_INTERVAL_S: ${OFFICE_AMBIENT_INTERVAL_S:-100}
+      OFFICE_MAX_JOBS_PER_USER_HOUR: ${OFFICE_MAX_JOBS_PER_USER_HOUR:-120}
+      OFFICE_MAX_JOBS_GLOBAL_HOUR: ${OFFICE_MAX_JOBS_GLOBAL_HOUR:-3000}
+      OFFICE_MAX_TOKENS_GLOBAL_HOUR: ${OFFICE_MAX_TOKENS_GLOBAL_HOUR:-8000000}
+      OFFICE_TOKEN_RESERVATION: ${OFFICE_TOKEN_RESERVATION:-48000}
+      OFFICE_CLI_CALL_BUDGET_USD: ${OFFICE_CLI_CALL_BUDGET_USD:-0.25}
+      OFFICE_INPUT_CHARS: ${OFFICE_INPUT_CHARS:-14000}
+      OFFICE_MEMORY_LIMIT: ${OFFICE_MEMORY_LIMIT:-8}
+    # 호스트 포트는 루프백에만 — 배포 스크립트의 보존 검증용. 외부는 엣지의 /api/ 만 본다
+    # (엣지는 /api/internal/ 을 404 로 막는다).
+    ports:
+      - "127.0.0.1:${API_PORT:-8100}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backplane
+      - sandbox
+
+  office-worker:
+    build: ./apps/api
+    restart: unless-stopped
+    command: ["python", "-m", "odysseus_api.npc.worker"]
+    environment:
+      <<: *api-environment
+    mem_limit: 1536m
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pathlib,time; p=pathlib.Path('/tmp/office-worker-health'); assert p.exists() and time.time()-p.stat().st_mtime<30"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - backplane
+
+  runner:
+    build: ./apps/runner
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://runner:${REDIS_RUNNER_PASSWORD:-odysseus-default-redis-runner-password}@redis:6379/0
+      API_BASE_URL: http://api:8000
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-odysseus-default-internal-token-CHANGE-ME-before-production}
+      RUNNER_CONCURRENCY: ${RUNNER_CONCURRENCY:-2}
+      RUNNER_MEM_MB: ${RUNNER_MEM_MB:-4096}
+      # replica 를 여러 개 띄우면 반드시 각 replica 에 고유하고 재시작 후에도 동일한 ID 를 준다 (processing 큐 회수용).
+      RUNNER_ID: ${RUNNER_ID:-runner-main}
+      # 실행 하나의 실제 프로세스 트리 메모리(Pss) 상한. 비우면 컨테이너 메모리의 80%/동시성으로 자동 계산.
+      RUNNER_EXEC_MEM_MB: ${RUNNER_EXEC_MEM_MB:-}
+      # 운영에서는 네임스페이스 격리가 안 되는 호스트에서 비격리로 돌지 않고 기동을 거부한다.
+      RUNNER_REQUIRE_ISOLATION: ${RUNNER_REQUIRE_ISOLATION:-true}
+    # 메모리는 여기서 묶는다 — 실행별 RLIMIT_AS 는 Go/JVM 을 시작조차 못 하게 한다 (실행별 상한은 Pss 감시자)
+    mem_limit: ${RUNNER_MEM_MB:-4096}m
+    # CPU 는 컨테이너 단위로 못 박는다. 실행별 RLIMIT_CPU 는 **프로세스마다** 세어지므로, 응시자가 코어 수만큼
+    # 무한 루프를 띄우면(예: `grep -c ^processor /proc/cpuinfo` 만큼 fork) 그 수만큼 코어를 통째로 먹는다.
+    # 러너는 여러 서비스와 호스트를 공유하므로, 컨테이너가 쓸 수 있는 CPU 총량을 여기서 막아 다른 서비스가
+    # 굶지 않게 한다 — 이 상한 안에서는 무한 루프가 몇 개든 이만큼만 쓴다 (동시성 슬롯당 ~1코어 기준).
+    cpus: ${RUNNER_CPUS:-2}
+    pids_limit: 1024
+    # gVisor(runsc) 가 설치된 호스트에서는 RUNNER_RUNTIME=runsc 로 OCI 격리층을 한 겹 더 둘 수 있다 (기본 runc).
+    runtime: ${RUNNER_RUNTIME:-runc}
+    # 실행 한 건을 자기 PID/mount/IPC 네임스페이스에 가둔다 — `ps` 에 남의 프로세스가
+    # 보이지 않고 /tmp 도 실행 전용 tmpfs 가 된다. 네임스페이스 생성과 mount 에
+    # SYS_ADMIN 이 필요하고, 기본 AppArmor 프로필이 mount 전파 변경을 막으므로 푼다.
+    # 응시자 코드 자체는 그 안에서 비특권 UID 로 강등되어 능력을 갖지 않는다.
+    security_opt:
+      - apparmor=unconfined
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN     # 네임스페이스 분리 + 개인 /tmp 마운트
+      - NET_ADMIN     # 실행 전용 네트워크 네임스페이스에서 루프백만 올린다 (밖으로 나가는 인터페이스 없음)
+      - SETUID        # 실행마다 다른 UID 로 강등
+      - SETGID
+      - KILL          # 강등된 UID 의 프로세스를 끝낸다 (없으면 root 라도 EPERM)
+      - CHOWN         # 작업 폴더 소유자를 그 UID 로
+      - DAC_OVERRIDE  # 워커(root)가 0600 산출물을 회수
+      - FOWNER
+    networks:
+      - sandbox
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+  web:
+    build: ./apps/web
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+    networks:
+      - backplane
+    depends_on:
+      api:
+        condition: service_started
+
+  # 단일 오리진 엣지 — /api(SSE 포함)를 FastAPI로, 나머지는 Next.js로
+  edge:
+    environment:
+      # 운영에서는 on — 평문 요청을 HTTPS 로 돌리고 HSTS 를 단다 (ODY-014)
+      EDGE_HTTPS_ONLY: ${EDGE_HTTPS_ONLY:-off}
+    build: ./apps/edge
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3100}:80"
+    networks:
+      - backplane
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+
+volumes:
+  # 계정·시나리오·응시 기록·워크스페이스 파일, 그리고 AI 공급자 키와 관리자 설정이
+  # 전부 여기 있다. `docker compose down -v` 는 이것을 지운다 — 배포는 반드시
+  # `scripts/deploy.sh`(백업 + 보존 검증) 를 쓸 것.
+  pgdata:

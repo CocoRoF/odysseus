@@ -1,0 +1,416 @@
+{
+  "asset_count": 45,
+  "tile_count": 15,
+  "floor_tile_count": 11,
+  "wall_tile_count": 4,
+  "prop_count": 30,
+  "format": "PNG RGBA",
+  "canvas": "128x128",
+  "assets": [
+    {
+      "file": "tiles/floor_01_light_speckle.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 67,
+      "fully_transparent_pixels": 5141
+    },
+    {
+      "file": "tiles/floor_02_dense_speckle.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 153,
+      "fully_transparent_pixels": 12754
+    },
+    {
+      "file": "tiles/floor_03_light_panel.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 43,
+      "alpha_max": 164,
+      "fully_transparent_pixels": 0
+    },
+    {
+      "file": "tiles/floor_04_blue_grid.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 255,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 0
+    },
+    {
+      "file": "tiles/floor_05_gray_grid.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 101,
+      "alpha_max": 212,
+      "fully_transparent_pixels": 0
+    },
+    {
+      "file": "tiles/floor_06_pale_grid.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 31,
+      "alpha_max": 210,
+      "fully_transparent_pixels": 0
+    },
+    {
+      "file": "tiles/floor_07_light_oak.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 1
+    },
+    {
+      "file": "tiles/floor_08_walnut.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 14,
+      "alpha_max": 220,
+      "fully_transparent_pixels": 0
+    },
+    {
+      "file": "tiles/floor_09_concrete.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 141,
+      "alpha_max": 202,
+      "fully_transparent_pixels": 0
+    },
+    {
+      "file": "tiles/floor_10_server_access.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 221,
+      "fully_transparent_pixels": 11143
+    },
+    {
+      "file": "tiles/floor_11_entry_mat.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 225,
+      "alpha_max": 246,
+      "fully_transparent_pixels": 0
+    },
+    {
+      "file": "tiles/wall_top.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 14336
+    },
+    {
+      "file": "tiles/wall_bottom.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 12285
+    },
+    {
+      "file": "tiles/wall_left.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 14821
+    },
+    {
+      "file": "tiles/wall_right.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 14646
+    },
+    {
+      "file": "props/prop_01_work_desk.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 13780
+    },
+    {
+      "file": "props/prop_02_task_chair.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 14359
+    },
+    {
+      "file": "props/prop_03_desktop_monitor.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 13555
+    },
+    {
+      "file": "props/prop_04_open_laptop.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 13852
+    },
+    {
+      "file": "props/prop_05_keyboard_mouse.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 15114
+    },
+    {
+      "file": "props/prop_06_mobile_drawer.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 13884
+    },
+    {
+      "file": "props/prop_07_filing_cabinet.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 12561
+    },
+    {
+      "file": "props/prop_08_bookshelf.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 11356
+    },
+    {
+      "file": "props/prop_09_potted_plant.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 14559
+    },
+    {
+      "file": "props/prop_10_desktop_printer.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 14579
+    },
+    {
+      "file": "props/prop_11_water_dispenser.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 13141
+    },
+    {
+      "file": "props/prop_12_vending_machine_left.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 11757
+    },
+    {
+      "file": "props/prop_13_vending_machine_right.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 12235
+    },
+    {
+      "file": "props/prop_14_coffee_machine.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 14095
+    },
+    {
+      "file": "props/prop_15_trash_bin.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 14526
+    },
+    {
+      "file": "props/prop_16_recycle_bin.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 13996
+    },
+    {
+      "file": "props/prop_17_whiteboard.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 10032
+    },
+    {
+      "file": "props/prop_18_cork_board.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 13116
+    },
+    {
+      "file": "props/prop_19_clock.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 12313
+    },
+    {
+      "file": "props/prop_20_floor_lamp.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 15469
+    },
+    {
+      "file": "props/prop_21_sofa_left.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 10038
+    },
+    {
+      "file": "props/prop_22_sofa_right.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 10743
+    },
+    {
+      "file": "props/prop_23_coffee_table.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 14131
+    },
+    {
+      "file": "props/prop_24_meeting_table_left.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 12648
+    },
+    {
+      "file": "props/prop_25_meeting_table_right.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 11959
+    },
+    {
+      "file": "props/prop_26_office_divider.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 12965
+    },
+    {
+      "file": "props/prop_27_server_rack.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 255,
+      "fully_transparent_pixels": 11362
+    },
+    {
+      "file": "props/prop_28_photocopier.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 11631
+    },
+    {
+      "file": "props/prop_29_fire_extinguisher.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 14616
+    },
+    {
+      "file": "props/prop_30_first_aid_box.png",
+      "width": 128,
+      "height": 128,
+      "mode": "RGBA",
+      "alpha_min": 0,
+      "alpha_max": 254,
+      "fully_transparent_pixels": 13984
+    }
+  ]
+}

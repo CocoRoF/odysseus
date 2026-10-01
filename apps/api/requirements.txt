@@ -1,0 +1,21 @@
+# Public API stack. FastAPI >=0.141.1 accepts Starlette 1.x; older 0.115.x pins the
+# vulnerable Starlette 0.46 line. Keep the framework on the audited 0.141 release line.
+fastapi>=0.141.1,<0.142
+uvicorn[standard]>=0.52.4,<0.53
+sqlalchemy[asyncio]>=2.0.36,<2.1
+asyncpg>=0.31,<0.32
+pydantic>=2.9,<3
+email-validator>=2.3.0,<3
+pydantic-settings>=2.15.0,<3
+bcrypt>=4.2,<5
+PyJWT>=2.13.0,<3
+redis>=8.1.0,<9
+httpx>=0.28,<1
+cryptography>=50,<51
+# 통합 LLM 클라이언트 계층 (openai/anthropic/google/vllm/ollama/lmstudio/custom/claude_code_cli)
+# — llm_client 서브패키지만 사용하며 내장 에이전트 툴은 로드하지 않는다.
+# 2.65.2 미만은 Claude Code CLI 스트림이 드물게 멈추는 결함이 있다(2.65.1/2.65.2에서 수정).
+geny-executor>=2.65.2,<3
+openai>=1.50.0
+# 6.1.3 contains the September 2026 parser hardening; external HTML is still sanitized by our proxy.
+lxml>=6.1.3,<7

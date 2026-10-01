@@ -1,0 +1,221 @@
+# Small changes run only relevant checks. Run manually for the full suite.
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.scope.outputs.backend }}
+      office: ${{ steps.scope.outputs.office }}
+      images: ${{ steps.scope.outputs.images }}
+      pydeps: ${{ steps.scope.outputs.pydeps }}
+      web: ${{ steps.scope.outputs.web }}
+      geometry: ${{ steps.scope.outputs.geometry }}
+      tilesets: ${{ steps.scope.outputs.tilesets }}
+      jsdeps: ${{ steps.scope.outputs.jsdeps }}
+      webbuild: ${{ steps.scope.outputs.webbuild }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          FULL: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: python
+        run: |
+          import fnmatch, os, subprocess
+          full = os.environ['FULL'] == 'true'
+          paths = [] if full else subprocess.check_output(
+              ['git', 'diff', '--name-only', '-z', os.environ['BASE'] + '...' + os.environ['HEAD']]
+          ).decode().split('\0')
+          scopes = {
+              'backend': ['apps/api/*', 'apps/runner/*', 'tests/unit/*', 'scripts/*.py', 'docker-compose*', 'compose*'],
+              'office': ['apps/api/odysseus_api/npc/*', 'apps/api/odysseus_api/routers/office*',
+                         'apps/api/odysseus_api/models*', 'apps/api/odysseus_api/database*',
+                         'apps/api/odysseus_api/security*', 'apps/api/odysseus_api/auth*',
+                         'apps/api/odysseus_api/ai/*', 'apps/api/odysseus_api/ai_incidents*',
+                         'apps/api/odysseus_api/guests*', 'apps/api/odysseus_api/workspace*',
+                         'apps/api/odysseus_api/routers/agent*', 'apps/api/odysseus_api/routers/messenger*',
+                         'apps/api/odysseus_api/routers/files*',
+                         'apps/api/requirements*', 'tests/integration/*'],
+              'images': ['apps/*/Dockerfile', 'apps/edge/*', 'apps/runner/*', 'apps/api/requirements*', 'docker-compose*', 'compose*'],
+              'pydeps': ['apps/api/requirements*'],
+              'web': ['apps/web/*', 'tools/tileset/*'],
+              'geometry': ['apps/web/components/office/*.ts', 'apps/web/lib/*', 'apps/web/public/*', 'apps/web/package*.json'],
+              'tilesets': ['tools/tileset/*', 'apps/web/public/*', 'apps/web/lib/people*', 'apps/web/lib/avatars*', 'apps/web/package*.json'],
+              'jsdeps': ['apps/web/package*.json'],
+              'webbuild': ['apps/web/package*.json', 'apps/web/next.config.*', 'apps/web/tsconfig.json', 'apps/web/postcss.config.*', 'apps/web/Dockerfile'],
+          }
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for name, patterns in scopes.items():
+                  enabled = full or any(fnmatch.fnmatch(p, pattern) for p in paths for pattern in patterns)
+                  output.write(f'{name}={str(enabled).lower()}\n')
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/api/requirements.lock
+      - name: Compile Python sources
+        run: python -m compileall -q apps/api/odysseus_api apps/runner tests
+      - name: Install locked backend dependencies
+        run: python -m pip install --disable-pip-version-check --no-deps -r apps/api/requirements.lock
+      - name: Verify locked dependency closure
+        run: python -m pip check
+      - name: Run reliability unit tests
+        env:
+          PYTHONPATH: apps/api
+          ODYSSEUS_ENV: development
+          DATA_ENCRYPTION_KEY: ci-data-encryption-key-222222222222222222222222222222222222222222222222222222222222
+        run: python -m unittest discover -s tests/unit -p 'test_*.py' -v
+      - name: Import FastAPI application
+        env:
+          PYTHONPATH: apps/api
+          ODYSSEUS_ENV: development
+          DATA_ENCRYPTION_KEY: ci-data-encryption-key-222222222222222222222222222222222222222222222222222222222222
+        run: python -c "import odysseus_api.main; print('api import ok')"
+      - name: Validate compose configuration
+        env:
+          JWT_SECRET: 0000000000000000000000000000000000000000000000000000000000000000
+          INTERNAL_TOKEN: 1111111111111111111111111111111111111111111111111111111111111111
+          DATA_ENCRYPTION_KEY: 2222222222222222222222222222222222222222222222222222222222222222
+          REDIS_API_PASSWORD: ci-api-password
+          REDIS_RUNNER_PASSWORD: ci-runner-password
+        run: docker compose config --quiet
+
+  office-integration:
+    needs: changes
+    if: needs.changes.outputs.office == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+        env:
+          POSTGRES_USER: npc_test
+          POSTGRES_PASSWORD: npc-test-only
+          POSTGRES_DB: odysseus_npc_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U npc_test -d odysseus_npc_test" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      PYTHONPATH: apps/api
+      DATABASE_URL: postgresql+asyncpg://npc_test:npc-test-only@localhost:5432/odysseus_npc_test
+      ODYSSEUS_ENV: development
+      ODYSSEUS_OFFICE_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/api/requirements.lock
+      - run: python -m pip install --no-deps -r apps/api/requirements.lock
+      - name: Office isolation, recovery and memory bridge
+        run: python -m unittest discover -s tests/integration -p 'test_office_runtime.py' -v
+      - name: AI failure refunds and conditional file saves
+        # 환불 플래그를 한도·게스트 총량·평가자 집계가 같은 SQL 로 세는가, 편집기 저장이 행 잠금 아래에서
+        # 새 서버 변경을 덮지 않는가 — JSONB 식과 잠금은 진짜 PostgreSQL 에서만 확인된다.
+        run: python -m unittest discover -s tests/integration -p 'test_turn_failures.py' -v
+
+  images:
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
+    # 컨테이너 이미지가 실제로 빌드되는지 — 잘린 다이제스트 같은 실수는 compose config 만으로는 안 잡힌다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build api image
+        run: docker build -q apps/api
+      - name: Build edge image
+        run: docker build -q apps/edge
+      - name: Build runner image
+        run: docker build -q apps/runner
+
+  backend-audit:
+    needs: changes
+    if: needs.changes.outputs.pydeps == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/api/requirements.lock
+      - name: Install pip-audit
+        run: python -m pip install --disable-pip-version-check pip-audit
+      - name: Audit locked Python dependencies
+        run: python -m pip_audit -r apps/api/requirements.lock
+
+  web-build:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Geometry invariants (office floorplan)
+        if: needs.changes.outputs.geometry == 'true'
+        # 겹침·고립 검사는 배치기 안에도 있지만 NODE_ENV=production 에서 꺼진다.
+        # 배포되는 빌드에서 그 약속을 지키는 것은 이 테스트다.
+        run: node --test components/office/
+      - name: Client contracts (lib)
+        # 브라우저 없이 확인할 수 있는 응시 화면의 규칙 — 실패 턴의 다시 보내기·안내 문구,
+        # 편집기 저장(직렬화·충돌·재시도), 연결 판단. 순수 함수만 있어 빠르다.
+        run: node --test lib/
+      - name: Character sheet contract (8 frames per preset)
+        if: needs.changes.outputs.tilesets == 'true'
+        # 시트가 매니페스트대로 잘렸는가 — 칸이 비거나, 발이 떠 있거나, 몸이 흔들리거나,
+        # 옛 시트가 남아 있으면 여기서 멈춘다. 브라우저 없이 픽셀을 직접 잰다.
+        run: node --test ../../tools/tileset/
+      - name: Build
+        # Source changes are built once by deployment; config/dependency changes also build here.
+        if: needs.changes.outputs.webbuild == 'true'
+        run: npm run build
+
+  dependency-audit:
+    needs: changes
+    if: needs.changes.outputs.jsdeps == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high

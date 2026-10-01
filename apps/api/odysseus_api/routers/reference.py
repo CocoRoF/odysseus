@@ -1,0 +1,544 @@
+"""참고 자료 표면 — GitHub 앱의 백엔드.
+
+시험 환경은 네트워크가 차단된 러너 위에서 돌지만, 실무에서는 문서를 찾아보는 것이
+당연하다. 그래서 **API 서버가 대리 조회**해 주는 좁은 통로를 둔다:
+
+  · GitHub — 저장소 검색 / 코드 열람 / `git clone`(워크스페이스로 물질화)
+
+임의의 호스트로 나가지 않도록 경로는 서버가 조립한다. 조회 행위는 이벤트로 남아 평가 자료가 된다.
+
+한때 [인터넷] 앱(웹 검색 + 읽기 전용 페이지)도 여기 있었다. 임의의 사이트를 정제해 보여 주려면
+자바스크립트를 돌려야 하는데 그럴 수 없었고, 결국 응시자에게 깨진 화면만 보여 줬다. 반쯤 되는
+기능은 없느니만 못해 2026-09-19 에 통째로 걷어냈다.
+"""
+
+import asyncio
+import io
+import logging
+import re
+import tarfile
+import time
+import urllib.parse
+import uuid
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .. import workspace as ws
+from ..ratelimit import limiter
+from ..config import settings as app_settings
+from ..db import get_db
+from ..deps import get_current_user, is_staff
+from ..models import AppSetting, Attempt, Event, User
+from .attempts import get_attempt_for, require_app, require_own_active, scenario_in_attempt
+
+log = logging.getLogger("odysseus.reference")
+
+router = APIRouter(tags=["reference"])
+
+# ── 설정 ─────────────────────────────────────────────────────────
+
+REFERENCE_KEY = "reference"
+REFERENCE_DEFAULTS: dict = {
+    "github_enabled": True,
+    "github_token": "",          # 없으면 비인증(시간당 60회 제한)
+}
+
+
+async def get_reference_settings(db: AsyncSession) -> dict:
+    row = await db.get(AppSetting, REFERENCE_KEY)
+    return {**REFERENCE_DEFAULTS, **(row.value if row else {})}
+
+
+# ── 응답 캐시 (호출 절약 + 레이트리밋 회피) ───────────────────────
+
+_CACHE: dict[str, tuple[float, object]] = {}
+_CACHE_TTL_S = 300.0
+_CACHE_MAX = 400
+
+
+def _cache_get(key: str):
+    hit = _CACHE.get(key)
+    if not hit:
+        return None
+    ts, value = hit
+    if time.time() - ts > _CACHE_TTL_S:
+        _CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _cache_put(key: str, value) -> None:
+    if len(_CACHE) >= _CACHE_MAX:
+        _CACHE.pop(next(iter(_CACHE)), None)
+    _CACHE[key] = (time.time(), value)
+
+
+# ── 공통 ─────────────────────────────────────────────────────────
+
+UA = "odysseus-exam/1.0 (reference browser)"
+GITHUB_API = "https://api.github.com"
+NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+
+
+def _check_name(*parts: str) -> None:
+    for p in parts:
+        if not NAME_RE.match(p or ""):
+            raise HTTPException(400, f"허용되지 않는 이름입니다: {p!r}")
+
+
+async def _require_public_repo(owner: str, name: str, settings_row: dict) -> dict:
+    """저장소 메타를 받아 **공개 저장소일 때만** 돌려준다 (ODY-011).
+
+    관리자 토큰이 비공개 저장소를 볼 수 있더라도 응시자에게는 공개 저장소만 보인다. 비공개면
+    존재 여부를 드러내지 않도록 404 로 답한다. 이름이 바뀐 저장소는 정식 이름으로 다시 확인한다.
+    """
+    repo = await _github_get(f"/repos/{owner}/{name}", settings_row)
+    if not isinstance(repo, dict) or repo.get("private") or (repo.get("visibility") or "public") != "public":
+        log.warning("github: non-public repo blocked %s/%s", owner, name)
+        raise HTTPException(404, "GitHub에서 찾을 수 없습니다")
+    return repo
+
+
+def _public_only(items: list) -> list:
+    return [r for r in items if isinstance(r, dict) and not r.get("private") and (r.get("visibility") or "public") == "public"]
+
+
+async def _github_get(path: str, settings_row: dict, *, params: dict | None = None) -> object:
+    """GitHub REST 호출 — 경로는 서버가 조립하므로 임의 호스트로 나가지 않는다."""
+    key = f"gh:{path}:{sorted((params or {}).items())}"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": UA}
+    token = (settings_row.get("github_token") or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        # 이름이 바뀐 저장소는 301 로 새 경로를 알려준다 — 따라가야 정식 이름을 얻는다
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            resp = await client.get(f"{GITHUB_API}{path}", headers=headers, params=params)
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"GitHub에 연결할 수 없습니다: {e}")
+    if resp.status_code == 403 and "rate limit" in resp.text.lower():
+        raise HTTPException(429, "GitHub 조회 한도를 초과했습니다. 잠시 후 다시 시도하세요")
+    if resp.status_code == 404:
+        raise HTTPException(404, "GitHub에서 찾을 수 없습니다")
+    if resp.status_code >= 400:
+        raise HTTPException(502, f"GitHub 오류 ({resp.status_code})")
+    data = resp.json()
+    _cache_put(key, data)
+    return data
+
+
+class AuditCtx:
+    """참고자료 조회의 감사 문맥 (ODY-018). 응시자는 반드시 자기 진행 중 응시·현재 시나리오를 대야 한다."""
+
+    def __init__(self, attempt: Attempt | None, scenario_id: uuid.UUID | None, user: User):
+        self.attempt = attempt
+        self.scenario_id = scenario_id
+        self.user = user
+
+
+async def audit_ctx(
+    db: AsyncSession, user: User, attempt_id: uuid.UUID | None, scenario_id: uuid.UUID | None
+) -> AuditCtx:
+    """감사 문맥을 검증한다. 잘못된 문맥은 조용히 무시하지 않고 거부한다.
+
+    · 응시자(candidate): attempt_id·scenario_id 필수, 본인 소유·진행 중·현재 순서의 시나리오여야 한다 (아니면 403)
+    · 스태프: 문맥이 있으면 같은 검증, 없으면 미리보기(기록은 남기되 응시 없음)
+    """
+    from .attempts import require_app, require_own_active, scenario_in_attempt
+
+    if attempt_id is None or scenario_id is None:
+        if not is_staff(user):
+            raise HTTPException(403, "참고자료는 진행 중인 시험 안에서만 열 수 있습니다")
+        return AuditCtx(None, None, user)
+    attempt = await require_own_active(attempt_id, user, db)
+    scenario = await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
+    # 저장소를 주지 않은 시나리오에서는 저장소를 열 수 없다 — 화면의 아이콘과 API 가 같은 답을 해야 한다.
+    require_app(scenario, "github")
+    return AuditCtx(attempt, scenario_id, user)
+
+
+async def _record(db: AsyncSession, ctx: AuditCtx, type_: str, payload: dict) -> None:
+    """서버 관측 이벤트 — 응시 문맥이 있을 때만 응시에 붙는다. 스태프 미리보기는 서버 로그로만."""
+    if ctx.attempt is None:
+        log.info("reference (staff preview) user=%s type=%s %s", ctx.user.id, type_, str(payload)[:200])
+        return
+    db.add(Event(attempt_id=ctx.attempt.id, scenario_id=ctx.scenario_id, type=type_, source="server", payload=payload))
+    await db.commit()
+
+
+async def _log(
+    db: AsyncSession,
+    user: User,
+    attempt_id: uuid.UUID | None,
+    scenario_id: uuid.UUID | None,
+    type_: str,
+    payload: dict,
+) -> None:
+    """(하위 호환) 성공 기록 — 문맥은 이미 audit_ctx 가 검증했다."""
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
+    await _record(db, ctx, type_, payload)
+
+
+class audited:
+    """외부 요청을 감싸 시작·실패를 남긴다 — 성공 뒤에만 기록하던 구멍을 막는다.
+
+        async with audited(db, ctx, "web", {"url": ...}) as a:
+            ... 외부 호출 ...
+            a.result = {...}   # 완료 시 함께 기록할 값
+    """
+
+    def __init__(self, db: AsyncSession, ctx: AuditCtx, source: str, payload: dict):
+        self.db, self.ctx, self.source, self.payload = db, ctx, source, payload
+        self.result: dict = {}
+
+    async def __aenter__(self):
+        await _record(self.db, self.ctx, "reference_request", {"source": self.source, **self.payload})
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if exc is not None:
+            status = getattr(exc, "status_code", None)
+            await _record(
+                self.db, self.ctx, "reference_failed",
+                {"source": self.source, **self.payload, "status": status, "error": type(exc).__name__},
+            )
+        return False
+
+
+# ── 실행 환경 스펙 ([컴퓨터 정보] 화면) ─────────────────────────
+
+RUNNER_ENV_KEY = "odysseus:runner:env"
+
+
+@router.get("/reference/system")
+async def system_info(_: User = Depends(get_current_user)):
+    """워크스테이션 사양 — 러너가 뜰 때 스스로 조사해 Redis 에 올려 둔 것을 읽는다.
+
+    설치 목록을 여기에 적어 두면 이미지와 어긋난다. 실제로 조사한 값만 보여준다.
+    """
+    from ..runqueue import get_redis
+
+    try:
+        raw = await get_redis().get(RUNNER_ENV_KEY)
+    except Exception:
+        raw = None
+    if not raw:
+        raise HTTPException(503, "실행 환경 정보를 아직 수집하지 못했습니다")
+    import json as _json
+
+    spec = _json.loads(raw)
+    # 응시자에게는 **자기 작업 공간**의 사양만 보여준다. 호스트의 커널·코어 수·
+    # 총 메모리는 시험과 무관한 서버 내부 정보이므로 내보내지 않는다.
+    return {
+        "os": spec.get("os"),
+        "isolated": spec.get("isolated", False),
+        "languages": spec.get("languages", []),
+        "shells": spec.get("shells", []),
+        "tools": spec.get("tools", []),
+        "python_packages": spec.get("python_packages", []),
+        "limits": spec.get("limits", {}),
+    }
+
+
+# ── 설정 조회 (응시자도 필요) ────────────────────────────────────
+
+
+@router.get("/reference/config")
+async def reference_config(_: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    s = await get_reference_settings(db)
+    return {"github_enabled": bool(s["github_enabled"])}
+
+
+# ── GitHub ───────────────────────────────────────────────────────
+
+
+def _repo_brief(r: dict) -> dict:
+    return {
+        "full_name": r.get("full_name"),
+        "owner": (r.get("owner") or {}).get("login"),
+        "name": r.get("name"),
+        "description": r.get("description"),
+        "language": r.get("language"),
+        "stars": r.get("stargazers_count", 0),
+        "forks": r.get("forks_count", 0),
+        "watchers": r.get("subscribers_count", r.get("watchers_count", 0)),
+        "topics": r.get("topics") or [],
+        "updated_at": r.get("pushed_at") or r.get("updated_at"),
+        "archived": bool(r.get("archived")),
+        "default_branch": r.get("default_branch") or "main",
+        "html_url": r.get("html_url"),
+        "homepage": r.get("homepage"),
+        "license": ((r.get("license") or {}) or {}).get("spdx_id"),
+        "avatar": (r.get("owner") or {}).get("avatar_url"),
+    }
+
+
+@router.get("/reference/github/search", dependencies=[Depends(limiter("ref-search", 20, 10, "검색"))])
+async def github_search(
+    q: str = Query(min_length=1, max_length=200),
+    page: int = Query(1, ge=1, le=10),
+    attempt_id: uuid.UUID | None = None,
+    scenario_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    s = await get_reference_settings(db)
+    if not s["github_enabled"]:
+        raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
+    # 공개 저장소만 — 검색어의 is:private 같은 한정자는 무력화한다 (ODY-011)
+    public_q = re.sub(r"\bis:(private|internal)\b", "", q, flags=re.I).strip() + " is:public"
+    async with audited(db, ctx, "github", {"q": q[:200], "page": page}):
+        data = await _github_get(
+            "/search/repositories", s, params={"q": public_q, "per_page": 20, "page": page}
+        )
+    await _record(db, ctx, "reference_search", {"source": "github", "q": q[:200], "results": len(data.get("items", []))})
+    items = _public_only(data.get("items", []))
+    return {
+        "total": data.get("total_count", 0),
+        "items": [_repo_brief(r) for r in items],
+    }
+
+
+@router.get("/reference/github/repo", dependencies=[Depends(limiter("ref-github", 60, 30, "GitHub 조회"))])
+async def github_repo(
+    owner: str,
+    name: str,
+    attempt_id: uuid.UUID | None = None,
+    scenario_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _check_name(owner, name)
+    s = await get_reference_settings(db)
+    if not s["github_enabled"]:
+        raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
+    async with audited(db, ctx, "github", {"repo": f"{owner}/{name}"}):
+        repo = await _require_public_repo(owner, name, s)
+    brief = _repo_brief(repo)
+    readme = None
+    try:
+        raw = await _github_get(f"/repos/{owner}/{name}/readme", s)
+        import base64
+
+        if raw.get("encoding") == "base64":
+            readme = {
+                "path": raw.get("path"),
+                "content": base64.b64decode(raw.get("content", "")).decode("utf-8", errors="replace")[:200_000],
+            }
+    except HTTPException:
+        readme = None
+    await _record(db, ctx, "reference_open", {"source": "github", "repo": brief["full_name"]})
+    return {"repo": brief, "readme": readme}
+
+
+@router.get("/reference/github/tree", dependencies=[Depends(limiter("ref-github", 60, 30, "GitHub 조회"))])
+async def github_tree(
+    owner: str,
+    name: str,
+    path: str = "",
+    ref: str = "",
+    attempt_id: uuid.UUID | None = None,
+    scenario_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _check_name(owner, name)
+    s = await get_reference_settings(db)
+    if not s["github_enabled"]:
+        raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
+    clean = "/".join(seg for seg in path.split("/") if seg and seg not in (".", ".."))
+    params = {"ref": ref} if ref else None
+    async with audited(db, ctx, "github", {"repo": f"{owner}/{name}", "tree": clean[:300]}):
+        await _require_public_repo(owner, name, s)
+        data = await _github_get(f"/repos/{owner}/{name}/contents/{clean}", s, params=params)
+    await _record(db, ctx, "reference_open", {"source": "github", "repo": f"{owner}/{name}", "tree": clean[:300]})
+    if isinstance(data, dict):  # 파일 하나를 가리킨 경우
+        return {"path": clean, "entries": [], "file": data.get("path")}
+    entries = [
+        {"name": e.get("name"), "path": e.get("path"), "type": e.get("type"), "size": e.get("size", 0)}
+        for e in data
+    ]
+    entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
+    return {"path": clean, "entries": entries}
+
+
+@router.get("/reference/github/file", dependencies=[Depends(limiter("ref-github", 60, 30, "GitHub 조회"))])
+async def github_file(
+    owner: str,
+    name: str,
+    path: str = Query(min_length=1),
+    ref: str = "",
+    attempt_id: uuid.UUID | None = None,
+    scenario_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import base64
+
+    _check_name(owner, name)
+    s = await get_reference_settings(db)
+    if not s["github_enabled"]:
+        raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+    ctx = await audit_ctx(db, user, attempt_id, scenario_id)
+    clean = "/".join(seg for seg in path.split("/") if seg and seg not in (".", ".."))
+    params = {"ref": ref} if ref else None
+    async with audited(db, ctx, "github", {"repo": f"{owner}/{name}", "file": clean[:300]}):
+        await _require_public_repo(owner, name, s)
+        data = await _github_get(f"/repos/{owner}/{name}/contents/{clean}", s, params=params)
+    await _record(db, ctx, "reference_open", {"source": "github", "repo": f"{owner}/{name}", "file": clean[:300]})
+    if isinstance(data, list):
+        raise HTTPException(400, "디렉터리입니다")
+    if data.get("encoding") != "base64":
+        raise HTTPException(415, "표시할 수 없는 파일입니다")
+    raw = base64.b64decode(data.get("content", ""))
+    if b"\x00" in raw[:4096]:
+        raise HTTPException(415, "바이너리 파일은 표시할 수 없습니다")
+    return {
+        "path": data.get("path"),
+        "size": data.get("size", 0),
+        "content": raw.decode("utf-8", errors="replace")[:400_000],
+    }
+
+
+# ── git clone → 워크스페이스 물질화 ──────────────────────────────
+
+CLONE_MAX_FILES = 300
+CLONE_MAX_FILE_BYTES = 256 * 1024
+CLONE_MAX_TOTAL_BYTES = 4 * 1024 * 1024
+CLONE_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "dist", "build", ".next"}
+CLONE_SKIP_EXT = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg", ".pdf", ".zip", ".gz", ".tar",
+    ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3", ".wav", ".so", ".dll", ".dylib",
+    ".exe", ".bin", ".class", ".jar", ".pyc", ".wasm",
+}
+
+
+def _extract_tar(blob: bytes) -> tuple[list[tuple[str, str]], dict]:
+    """tar.gz → [(경로, 내용)]. 텍스트 파일만, 상한을 넘으면 건너뛴다."""
+    files: list[tuple[str, str]] = []
+    stats = {"skipped_binary": 0, "skipped_large": 0, "truncated": False}
+    total = 0
+    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+        for member in tar:
+            if not member.isfile():
+                continue
+            parts = member.name.split("/")[1:]  # 최상위 <repo>-<sha>/ 제거
+            if not parts:
+                continue
+            if any(p in CLONE_SKIP_DIRS for p in parts[:-1]):
+                continue
+            rel = "/".join(parts)
+            if any(rel.lower().endswith(ext) for ext in CLONE_SKIP_EXT):
+                stats["skipped_binary"] += 1
+                continue
+            if member.size > CLONE_MAX_FILE_BYTES:
+                stats["skipped_large"] += 1
+                continue
+            if len(files) >= CLONE_MAX_FILES or total + member.size > CLONE_MAX_TOTAL_BYTES:
+                stats["truncated"] = True
+                break
+            fh = tar.extractfile(member)
+            if not fh:
+                continue
+            raw = fh.read()
+            if b"\x00" in raw[:4096]:
+                stats["skipped_binary"] += 1
+                continue
+            files.append((rel, raw.decode("utf-8", errors="replace")))
+            total += member.size
+    return files, stats
+
+
+CLONE_ROOT = "github"
+
+
+@router.post("/attempts/{attempt_id}/scenarios/{scenario_id}/github/clone", dependencies=[Depends(limiter("ref-clone", 10, 5, "clone"))])
+async def github_clone(
+    attempt_id: uuid.UUID,
+    scenario_id: uuid.UUID,
+    owner: str,
+    name: str,
+    ref: str = "",
+    dest: str = "",
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """저장소를 워크스페이스로 가져온다 (러너에는 네트워크가 없으므로 서버가 대신 받는다)."""
+    _check_name(owner, name)
+    attempt = await require_own_active(attempt_id, user, db)
+    scenario = await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
+    require_app(scenario, "github")
+    s = await get_reference_settings(db)
+    if not s["github_enabled"]:
+        raise HTTPException(403, "이 시험에서는 GitHub 조회가 비활성화되어 있습니다")
+
+    ctx = AuditCtx(attempt, scenario_id, user)
+    async with audited(db, ctx, "github", {"clone": f"{owner}/{name}", "ref": ref[:100]}):
+        repo = await _require_public_repo(owner, name, s)
+    # 이름이 바뀐 저장소는 API 가 새 경로로 알려준다 — 아카이브는 정식 이름으로 받아야 한다
+    canonical = (repo.get("full_name") or f"{owner}/{name}").split("/")
+    c_owner, c_name = (canonical + [name])[:2]
+    branch = ref or repo.get("default_branch") or "main"
+    quoted = urllib.parse.quote(branch)
+    base = f"https://codeload.github.com/{c_owner}/{c_name}/tar.gz"
+    resp = None
+    try:
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            for candidate in (f"{base}/refs/heads/{quoted}", f"{base}/refs/tags/{quoted}", f"{base}/{quoted}"):
+                resp = await client.get(candidate, headers={"User-Agent": UA})
+                if resp.status_code < 400:
+                    break
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"저장소를 내려받지 못했습니다: {e}")
+    if resp is None or resp.status_code >= 400:
+        raise HTTPException(502, f"'{branch}' 를 내려받지 못했습니다 ({resp.status_code if resp else '연결 실패'})")
+
+    # 참고 저장소는 워크스페이스의 github/<repo> 아래 모인다 — 터미널의 `git clone` 도 같은 규약
+    root = ws.normalize_path(dest.strip() or f"{CLONE_ROOT}/{c_name}")
+    existing = await ws.list_files(db, attempt_id, scenario_id)
+    if any(f.path.startswith(root + "/") for f in existing):
+        raise HTTPException(
+            409, f"fatal: destination path '{root}' already exists and is not an empty directory."
+        )
+    files, stats = await asyncio.to_thread(_extract_tar, resp.content)
+    written = 0
+    # 왜 잘렸는지는 구분해서 알린다 — 저장소가 큰 것과 워크스페이스가 찬 것은 다른 문제다
+    limit = "repo" if stats["truncated"] else ""
+    for rel, content in files:
+        try:
+            await ws.save_file(
+                db, attempt_id, scenario_id, f"{root}/{rel}", content, actor="git", record_event=False
+            )
+            written += 1
+        except ws.WorkspaceError:
+            limit = "workspace"
+            stats["truncated"] = True
+            break
+    db.add(
+        Event(
+            attempt_id=attempt_id,
+            scenario_id=scenario_id,
+            type="github_clone",
+            payload={"repo": f"{owner}/{name}", "ref": branch, "dest": root, "files": written},
+        )
+    )
+    await db.commit()
+    return {
+        "repo": f"{c_owner}/{c_name}",
+        "dest": root,
+        "ref": branch,
+        "files": written,
+        "skipped_binary": stats["skipped_binary"],
+        "skipped_large": stats["skipped_large"],
+        "truncated": stats["truncated"],
+        "limit": limit,
+        "commit": (repo.get("default_branch") or branch),
+    }

@@ -1,0 +1,287 @@
+[
+  {
+    "file": "01_end_N.png",
+    "type": "junction",
+    "connections_or_side": "N",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 14984
+  },
+  {
+    "file": "02_end_E.png",
+    "type": "junction",
+    "connections_or_side": "E",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 14044
+  },
+  {
+    "file": "03_end_S.png",
+    "type": "junction",
+    "connections_or_side": "S",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 14972
+  },
+  {
+    "file": "04_end_W.png",
+    "type": "junction",
+    "connections_or_side": "W",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 14044
+  },
+  {
+    "file": "05_corner_NE.png",
+    "type": "junction",
+    "connections_or_side": "NE",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 13528
+  },
+  {
+    "file": "06_corner_ES.png",
+    "type": "junction",
+    "connections_or_side": "ES",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 13516
+  },
+  {
+    "file": "07_corner_SW.png",
+    "type": "junction",
+    "connections_or_side": "SW",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 13516
+  },
+  {
+    "file": "08_corner_WN.png",
+    "type": "junction",
+    "connections_or_side": "WN",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 13528
+  },
+  {
+    "file": "09_straight_NS.png",
+    "type": "junction",
+    "connections_or_side": "NS",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 14456
+  },
+  {
+    "file": "10_straight_EW.png",
+    "type": "junction",
+    "connections_or_side": "EW",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 12588
+  },
+  {
+    "file": "11_T_NEW.png",
+    "type": "junction",
+    "connections_or_side": "NEW",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 12072
+  },
+  {
+    "file": "12_T_NES.png",
+    "type": "junction",
+    "connections_or_side": "NES",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 13000
+  },
+  {
+    "file": "13_T_ESW.png",
+    "type": "junction",
+    "connections_or_side": "ESW",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 12060
+  },
+  {
+    "file": "14_T_NSW.png",
+    "type": "junction",
+    "connections_or_side": "NSW",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 13000
+  },
+  {
+    "file": "15_cross_NESW.png",
+    "type": "junction",
+    "connections_or_side": "NESW",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 11544
+  },
+  {
+    "file": "16_wall_top.png",
+    "type": "standalone_wall",
+    "connections_or_side": "TOP",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 12800
+  },
+  {
+    "file": "17_wall_right.png",
+    "type": "standalone_wall",
+    "connections_or_side": "RIGHT",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 14848
+  },
+  {
+    "file": "18_wall_bottom.png",
+    "type": "standalone_wall",
+    "connections_or_side": "BOTTOM",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 12800
+  },
+  {
+    "file": "19_wall_left.png",
+    "type": "standalone_wall",
+    "connections_or_side": "LEFT",
+    "size": [
+      128,
+      128
+    ],
+    "mode": "RGBA",
+    "alpha_range": [
+      0,
+      255
+    ],
+    "transparent_pixels": 14848
+  }
+]
