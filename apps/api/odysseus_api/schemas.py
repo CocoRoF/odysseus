@@ -509,6 +509,8 @@ class AttemptOut(BaseModel):
     #: 관리자가 얹어 준 보정 (질문 추가·시간 연장). 응시자 화면이 그 사실을 알려 준다.
     grants: AttemptGrantsOut | None = None
     scenarios: list[AttemptScenarioOut]
+    #: 응답을 만든 서버 시각. 응시자 화면이 PC 시계 오차를 재는 데 쓴다.
+    server_now: datetime | None = None
 
 
 

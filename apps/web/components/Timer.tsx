@@ -6,7 +6,7 @@ import { fmtDuration } from "@/lib/format";
 // 남은 시간 알림 문턱 (초) — 30분·10분·5분·1분
 const WARN_MARKS = [1800, 600, 300, 60];
 
-/** 서버가 준 remaining_seconds 기준 카운트다운. 0이 되면 onExpire 1회 호출.
+/** 서버 시계로 잰 남은 시간(initialSeconds)부터 세는 카운트다운. 0이 되면 onExpire 1회 호출.
  *
  * 남은 시간이 얼마 없다는 걸 숫자로만 알리면 잘 보이지 않는다. 문턱을 넘을 때
  * 한 번씩 알려 주고(onWarn), 마지막 1분은 눈에 띄게 뛴다.

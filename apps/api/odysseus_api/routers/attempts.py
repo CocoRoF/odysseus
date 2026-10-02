@@ -270,6 +270,7 @@ async def _attempt_out(attempt: Attempt, db: AsyncSession) -> AttemptOut:
             else None
         ),
         scenarios=scenarios,
+        server_now=utcnow(),
     )
 
 
