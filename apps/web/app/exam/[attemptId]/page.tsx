@@ -300,6 +300,8 @@ function MessengerUnreadBadge() {
 const PRE_DEADLINE_FLUSH_MS = 15_000;
 /** 제출·문제 전환·연결 복구 때 저장을 기다리는 최대 시간 */
 const SUBMIT_FLUSH_TIMEOUT_MS = 8_000;
+/** PC 시계 오차가 이만큼 넘게 바뀌면 남은 시간을 다시 센다 */
+const CLOCK_RESYNC_MS = 2_000;
 
 export default function ExamDesktopPage() {
   const params = useParams<{ attemptId: string }>();
@@ -309,6 +311,18 @@ export default function ExamDesktopPage() {
   const { user } = useUser(["candidate", "admin", "evaluator", "guest"]);
 
   const [attempt, setAttempt] = useState<Attempt | null>(null);
+  /** 서버 시각 - PC 시각 (ms). 마감은 서버가 판정하므로 남은 시간도 서버 시계로 센다 */
+  const clockSkewRef = useRef(0);
+  /** 응답의 server_now 로 오차를 다시 잰다. 크게 바뀌었으면 true */
+  const syncClock = useCallback((a: Attempt) => {
+    const at = Date.parse(a.server_now ?? "");
+    if (!Number.isFinite(at)) return false;
+    const skew = at - Date.now();
+    const moved = Math.abs(skew - clockSkewRef.current) > CLOCK_RESYNC_MS;
+    clockSkewRef.current = skew;
+    return moved;
+  }, []);
+  const serverNow = useCallback(() => Date.now() + clockSkewRef.current, []);
   const [error, setError] = useState("");
   const [showBriefing, setShowBriefing] = useState(false);
   // 브리핑 다시 보기 — 시작 뒤에도 언제든 상황 설명을 다시 읽을 수 있다
@@ -430,6 +444,7 @@ export default function ExamDesktopPage() {
     api
       .get<Attempt>(`/attempts/${attemptId}`)
       .then((a) => {
+        syncClock(a);
         setAttempt(a);
         const current = a.scenarios.find((s) => s.ordinal === a.current_ordinal);
         if (a.status === "in_progress" && current) {
@@ -438,7 +453,7 @@ export default function ExamDesktopPage() {
         }
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "불러올 수 없습니다"));
-  }, [attemptId]);
+  }, [attemptId, syncClock]);
 
   // 참고 자료 앱 가용 여부 — 실패하면 없는 것으로 본다 (fail-closed)
   useEffect(() => {
@@ -450,8 +465,8 @@ export default function ExamDesktopPage() {
 
   const remainingSeconds = useMemo(() => {
     if (!attempt) return 0;
-    return Math.max(0, Math.round((new Date(attempt.deadline_at).getTime() - Date.now()) / 1000));
-  }, [attempt]);
+    return Math.max(0, Math.round((new Date(attempt.deadline_at).getTime() - serverNow()) / 1000));
+  }, [attempt, serverNow]);
 
   /** 브리핑/인트로를 닫고 업무 시작 — 메신저부터 열어 준다 */
   const startWork = useCallback(() => {
@@ -513,10 +528,13 @@ export default function ExamDesktopPage() {
     const poll = async () => {
       try {
         const fresh = await api.get<Attempt>(`/attempts/${attemptId}`);
+        // 도중에 PC 시계가 맞춰졌으면 남은 시간을 다시 센다
+        const clockMoved = syncClock(fresh);
         setAttempt((prev) => {
           // 바뀐 것이 없으면 이전 객체를 그대로 둔다. 새 객체를 넣으면 남은 시간이 다시 계산돼
           // 타이머가 이미 지난 경고를 30초마다 다시 울렸다.
           if (
+            !clockMoved &&
             prev &&
             prev.deadline_at === fresh.deadline_at &&
             prev.status === fresh.status &&
@@ -566,11 +584,11 @@ export default function ExamDesktopPage() {
   const deadlineAt = attempt?.status === "in_progress" ? attempt.deadline_at : null;
   useEffect(() => {
     if (!deadlineAt) return;
-    const wait = new Date(deadlineAt).getTime() - PRE_DEADLINE_FLUSH_MS - Date.now();
+    const wait = new Date(deadlineAt).getTime() - PRE_DEADLINE_FLUSH_MS - serverNow();
     if (wait < -PRE_DEADLINE_FLUSH_MS) return; // 이미 마감이 지났다
     const t = setTimeout(() => void flushWithin(PRE_DEADLINE_FLUSH_MS - 2000), Math.max(0, wait));
     return () => clearTimeout(t);
-  }, [deadlineAt, flushWithin]);
+  }, [deadlineAt, flushWithin, serverNow]);
 
   const goNextScenario = useCallback(async () => {
     if (!attempt || !scenario) return;
@@ -602,6 +620,7 @@ export default function ExamDesktopPage() {
       const next = await api.post<Attempt>(
         `/attempts/${attemptId}/scenarios/${scenario.scenario_id}/complete`,
       );
+      syncClock(next);
       setAttempt(next);
       // 새 문제 = 새 데스크톱: 창을 정리하고 브리핑부터 다시
       Object.keys(wm.wins).forEach((id) => wm.close(id));
@@ -612,7 +631,7 @@ export default function ExamDesktopPage() {
     } catch (e) {
       toast(e instanceof ApiError ? e.message : "다음 문제로 넘어갈 수 없습니다", "error");
     }
-  }, [attempt, scenario, attemptId, confirm, toast, wm, flushBeforeLeaving]);
+  }, [attempt, scenario, attemptId, confirm, toast, wm, flushBeforeLeaving, syncClock]);
 
   const finish = useCallback(
     async (silent = false) => {
@@ -966,13 +985,18 @@ export default function ExamDesktopPage() {
           remainingSeconds={remainingSeconds}
           onExpire={() => {
             // 마감 직전에 관리자가 연장했을 수 있다 — 30초 폴링을 기다리지 않고 서버의 마감을 한 번 더 본다
+            // 타이머는 초 단위 반올림이라 마감 직전에 0 이 될 수 있다. 서버 마감이 지난 뒤에 보낸다
+            const finishAfter = (deadlineAt: string) =>
+              setTimeout(() => void finish(true), Math.max(0, Date.parse(deadlineAt) - serverNow()) + 200);
             api
               .get<Attempt>(`/attempts/${attemptId}`)
               .then((fresh) => {
-                if (fresh.status === "in_progress" && Date.parse(fresh.deadline_at) > Date.now() + 1000) setAttempt(fresh);
-                else void finish(true);
+                syncClock(fresh);
+                if (fresh.status !== "in_progress") void finish(true);
+                else if (Date.parse(fresh.deadline_at) > serverNow() + 1000) setAttempt(fresh);
+                else finishAfter(fresh.deadline_at);
               })
-              .catch(() => void finish(true));
+              .catch(() => (attempt ? finishAfter(attempt.deadline_at) : void finish(true)));
           }}
           onTimeWarning={(left) =>
             toast(

@@ -356,6 +356,8 @@ export interface Attempt {
   /** 시네마틱 인트로(게이미피케이션) 사용 여부 */
   gamified_intro: boolean;
   scenarios: AttemptScenario[];
+  /** 응답을 만든 서버 시각 (PC 시계 오차 보정용) */
+  server_now?: string;
 }
 
 // ── 메신저 / 에이전트 ────────────────────────────────────────
