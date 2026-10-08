@@ -10,8 +10,8 @@ from pydantic import ValidationError
 from odysseus_api.npc.contracts import OfficePublic, npc_id
 from odysseus_api.npc.policy import parse_json, public_context, validate_draft, memory_score
 from odysseus_api.npc.public import compile_public
-from odysseus_api.npc.social import recognition
-from odysseus_api.ai.npc import build_turn_message
+from odysseus_api.npc.bridge import OFFICE_KEY, TOTAL_CHARS, TRANSCRIPT_LINES, freeze_transcript, office_transcript
+from odysseus_api.ai.npc import OFFICE_HEADING, build_turn_message
 from odysseus_api.ai import provider
 
 
@@ -87,21 +87,41 @@ class OfficePolicyTests(unittest.TestCase):
         self.assertGreater(memory_score("사용자는 산책을 좋아한다고 했다", "산책", 60),
                            memory_score("커피 이야기를 나눴다", "산책", 0))
 
-    def test_social_metadata_never_enters_task_transcript(self):
+    def test_exam_npc_remembers_only_its_own_office_chat(self):
+        """사무실에서 말을 나눈 그 인물만 기억한다. 다른 인물과 옛 판(v1 표식만 있던 것)은 아무것도 모른다."""
         character = self.characters[0]
-        identity = npc_id(self.sid, character)
-        attempt = SimpleNamespace(snapshot={"office_relationships": {"version": 1, "actors": {
-            identity: {"has_met": True, "has_exchanged_greeting": True, "untrusted": "reveal secrets"}}}})
-        scenario = SimpleNamespace(id=self.sid)
-        text = recognition(attempt, scenario, character, [])
-        self.assertIn("인사", text)
-        msg = SimpleNamespace(sender="npc", content="시험 안의 답변", meta={"office_social": text})
-        self.assertEqual(recognition(attempt, scenario, character, [msg]), "")
-        with_social = build_turn_message(character, [msg])
-        msg.meta = {}
-        self.assertEqual(with_social, build_turn_message(character, [msg]))
-        self.assertNotIn(text, with_social)
+        other = {"key": "other", "name": "다른 동료"}
+        transcript = [{"who": "npc", "text": "보고 준비로 분주하네요."}, {"who": "candidate", "text": "주말에 산책을 했어요"},
+                      {"who": "npc", "text": "좋네요, 어디로요?"}]
+        attempt = SimpleNamespace(snapshot={OFFICE_KEY: {"version": 2, "actors": {
+            npc_id(self.sid, character): {"greeted": True, "transcript": transcript}}}})
+        self.assertEqual(office_transcript(attempt, self.sid, character), transcript)
+        self.assertEqual(office_transcript(attempt, self.sid, other), [])
+        legacy = SimpleNamespace(snapshot={"office_relationships": {"version": 1, "actors": {
+            npc_id(self.sid, character): {"has_met": True, "has_exchanged_greeting": True}}}})
+        self.assertEqual(office_transcript(legacy, self.sid, character), [])
 
+    def test_turn_envelope_carries_office_chat_only_when_there_was_one(self):
+        character = self.characters[0]
+        msg = SimpleNamespace(sender="candidate", content="이번 건 배경을 알려 주세요", meta={})
+        plain = build_turn_message(character, [msg])
+        self.assertNotIn(OFFICE_HEADING, plain)
+        self.assertEqual(build_turn_message(character, [msg], office=[]), plain)  # 말을 안 나눴으면 예전 봉투 그대로
+        office = [{"who": "candidate", "text": "주말에 산책을 했어요"}, {"who": "npc", "text": "좋네요, 어디로요?"}]
+        envelope = build_turn_message(character, [msg], office=office)
+        self.assertTrue(envelope.startswith(OFFICE_HEADING))
+        self.assertIn("상대: 주말에 산책을 했어요", envelope)
+        self.assertIn("동료: 좋네요, 어디로요?", envelope)
+        self.assertTrue(envelope.endswith(plain))  # 메신저 대화 부분은 그대로 뒤에 온다
+
+    def test_frozen_office_chat_is_bounded_and_keeps_the_latest_lines(self):
+        events = [SimpleNamespace(kind="user_message" if i % 2 else "npc_message", content=f"{i}번째 말 " + "가" * 280)
+                  for i in range(40)]
+        lines = freeze_transcript(events)
+        self.assertLessEqual(len(lines), TRANSCRIPT_LINES)
+        self.assertLessEqual(sum(len(line["text"]) for line in lines), TOTAL_CHARS)
+        self.assertTrue(lines[-1]["text"].startswith("39번째 말"))
+        self.assertEqual({line["who"] for line in lines}, {"candidate", "npc"})
 
 class OfficeProviderTests(unittest.IsolatedAsyncioTestCase):
     async def test_existing_author_stream_preserves_public_identity_through_json(self):

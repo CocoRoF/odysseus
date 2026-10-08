@@ -224,6 +224,11 @@ async def context_memory(db, world, conv, query):
 
 
 async def snapshot_relations(db, attempt, definition):
+    """시험을 시작할 때 사무실에서 **실제로 말을 나눈** 동료와의 1:1 대화를 응시에 얼려 둔다(npc.bridge).
+
+    관계 표식(world.relations 의 has_met)이 아니라 이벤트 기록으로 판단한다. 예전 판은 말 걸기 창을 열기만 해도
+    has_met 을 적었으므로, 그때 만들어진 세계를 믿으면 말 한마디 없던 사람과도 "만난 사이" 가 된다.
+    """
     if not settings.office_exam_bridge_enabled:
         return
     # Use the latest visited public revision, including when authoring changed before exam entry.
@@ -231,15 +236,25 @@ async def snapshot_relations(db, attempt, definition):
         OfficeWorld.assessment_id == attempt.assessment_id).order_by(OfficeWorld.created_at.desc()).limit(1).with_for_update())
     if not world:
         return
+    from .bridge import OFFICE_KEY, VERSION, freeze_transcript
     from .contracts import npc_id
     allowed = {npc_id(s["scenario_id"], c) for s in definition.get("scenarios", []) for c in s.get("characters", [])}
-    relations = {key: {"has_met": True, "has_exchanged_greeting": bool(value.get("greeted")),
-                       "last_greeted_at": value.get("last_greeted_at"),
-                       "source_event_id": value.get("source_event_id")}
-                 for key, value in (world.relations or {}).items() if key in allowed and value.get("has_met")}
-    attempt.snapshot = {**(attempt.snapshot or {}), "office_relationships": {
-        "version": 1, "revision": world.revision, "world_id": str(world.id),
-        "watermark": world.sequence, "actors": relations}}
+    rows = (await db.execute(select(OfficeEvent, OfficeConversation.actor_id).join(OfficeConversation).where(
+        OfficeEvent.world_id.in_(world_scope(world)), OfficeConversation.mode == "user",
+        OfficeConversation.actor_id.in_(allowed), OfficeEvent.kind.in_(["user_message", "npc_message"]),
+        OfficeEvent.created_at <= utcnow()).order_by(OfficeEvent.created_at, OfficeEvent.id))).all()
+    by_actor: dict[str, list] = {}
+    for event, actor in rows:
+        by_actor.setdefault(actor, []).append(event)
+    actors = {}
+    for actor, events in by_actor.items():
+        if not any(e.kind == "user_message" for e in events):
+            continue  # 인물의 인사말만 있고 응시자는 아무 말도 하지 않았다. 만난 것이 아니다.
+        relation = (world.relations or {}).get(actor) or {}
+        actors[actor] = {"greeted": bool(relation.get("greeted")), "transcript": freeze_transcript(events)}
+    attempt.snapshot = {**(attempt.snapshot or {}), OFFICE_KEY: {
+        "version": VERSION, "revision": world.revision, "world_id": str(world.id),
+        "watermark": world.sequence, "actors": actors}}
     await cancel_ambient(db, world, "assessment_started")
     world.last_seen_at = None
     world.presence = {}

@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import npc
+from ..npc.bridge import office_transcript
 from ..ai.errors import describe_error, public_meta
 from ..ai_incidents import failure_meta, refunded_messenger
 from ..config import settings
@@ -187,7 +188,9 @@ async def send_message(
         ).scalars().all()
 
         try:
-            reply, meta = await npc.generate_reply(res, scenario, character, list(history))
+            # 출근 전 사무실에서 이 인물과 직접 나눈 대화(시험을 시작할 때 얼려 둔 것, npc.bridge). 말을 나누지 않았으면 없다.
+            office = office_transcript(attempt, scenario.id, character)
+            reply, meta = await npc.generate_reply(res, scenario, character, list(history), office=office)
         except Exception as e:  # noqa: BLE001
             # 인물이 연기하는 대사로 적지 않는다. "자리를 비웠다" 는 NPC 의 평범한 반응과
             # 구별되지 않아, 응시자가 장애를 상황으로 오해하고 다른 사람에게 물으러 갔다.
@@ -203,10 +206,6 @@ async def send_message(
                 " — 이 질문은 남은 횟수에 포함되지 않습니다." if meta.get("refunded") else ""
             )
 
-        from ..npc.social import recognition
-        social = recognition(attempt, scenario, character, history) if not meta.get("error") else ""
-        if social:
-            meta["office_social"] = social
         npc_msg = MessengerMessage(
             attempt_id=attempt_id,
             scenario_id=scenario_id,
