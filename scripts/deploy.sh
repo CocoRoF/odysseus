@@ -114,6 +114,21 @@ for i in $(seq 1 60); do
   [[ "${i}" == "60" ]] && { echo "  web 가 60초 안에 올라오지 않았습니다." >&2; exit 1; }
 done
 
+# 엣지(nginx)는 api·web 의 주소를 기동할 때 한 번만 풀어 둔다. 컨테이너를 새로 만들며 IP 가 바뀌면 엣지가 옛 IP 로
+# 보내 /api 가 전부 502 가 된다(2026-10-08 운영 1분 반, 22건). 위 검사는 엣지를 거치지 않아 이것을 못 잡았다.
+# 그래서 엣지를 다시 읽혀(무중단) 주소를 새로 풀게 하고, 응시자가 실제로 쓰는 길(엣지를 거친 /api)로 확인한다.
+if [[ -n "$(docker compose ps -q edge)" ]]; then
+  docker compose exec -T edge nginx -s reload >/dev/null 2>&1 || docker compose restart edge >/dev/null
+  for i in $(seq 1 30); do
+    if curl -fsS -o /dev/null -H 'CF-Visitor: {"scheme":"https"}' "http://localhost:3100/api/healthz" 2>/dev/null; then
+      echo "  엣지 경유 api 준비됨 (${i}초)"
+      break
+    fi
+    sleep 1
+    [[ "${i}" == "30" ]] && { echo "  엣지를 거친 /api 가 30초 안에 응답하지 않습니다 (엣지가 옛 주소를 보고 있을 수 있다)." >&2; exit 1; }
+  done
+fi
+
 if [[ -n "$(docker compose ps -q office-worker)" ]]; then
   for i in $(seq 1 60); do
     WORKER_ID="$(docker compose ps -q office-worker)"
