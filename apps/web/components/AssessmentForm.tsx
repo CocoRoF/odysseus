@@ -19,6 +19,16 @@ interface ScenarioPick {
   points: number;
 }
 
+/** 서버 시각(UTC ISO)을 datetime-local 칸 값(이 PC 시간대의 YYYY-MM-DDTHH:mm)으로 바꾼다.
+ *  UTC 문자열을 잘라 넣으면 저장할 때마다 시간대만큼 밀린다. */
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** 시험 생성/편집 — 시나리오 구성 + 응시자 배정 + LLM 공급자 지정 */
 export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment; assessmentId?: string }) {
   const router = useRouter();
@@ -38,8 +48,8 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
   const [messengerMax, setMessengerMax] = useState(initial?.messenger_max_per_attempt ?? 0);
   const [npcProviderId, setNpcProviderId] = useState(initial?.npc_provider_id ?? "");
   const [agentProviderId, setAgentProviderId] = useState(initial?.agent_provider_id ?? "");
-  const [startsAt, setStartsAt] = useState(initial?.starts_at?.slice(0, 16) ?? "");
-  const [endsAt, setEndsAt] = useState(initial?.ends_at?.slice(0, 16) ?? "");
+  const [startsAt, setStartsAt] = useState(toLocalInput(initial?.starts_at));
+  const [endsAt, setEndsAt] = useState(toLocalInput(initial?.ends_at));
   const [picked, setPicked] = useState<ScenarioPick[]>(
     initial?.scenarios.map((s) => ({
       scenario_id: s.scenario_id,
