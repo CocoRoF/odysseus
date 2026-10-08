@@ -124,10 +124,11 @@ async def conversation(world_id: uuid.UUID, body: ConversationIn, user=Depends(g
     opening = person.get("opening") or "반갑습니다. 편하게 이야기해 주세요."
     # Refresh an untouched introduction after author edits; real conversations keep their history.
     if last is None or (last.meta.get("source") == "scenario_encounter" and last.content != opening):
-        event = add_event(db, world, conv, "npc_message", speaker=actor, content=opening,
+        add_event(db, world, conv, "npc_message", speaker=actor, content=opening,
             meta={"source": "scenario_encounter", "revision": world.revision})
-        world.relations = {**(world.relations or {}), actor: {
-            **(world.relations or {}).get(actor, {}), "has_met": True, "source_event_id": str(event.id)}}
+        # 말 걸기 창을 연 것만으로는 만난 것이 아니다. 인물이 먼저 건넨 인사말뿐이다. 관계(has_met)는 응시자가
+        # 실제로 말을 걸고 답을 받았을 때 worker.finish 가 적는다. 예전에는 여기서 바로 has_met 을 적어, 창만 열고
+        # 아무 말도 하지 않은 사람에게 시험장 메신저가 "사무실에서 뵀던 분이네요" 라며 아는 척을 했다(운영 7건).
     await db.commit()
     return {"id": str(conv.id), "status": conv.status, "has_met": bool((world.relations or {}).get(actor))}
 

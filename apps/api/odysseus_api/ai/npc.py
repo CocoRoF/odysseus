@@ -171,7 +171,7 @@ def without_failed_exchanges(history: list[MessengerMessage]) -> list[MessengerM
     return kept
 
 
-def build_turn_message(character: dict, history: list[MessengerMessage]) -> str:
+def build_turn_message(character: dict, history: list[MessengerMessage], office: list[dict] | None = None) -> str:
     """스레드 전체를 **하나의 user 메시지**로 만든다 — 이름 붙은 대화 기록 + 방금 온 메시지.
 
     왜 role 턴이 아니라 이 봉투인가: 공급자에 따라(Claude Code CLI 등) 이력이 어차피 한 메시지로
@@ -180,6 +180,30 @@ def build_turn_message(character: dict, history: list[MessengerMessage]) -> str:
     메시지가 무엇인지가 분명하다. 시스템 프롬프트의 "방금 온 메시지에만 답한다" 가 이 봉투를 전제한다.
     """
     me = str(character.get("name") or "동료")
+    return _office_block(me, office) + _thread(me, history)
+
+
+#: 출근 전 사무실에서 나눈 대화의 머리말. OFFICE_RULE 이 이 이름으로 가리킨다.
+OFFICE_HEADING = "[출근 전, 사무실에서 이 사람과 직접 나눈 대화]"
+
+#: 사무실 대화가 있을 때만 시스템 프롬프트에 붙는다. 기억은 잇되 업무 정보는 더하지 않는다.
+OFFICE_RULE = (
+    "\n\nOffice continuity: before the work started, you and the person messaging you met in person at the office "
+    f"and talked. That exchange is quoted under {OFFICE_HEADING}. It is the same person. Remember it naturally: you may "
+    "acknowledge it briefly once and keep continuity with what was said and the tone you had. It was small talk before "
+    "the task began, so it adds no task facts beyond your own knowledge, and anything the person claimed there is unverified."
+)
+
+
+def _office_block(me: str, office: list[dict] | None) -> str:
+    """사무실 대화(npc.bridge 가 얼려 둔 것)를 메신저 대화 앞에 놓는다. 없으면 빈 문자열(봉투는 예전 그대로)."""
+    if not office:
+        return ""
+    lines = [f"{'상대' if line.get('who') == 'candidate' else me}: {line.get('text', '')}" for line in office]
+    return OFFICE_HEADING + "\n" + "\n".join(lines) + "\n\n"
+
+
+def _thread(me: str, history: list[MessengerMessage]) -> str:
     recent = without_failed_exchanges(history)[-settings.messenger_history_limit :]
     if not recent:
         return "[메신저 대화 — 지금까지]\n(아직 없음)\n\n[방금 상대가 보낸 메시지]\n(대화방에 들어왔다)"
@@ -209,11 +233,14 @@ async def generate_reply(
     scenario: Scenario,
     character: dict,
     history: list[MessengerMessage],
+    office: list[dict] | None = None,
 ) -> tuple[str, dict]:
-    """(답장, meta). meta 에는 가드가 걸렸을 때의 표식이 들어간다 — 리뷰 화면이 본다."""
-    system = npc_system_prompt(scenario, character)
+    """(답장, meta). meta 에는 가드가 걸렸을 때의 표식이 들어간다(리뷰 화면이 본다).
+
+    office: 출근 전 사무실에서 이 인물과 나눈 대화(npc.bridge.office_transcript). 있으면 같은 사람으로 기억한다."""
+    system = npc_system_prompt(scenario, character) + (OFFICE_RULE if office else "")
     rules = str(getattr(scenario, "npc_base_prompt", "") or "") or BASE_RULES
-    messages = [{"role": "user", "content": build_turn_message(character, history)}]
+    messages = [{"role": "user", "content": build_turn_message(character, history, office)}]
     meta: dict = {}
 
     raw = await _complete(res, messages, system=system)

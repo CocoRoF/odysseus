@@ -112,6 +112,7 @@ class OfficeRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_memory_is_private_and_relationship_snapshot_is_narrow(self):
         await self.send(); await self.run_job()
         other = await self.client.post(f"/office/worlds/{self.world_id}/conversations", json={"actor_id": self.actors[1]})
+        self.assertFalse(other.json()["has_met"])  # 말 걸기 창을 연 것만으로는 만난 것이 아니다
         async with SessionLocal() as db:
             world = await db.get(OfficeWorld, uuid.UUID(self.world_id))
             conv = await db.get(OfficeConversation, uuid.UUID(self.conv_id))
@@ -124,12 +125,19 @@ class OfficeRuntimeTests(unittest.IsolatedAsyncioTestCase):
                               deadline_at=utcnow()+timedelta(hours=1), snapshot={})
             bind_definition(attempt, definition)
             await snapshot_relations(db, attempt, definition)
-            bridge = attempt.snapshot["office_relationships"]
-            self.assertTrue(bridge["actors"][self.actors[0]]["has_exchanged_greeting"])
-            self.assertNotIn("산책", json.dumps(bridge, ensure_ascii=False))
+            bridge = attempt.snapshot["_office"]
+            self.assertEqual(bridge["version"], 2)
+            # 말을 나눈 인물만 담는다. 창만 열고 아무 말도 하지 않은 둘째 동료는 "만난 사이" 가 아니다.
+            self.assertEqual(list(bridge["actors"]), [self.actors[0]])
+            mine = bridge["actors"][self.actors[0]]
+            self.assertTrue(mine["greeted"])
+            said = [line["text"] for line in mine["transcript"]]
+            self.assertIn("산책을 좋아합니다", said)  # 시험 속 같은 인물이 기억할 실제 대화
+            self.assertNotIn("PRIVATE_CANARY", json.dumps(bridge, ensure_ascii=False))
+            self.assertNotIn("사용자가 산책을 좋아한다고 이야기했다", json.dumps(bridge, ensure_ascii=False))  # 요약 기억은 담지 않는다
             frozen = json.dumps(bridge, sort_keys=True)
             world.relations = {}
-            self.assertEqual(frozen, json.dumps(attempt.snapshot["office_relationships"], sort_keys=True))
+            self.assertEqual(frozen, json.dumps(attempt.snapshot["_office"], sort_keys=True))
             await db.rollback()
         # Reopen the same office/thread after a fresh client session.
         reopened = await self.client.post(f"/office/rooms/{self.assessment.id}/enter")
