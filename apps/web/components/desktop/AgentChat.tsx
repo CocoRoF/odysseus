@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAutoGrow } from "@/components/useAutoGrow";
 import { Markdown } from "@/components/Markdown";
 import { IconAgent, IconCheck, IconCopy, IconSend } from "@/components/icons";
 import { copyText, selectedText } from "@/lib/clipboard";
@@ -109,6 +110,7 @@ export function AgentChat({
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(inputRef, input, 128);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
   const items = session?.items ?? [];
@@ -282,8 +284,6 @@ export function AgentChat({
           disabled={busy || exhausted}
           onChange={(e) => {
             setInput(e.target.value);
-            e.target.style.height = "auto";
-            e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

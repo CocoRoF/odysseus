@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAutoGrow } from "@/components/useAutoGrow";
 import { personFor } from "@/lib/avatars";
 import { PERSON_W, PERSON_H, personSpriteStyle } from "@/lib/people";
 import { aiErrorNotice } from "@/lib/ai-errors";
@@ -151,6 +152,7 @@ export function MessengerApp({ onActivity }: { onActivity?: () => void }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(inputRef, input, 128);
   const activeKeyRef = useRef(activeKey);
   activeKeyRef.current = activeKey;
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
@@ -419,8 +421,6 @@ export function MessengerApp({ onActivity }: { onActivity?: () => void }) {
                   rows={1}
                   onChange={(e) => {
                     setInput(e.target.value);
-                    e.target.style.height = "auto";
-                    e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
