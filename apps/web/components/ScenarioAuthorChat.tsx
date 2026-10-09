@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAutoGrow } from "@/components/useAutoGrow";
 import { api, streamScenarioAuthor } from "@/lib/api";
 import { READ_ONLY_REASON, useReadOnly, writeProps } from "@/components/readonly";
 import type { AiSettingsMeta, AuthorOp, ScenarioDraft } from "@/lib/types";
@@ -62,6 +63,7 @@ export function ScenarioAuthorChat({
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(inputRef, input, 120);
 
   useEffect(() => {
     api
@@ -249,8 +251,6 @@ export function ScenarioAuthorChat({
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
-              e.target.style.height = "auto";
-              e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
