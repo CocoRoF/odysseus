@@ -15,7 +15,9 @@ cryptography>=50,<51
 # 통합 LLM 클라이언트 계층 (openai/anthropic/google/vllm/ollama/lmstudio/custom/claude_code_cli)
 # — llm_client 서브패키지만 사용하며 내장 에이전트 툴은 로드하지 않는다.
 # 2.65.2 미만은 Claude Code CLI 스트림이 드물게 멈추는 결함이 있다(2.65.1/2.65.2에서 수정).
-geny-executor>=2.65.2,<3
+# 2.67.1 미만은 gpt-6 계열(gpt-6-luna)을 추론 모델로 알아보지 못해 에이전트 턴이 전부 400 으로 실패한다
+# ("Function tools with reasoning_effort are not supported"). 2.68 부터는 Claude Code 경로가 바뀌어 2.67 줄에 머문다.
+geny-executor>=2.67.1,<2.68
 openai>=1.50.0
 # 6.1.3 contains the September 2026 parser hardening; external HTML is still sanitized by our proxy.
 lxml>=6.1.3,<7
