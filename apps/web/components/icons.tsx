@@ -14,6 +14,7 @@ export {
   FiFile as IconFile,
   FiFileText as IconFileText,
   FiPlay as IconRun,
+  FiPlay as IconPlay,
   FiX as IconClose,
   FiMinus as IconMinimize,
   FiMaximize2 as IconMaximize,

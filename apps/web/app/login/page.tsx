@@ -8,6 +8,7 @@ import { homeFor } from "@/components/useUser";
 import { Button, inputCls } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { LogoSplash, markArrival } from "@/components/LogoSplash";
+import { PvButton } from "@/components/PvModal";
 
 /** 로고가 다 떠오른 뒤에 페이지를 바꾼다. 사무실 쪽 막은 이 끝 모습에서 이어받는다. */
 const GUEST_ENTER_MS = 900;
@@ -155,6 +156,9 @@ export default function LoginPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/odysseus-icon.png" alt="" className="mr-2 inline-block h-7 w-7 rounded-lg align-[-6px]" />Odysseus<span className="text-sky-400">.</span>
           </h1>
           <p className="mt-2 text-sm text-slate-400">실무 시뮬레이션 기반 개발자 평가 플랫폼</p>
+          <div className="mt-4">
+            <PvButton />
+          </div>
         </div>
         <form onSubmit={submit} noValidate className="space-y-4 rounded-2xl bg-white p-6 shadow-xl">
           <input
