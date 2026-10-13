@@ -11,7 +11,7 @@ import { IconClose, IconPlay } from "@/components/icons";
  *  엣지가 문서 전체에 `Referrer-Policy: no-referrer` 를 건다(ODY-024). 유튜브 임베드는 리퍼러가 없으면
  *  "동영상 플레이어 구성 오류"(153)로 재생을 거부하므로, 이 iframe 에만 출처(origin)를 보내도록 정책을 연다.
  */
-export const PV_YOUTUBE_ID = "wj0NNwrWCwA";
+export const PV_YOUTUBE_ID = "w-6vP8ettgM";
 
 export function PvButton() {
   const [open, setOpen] = useState(false);
