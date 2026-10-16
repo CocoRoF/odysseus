@@ -12,15 +12,20 @@
  *  그 밖의 것을 아예 주지 않는다. 고르다 나간 사람의 빈 계정은 남지 않는다.
  *
  *  로그인 전 화면이라 useUser 를 쓰지 않는다. 게스트가 꺼져 있으면 로그인으로 돌려보낸다.
+ *
+ *  빠른 시작(`?quick=1`, 로그인의 [응시 (빠른 시작)]): 세 질문 가운데 **시험 고르기만** 묻는다. 이름과 아바타는
+ *  비워 보내 서버가 정하고(게스트-XXXX · 계정 id 로 고른 프리셋), 사무실을 거치지 않고 그 자리에서 응시를 시작해
+ *  시험 화면(OS)으로 바로 간다. 시험 화면은 `?quick=1` 을 보고 시작 브리핑 연출과 부팅을 건너뛴다.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IconChevronLeft } from "@/components/icons";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import type { GuestAvailability, User } from "@/lib/types";
+import type { Attempt, GuestAvailability, User } from "@/lib/types";
 import { PEOPLE } from "@/lib/people";
 import { pickAvatarChoices } from "@/lib/avatar-choices";
 import { LogoSplash, markArrival, takeArrival } from "@/components/LogoSplash";
+import { requestDesktopFullscreen } from "@/components/desktop/AppSwitcher";
 
 const NAME_MAX = 20;
 const DIFFICULTY_SHORT: Record<string, string> = { easy: "입문", medium: "중급", hard: "심화" };
@@ -52,9 +57,20 @@ export default function WelcomePage() {
    *  주소를 다시 읽었는데 그때는 이미 지워진 뒤라 replace 가 늘 false 였다 — "버리고 새로 시작" 을
    *  확인한 사람이 온보딩 끝에서 409 로 막혔다. */
   const intent = useRef({ replace: false, fresh: false });
+  /** 빠른 시작 — 시험 고르기 한 단계만. 주소에 남겨 두어 새로 고침해도 같은 화면이다. */
+  const [quick, setQuick] = useState(false);
+  /** 빠른 시작에서 이미 만든 계정이 고른 시험. 응시 시작이 실패해 다시 누를 때 계정을 또 만들지 않는다
+   *  (만들면 진행 중 확인에 막히거나 손님 한도를 하나 더 쓴다). 계정이 생긴 뒤에는 이 시험만 응시할 수 있다. */
+  const quickAccount = useRef<string | null>(null);
   useLayoutEffect(() => {
     const q = new URLSearchParams(window.location.search);
     intent.current = { replace: q.get("replace") === "1", fresh: q.get("fresh") === "1" };
+    if (q.get("quick") === "1") {
+      setQuick(true);
+      setStep(2);
+      // 뜻(replace·fresh)은 붙잡아 두었으니 주소에서 걷는다 — 새로 고침이 "버리고 새로 시작" 을 다시 싣지 않게.
+      window.history.replaceState(null, "", `${window.location.pathname}?quick=1`);
+    }
     if (takeArrival() === "guest") {
       arrivedAt.current = performance.now();
       setSplash("hold");
@@ -100,6 +116,31 @@ export default function WelcomePage() {
   const categories = useMemo(() => avail?.categories ?? [], [avail]);
   const canNext = step === 0 ? name.trim().length > 0 : step === 1 ? Boolean(preset) : exam !== null;
 
+  /** 빠른 시작 — 계정을 만들고(이름·아바타는 서버가) 바로 응시를 시작해 시험 화면으로 간다. 사무실은 들르지 않는다. */
+  const quickStart = useCallback(
+    async (chosen: string | null) => {
+      const target = quickAccount.current ?? chosen;
+      if (!target || busy) return;
+      // 누른 손짓 안에서 전체화면을 청한다 — 보통 길은 시험 화면의 시작 버튼에서 청하는데, 빠른 시작에는 그 버튼이 없다.
+      // 거부되면(설정·브라우저) 그냥 진행한다.
+      requestDesktopFullscreen();
+      setBusy(true);
+      setError("");
+      try {
+        if (!quickAccount.current) {
+          await api.post<User>("/auth/guest", { assessment_id: target, replace: intent.current.replace });
+          quickAccount.current = target;
+        }
+        const attempt = await api.post<Attempt>(`/assessments/${target}/attempts`);
+        router.replace(`/exam/${attempt.id}?quick=1`);
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "시작할 수 없습니다");
+        setBusy(false);
+      }
+    },
+    [busy, router],
+  );
+
   const finish = useCallback(async () => {
     if (exam === null || !preset || !name.trim()) return;
     setBusy(true);
@@ -123,9 +164,10 @@ export default function WelcomePage() {
 
   const next = useCallback(() => {
     if (!canNext || busy) return;
-    if (step < 2) setStep((s) => (s + 1) as Step);
+    if (quick) void quickStart(exam);
+    else if (step < 2) setStep((s) => (s + 1) as Step);
     else void finish();
-  }, [canNext, busy, step, finish]);
+  }, [canNext, busy, quick, quickStart, exam, step, finish]);
 
   // Enter 로 다음 — 이름 칸에서도, 고른 뒤에도
   useEffect(() => {
@@ -147,14 +189,17 @@ export default function WelcomePage() {
       <div className="welcome-vignette" />
       <div className="welcome-panel" aria-busy={busy}>
         <p className="welcome-brand">ODYSSEUS</p>
-        <div className="welcome-steps" aria-hidden="true">
-          {[0, 1, 2].map((i) => (
-            <i key={i} data-on={i <= step ? "true" : undefined} />
-          ))}
-        </div>
+        {!quick && (
+          <div className="welcome-steps" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <i key={i} data-on={i <= step ? "true" : undefined} />
+            ))}
+          </div>
+        )}
         <h1 className="welcome-q" key={`q${step}`}>
           {question}
         </h1>
+        {quick && <p className="welcome-note">이름과 아바타는 자동으로 정해지고, 고른 시험의 업무 화면으로 바로 들어갑니다.</p>}
         <div className="welcome-rule" />
 
         <div className="welcome-body welcome-step" key={`s${step}`}>
@@ -220,6 +265,9 @@ export default function WelcomePage() {
                       className="welcome-exam"
                       aria-pressed={exam === e.assessment_id}
                       onClick={() => setExam(e.assessment_id)}
+                      // 빠른 시작에서는 두 번 누르면 바로 시작한다
+                      onDoubleClick={quick ? () => void quickStart(e.assessment_id) : undefined}
+                      disabled={quick && busy}
                       data-exam={e.assessment_id}
                       data-difficulty={e.difficulty}
                     >
@@ -244,7 +292,7 @@ export default function WelcomePage() {
         {error && <p className="welcome-error">{error}</p>}
 
         <div className="welcome-actions">
-          {step > 0 ? (
+          {step > 0 && !quick ? (
             <button type="button" className="welcome-back" onClick={() => setStep((s) => (s - 1) as Step)} disabled={busy}>
               <IconChevronLeft size={13} /> 이전
             </button>
@@ -254,7 +302,7 @@ export default function WelcomePage() {
             </button>
           )}
           <button type="button" className="welcome-next" onClick={next} disabled={!canNext || busy} data-welcome="next">
-            {busy ? "준비 중..." : step < 2 ? "다음" : "출근하기"}
+            {busy ? "준비 중..." : quick ? "바로 시작" : step < 2 ? "다음" : "출근하기"}
           </button>
         </div>
       </div>
