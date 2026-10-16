@@ -947,6 +947,8 @@ body {
 .welcome-steps i[data-on] { background: #38bdf8; }
 .welcome-q { margin: 22px 0 6px; text-align: center; font-size: 26px; font-weight: 700; letter-spacing: -.01em; color: #f1f5f9; }
 .welcome-empty { text-align: center; font-size: 13px; color: #94a3b8; }
+/* 빠른 시작 — 무엇을 건너뛰는지 한 줄로 */
+.welcome-note { margin: 0; text-align: center; font-size: 13px; color: #94a3b8; }
 .welcome-rule { margin: 22px auto 0; height: 1px; width: 96px; background: linear-gradient(to right, transparent, rgba(56,189,248,.5), transparent); }
 .welcome-body { margin-top: 26px; }
 .welcome-body input[type="text"] {

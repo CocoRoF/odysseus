@@ -329,6 +329,14 @@ export default function ExamDesktopPage() {
   const [briefingReview, setBriefingReview] = useState(false);
   // 시네마틱 모드: [임무 시작] → 부팅 연출 → 데스크톱
   const [booting, setBooting] = useState(false);
+  /** 빠른 시작(로그인의 [응시 (빠른 시작)])으로 들어왔는가 — 주소의 ?quick=1. 처음 그릴 때 한 번 읽고 주소에서 걷는다.
+   *  그렇게 들어왔으면 시작 브리핑(시네마틱·카드)과 부팅을 건너뛰고 데스크톱(메신저)부터 연다. 브리핑은 작업 표시줄의
+   *  [브리핑]에서 그대로 다시 볼 수 있다. */
+  const quickRef = useRef<boolean | null>(null);
+  if (quickRef.current === null && typeof window !== "undefined") {
+    quickRef.current = new URLSearchParams(window.location.search).get("quick") === "1";
+  }
+  const [quickEnter, setQuickEnter] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
   // 참고 자료 앱(GitHub)은 관리자 설정으로 끌 수 있다 — 꺼졌으면 아이콘부터 없앤다
   const [reference, setReference] = useState<ReferenceConfig | null>(null);
@@ -447,6 +455,14 @@ export default function ExamDesktopPage() {
         syncClock(a);
         setAttempt(a);
         const current = a.scenarios.find((s) => s.ordinal === a.current_ordinal);
+        if (quickRef.current) {
+          quickRef.current = false;
+          window.history.replaceState(null, "", window.location.pathname);
+          if (a.status === "in_progress" && current) {
+            setQuickEnter(true);
+            return;
+          }
+        }
         if (a.status === "in_progress" && current) {
           const seenKey = `odysseus:briefing:${a.id}:${current.scenario_id}`;
           if (!localStorage.getItem(seenKey)) setShowBriefing(true);
@@ -475,6 +491,13 @@ export default function ExamDesktopPage() {
     setShowBriefing(false);
     wm.activate("messenger");
   }, [attempt, scenario, wm]);
+
+  // 빠른 시작 — 브리핑을 본 것으로 적고(새로 고침에 다시 뜨지 않게) 메신저부터 연다. 시작 버튼을 누른 것과 같은 자리다.
+  useEffect(() => {
+    if (!quickEnter || !attempt || !scenario) return;
+    setQuickEnter(false);
+    startWork();
+  }, [quickEnter, attempt, scenario, startWork]);
 
   const introNotes = useMemo(
     () => [

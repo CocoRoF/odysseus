@@ -101,8 +101,11 @@ export default function LoginPage() {
 
   /** 게스트 — 계정은 아직 만들지 않는다. 시험을 시작할 때처럼 검은 막에 로고가 떠오르고,
    *  그 뒤에서 온보딩(이름 → 아바타 → 분야)이 준비된다. 계정은 온보딩 끝에 만든다 —
-   *  고르다 나간 사람의 빈 계정이 남지 않는다. */
-  const startGuest = async () => {
+   *  고르다 나간 사람의 빈 계정이 남지 않는다.
+   *
+   *  quick = [응시 (빠른 시작)]. 이름·아바타·사무실을 건너뛰고 시험 하나만 고르면 바로 업무 화면(OS)으로 간다.
+   *  이름과 아바타는 서버가 정한다. 같은 온보딩 화면의 시험 고르기 단계만 쓰므로 로고 막도 두르지 않는다. */
+  const startGuest = async (quick = false) => {
     // 진행 중인 시험이 있으면 버리는 것이 된다 — 게스트는 나가면 그 계정으로 다시 못 들어온다.
     if (resume?.attempt_id) {
       const ok = await confirm({
@@ -127,7 +130,12 @@ export default function LoginPage() {
     setError("");
     // replace = 진행 중인 시험을 버리겠다고 확인받음. fresh = 이미 들어와 있지만(끝난 시험 등) 새 게스트로
     // 시작하려 함. 둘 다 없으면 /welcome 은 들어와 있는 사람을 사무실로 돌려보낸다.
-    const q = markArrival("guest") + (replaceRef.current ? "&replace=1" : resume?.role ? "&fresh=1" : "");
+    const intent = replaceRef.current ? "&replace=1" : resume?.role ? "&fresh=1" : "";
+    if (quick) {
+      router.replace(`/welcome?quick=1${intent}`);
+      return;
+    }
+    const q = markArrival("guest") + intent;
     setArriving(true);
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     setTimeout(() => router.replace(`/welcome${q}`), reduced ? 0 : GUEST_ENTER_MS);
@@ -219,12 +227,24 @@ export default function LoginPage() {
               {guestOn && (
                 <button
                   type="button"
-                  onClick={startGuest}
+                  onClick={() => startGuest()}
                   disabled={busy}
                   className="flex w-full items-baseline justify-between gap-3 rounded-lg border border-slate-300 px-4 py-2.5 text-left transition hover:border-amber-400 hover:bg-amber-50/40 disabled:opacity-50"
                 >
                   <span className="text-sm font-medium text-slate-700">게스트로 응시</span>
                   <span className="text-xs text-slate-400">시험을 직접 풀어 봅니다</span>
+                </button>
+              )}
+              {guestOn && (
+                <button
+                  type="button"
+                  onClick={() => startGuest(true)}
+                  disabled={busy}
+                  data-start="quick"
+                  className="flex w-full items-baseline justify-between gap-3 rounded-lg border border-slate-300 px-4 py-2.5 text-left transition hover:border-emerald-400 hover:bg-emerald-50/40 disabled:opacity-50"
+                >
+                  <span className="text-sm font-medium text-slate-700">응시 (빠른 시작)</span>
+                  <span className="text-xs text-slate-400">시험만 고르면 바로 업무 화면으로</span>
                 </button>
               )}
               {demoOn && (
