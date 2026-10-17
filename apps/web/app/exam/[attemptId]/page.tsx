@@ -32,6 +32,8 @@ import { MessengerSessionProvider, useMessengerSessionOptional } from "@/compone
 import { IntroCinematic } from "@/components/desktop/IntroCinematic";
 import { BootSequence } from "@/components/desktop/BootSequence";
 import { BriefingModal } from "@/components/desktop/BriefingModal";
+import dynamic from "next/dynamic";
+import { autopilotKey } from "@/components/autopilot/catalog";
 import { ConnectionBanner } from "@/components/desktop/ConnectionBanner";
 import { DuplicateTabBanner } from "@/components/desktop/DuplicateTabBanner";
 import { SessionLostBanner } from "@/components/desktop/SessionLostBanner";
@@ -303,6 +305,9 @@ const SUBMIT_FLUSH_TIMEOUT_MS = 8_000;
 /** PC 시계 오차가 이만큼 넘게 바뀌면 남은 시간을 다시 센다 */
 const CLOCK_RESYNC_MS = 2_000;
 
+/** 자동 진행 — 켰을 때만 불러온다(계획에 매니페스트 전문과 대사가 들어 있어 무겁다) */
+const Autopilot = dynamic(() => import("@/components/autopilot/Autopilot").then((m) => m.Autopilot), { ssr: false });
+
 export default function ExamDesktopPage() {
   const params = useParams<{ attemptId: string }>();
   const attemptId = params.attemptId;
@@ -337,6 +342,13 @@ export default function ExamDesktopPage() {
     quickRef.current = new URLSearchParams(window.location.search).get("quick") === "1";
   }
   const [quickEnter, setQuickEnter] = useState(false);
+  /** 자동 진행(로그인의 [응시 (자동 진행)]) — 주소의 ?auto=1 로 들어와 이 탭의 sessionStorage 에 진행 단계를 남긴다.
+   *  새로 고침하면 저장된 단계에서 멈춘 채 다시 뜬다(이어서 할지는 사람이 정한다). 게스트 계정에서만 돈다. */
+  const autoRef = useRef<boolean | null>(null);
+  if (autoRef.current === null && typeof window !== "undefined") {
+    autoRef.current = new URLSearchParams(window.location.search).get("auto") === "1";
+  }
+  const [autopilot, setAutopilot] = useState<{ step: number; resumed: boolean } | null>(null);
   const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
   // 참고 자료 앱(GitHub)은 관리자 설정으로 끌 수 있다 — 꺼졌으면 아이콘부터 없앤다
   const [reference, setReference] = useState<ReferenceConfig | null>(null);
@@ -455,6 +467,22 @@ export default function ExamDesktopPage() {
         syncClock(a);
         setAttempt(a);
         const current = a.scenarios.find((s) => s.ordinal === a.current_ordinal);
+        if (a.status === "in_progress") {
+          try {
+            const k = autopilotKey(a.id);
+            if (autoRef.current) {
+              sessionStorage.setItem(k, JSON.stringify({ step: 0 }));
+              window.history.replaceState(null, "", window.location.pathname);
+              setAutopilot({ step: 0, resumed: false });
+            } else {
+              const saved = sessionStorage.getItem(k);
+              if (saved) setAutopilot({ step: Number(JSON.parse(saved).step) || 0, resumed: true });
+            }
+          } catch {
+            // 저장소를 못 쓰면 자동 진행 없이 보통 시험으로 둔다
+          }
+        }
+        autoRef.current = false;
         if (quickRef.current) {
           quickRef.current = false;
           window.history.replaceState(null, "", window.location.pathname);
@@ -1121,6 +1149,24 @@ export default function ExamDesktopPage() {
               }}
             />
           ))}
+
+        {/* 자동 진행 — 게스트가 [응시 (자동 진행)] 으로 들어온 응시에서만 */}
+        {autopilot && inProgress && scenario && user?.role === "guest" && (
+          <Autopilot
+            attemptId={attempt.id}
+            title={attempt.assessment_title}
+            initialStep={autopilot.step}
+            startPaused={autopilot.resumed}
+            onExit={() => {
+              try {
+                sessionStorage.removeItem(autopilotKey(attempt.id));
+              } catch {
+                /* 무시 */
+              }
+              setAutopilot(null);
+            }}
+          />
+        )}
       </div>
       </AgentSessionProvider>
       </TerminalSessionProvider>

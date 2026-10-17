@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, resetIdentityState } from "@/lib/api";
-import type { GuestAvailability, Resume, User } from "@/lib/types";
+import type { Attempt, GuestAvailability, Resume, User } from "@/lib/types";
 import { homeFor } from "@/components/useUser";
 import { Button, inputCls } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { LogoSplash, markArrival } from "@/components/LogoSplash";
 import { PvButton } from "@/components/PvModal";
+import { requestDesktopFullscreen } from "@/components/desktop/AppSwitcher";
+import { AUTOPILOT_EXAM_TITLE, AUTOPILOT_NAME_PREFIX } from "@/components/autopilot/catalog";
 
 /** 로고가 다 떠오른 뒤에 페이지를 바꾼다. 사무실 쪽 막은 이 끝 모습에서 이어받는다. */
 const GUEST_ENTER_MS = 900;
@@ -34,6 +36,8 @@ export default function LoginPage() {
   const [guestOn, setGuestOn] = useState<boolean | null>(null);
   /** 관리 화면 둘러보기(읽기 전용) 를 열어 두었는가 — 게스트 응시와 별개 스위치다 */
   const [demoOn, setDemoOn] = useState(false);
+  /** 자동 진행이 풀 시험(쿠버네티스)의 id — 게스트에게 열려 있을 때만 [응시 (자동 진행)] 을 띄운다 */
+  const [autoExam, setAutoExam] = useState<string | null>(null);
   /** 게스트 로그인이 끝나 로고 막이 떠오르는 중 */
   const [arriving, setArriving] = useState(false);
   /** 이 브라우저가 이어 할 것 — 손님 계정은 나가면 끝이라, 새로 시작보다 먼저 내놓는다 */
@@ -52,6 +56,8 @@ export default function LoginPage() {
       .then((r) => {
         setGuestOn(r.enabled);
         setDemoOn(Boolean(r.admin_demo));
+        const auto = r.categories.flatMap((c) => c.exams).find((e) => e.title === AUTOPILOT_EXAM_TITLE);
+        setAutoExam(r.enabled && auto ? auto.assessment_id : null);
         if (r.admin_demo) router.prefetch("/admin/scenarios");
         // 게스트는 로고 막 뒤에서 온보딩으로 간다 — 미리 받아 두면 막이 걷힐 때 이미 떠 있다.
         if (r.enabled) {
@@ -105,7 +111,9 @@ export default function LoginPage() {
    *
    *  quick = [응시 (빠른 시작)]. 이름·아바타·사무실을 건너뛰고 시험 하나만 고르면 바로 업무 화면(OS)으로 간다.
    *  이름과 아바타는 서버가 정한다. 같은 온보딩 화면의 시험 고르기 단계만 쓰므로 로고 막도 두르지 않는다. */
-  const startGuest = async (quick = false) => {
+  const startGuest = async (mode: "onboard" | "quick" | "auto" = "onboard") => {
+    // 자동 진행은 시험 화면의 [임무 시작] 을 사람이 누르지 않으므로, 전체화면은 여기 누른 손짓 안에서 청한다
+    if (mode === "auto") requestDesktopFullscreen();
     // 진행 중인 시험이 있으면 버리는 것이 된다 — 게스트는 나가면 그 계정으로 다시 못 들어온다.
     if (resume?.attempt_id) {
       const ok = await confirm({
@@ -131,7 +139,11 @@ export default function LoginPage() {
     // replace = 진행 중인 시험을 버리겠다고 확인받음. fresh = 이미 들어와 있지만(끝난 시험 등) 새 게스트로
     // 시작하려 함. 둘 다 없으면 /welcome 은 들어와 있는 사람을 사무실로 돌려보낸다.
     const intent = replaceRef.current ? "&replace=1" : resume?.role ? "&fresh=1" : "";
-    if (quick) {
+    if (mode === "auto") {
+      await startAutopilot();
+      return;
+    }
+    if (mode === "quick") {
       router.replace(`/welcome?quick=1${intent}`);
       return;
     }
@@ -139,6 +151,27 @@ export default function LoginPage() {
     setArriving(true);
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     setTimeout(() => router.replace(`/welcome${q}`), reduced ? 0 : GUEST_ENTER_MS);
+  };
+
+  /** 자동 진행 — 쿠버네티스 시험으로 게스트 계정을 만들고(이름은 "자동 진행-XXXX", 아바타는 서버가) 바로 응시를 시작한다.
+   *  시험 화면이 ?auto=1 을 보고 브리핑부터 제출까지 사람이 하듯 화면을 조작한다(components/autopilot). */
+  const startAutopilot = async () => {
+    if (!autoExam) return;
+    setBusy(true);
+    setError("");
+    try {
+      const tag = Math.random().toString(16).slice(2, 6).toUpperCase();
+      await api.post<User>("/auth/guest", {
+        name: `${AUTOPILOT_NAME_PREFIX}-${tag}`,
+        assessment_id: autoExam,
+        replace: replaceRef.current,
+      });
+      const attempt = await api.post<Attempt>(`/assessments/${autoExam}/attempts`);
+      router.replace(`/exam/${attempt.id}?auto=1`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "자동 진행을 시작하지 못했습니다");
+      setBusy(false);
+    }
   };
 
   /** 관리 화면 둘러보기 — 계정을 만들고 바로 관리 화면으로. 여기서 만드는 계정은 읽기만 한다.
@@ -238,13 +271,25 @@ export default function LoginPage() {
               {guestOn && (
                 <button
                   type="button"
-                  onClick={() => startGuest(true)}
+                  onClick={() => startGuest("quick")}
                   disabled={busy}
                   data-start="quick"
                   className="flex w-full items-baseline justify-between gap-3 rounded-lg border border-slate-300 px-4 py-2.5 text-left transition hover:border-emerald-400 hover:bg-emerald-50/40 disabled:opacity-50"
                 >
                   <span className="text-sm font-medium text-slate-700">응시 (빠른 시작)</span>
                   <span className="text-xs text-slate-400">시험만 고르면 바로 업무 화면으로</span>
+                </button>
+              )}
+              {guestOn && autoExam && (
+                <button
+                  type="button"
+                  onClick={() => startGuest("auto")}
+                  disabled={busy}
+                  data-start="auto"
+                  className="flex w-full items-baseline justify-between gap-3 rounded-lg border border-slate-300 px-4 py-2.5 text-left transition hover:border-sky-400 hover:bg-sky-50/40 disabled:opacity-50"
+                >
+                  <span className="text-sm font-medium text-slate-700">응시 (자동 진행)</span>
+                  <span className="text-xs text-slate-400">쿠버네티스 시험을 자동으로 풀어 보입니다</span>
                 </button>
               )}
               {demoOn && (
