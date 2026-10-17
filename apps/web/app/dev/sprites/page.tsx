@@ -11,20 +11,24 @@
  *  2. 걷는 모습 — 방향마다 idle/move 를 번갈아 (사무실의 걸음 간격과 같다)
  *  3. 시트 원본에 칸 눈금을 겹친 것 — 잘못 잘렸으면 여기서 바로 보인다
  *
- * 비밀은 없다. 시트는 이미 /office/ 아래 공개 자산이다.
+ * 비밀은 없다. 시트는 이미 /office/ 아래 공개 자산이다. 그래도 운영 화면에 개발 도구가 열려 있을 이유는
+ * 없어서 관리자만 연다.
  */
 import { useEffect, useState } from "react";
 import { Person } from "@/components/office/Person";
+import { useUser } from "@/components/useUser";
 import { DIRS, PEOPLE, PEOPLE_SRC, PERSON_H, PERSON_W, POSES, type Pose } from "@/lib/people";
 
 const STEP_MS = 190;
 
 export default function SpritesPage() {
+  const { user } = useUser(["admin"]);
   const [pose, setPose] = useState<Pose>("idle");
   useEffect(() => {
     const t = setInterval(() => setPose((p) => (p === "idle" ? "move" : "idle")), STEP_MS);
     return () => clearInterval(t);
   }, []);
+  if (!user) return null;
 
   const cols = DIRS.length * POSES.length;
   return (
