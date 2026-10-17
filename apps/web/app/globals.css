@@ -1480,3 +1480,31 @@ body {
 
 /* 막대 안의 글자는 어떤 깊이에 있든 쪼개지지 않는다 */
 .app-bar :where(button, span, a, label, select, div) { white-space: nowrap; }
+
+/* ── 자동 진행(components/autopilot) — 보이는 커서·누름 물결·진행 막대·입력 막 ─────────────── */
+.autopilot-shield { position: fixed; inset: 0; z-index: 2147483000; cursor: default; background: transparent; }
+.autopilot-cursor { position: fixed; left: 0; top: 0; z-index: 2147483646; pointer-events: none; margin: -2px 0 0 -3px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); transition: opacity .2s; will-change: transform; }
+.autopilot-ripple { position: fixed; left: 0; top: 0; z-index: 2147483645; width: 36px; height: 36px; border-radius: 50%;
+  border: 2px solid rgba(56,189,248,.9); pointer-events: none; opacity: 0; }
+.autopilot-ripple-go { animation: autopilot-ripple .45s ease-out; }
+@keyframes autopilot-ripple { from { opacity: 1; scale: .6; } to { opacity: 0; scale: 1.8; } }
+.autopilot-bar { position: fixed; top: 10px; left: 50%; translate: -50% 0; z-index: 2147483647; display: flex; align-items: center; gap: 10px;
+  max-width: min(860px, calc(100vw - 24px)); padding: 7px 8px 7px 14px; border-radius: 999px; background: rgba(9,13,20,.88);
+  border: 1px solid rgba(56,189,248,.35); box-shadow: 0 8px 30px rgba(0,0,0,.35); color: #e2e8f0; font-size: 13px; backdrop-filter: blur(6px); }
+.autopilot-tag { font-weight: 700; color: #7dd3fc; white-space: nowrap; }
+.autopilot-say { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.autopilot-dot { width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; flex-shrink: 0; }
+.autopilot-dot[data-state="running"] { animation: autopilot-pulse 1.2s ease-in-out infinite; }
+.autopilot-dot[data-state="paused"] { background: #fbbf24; }
+.autopilot-dot[data-state="error"] { background: #f87171; }
+.autopilot-dot[data-state="done"] { background: #4ade80; }
+@keyframes autopilot-pulse { 50% { opacity: .35; } }
+.autopilot-progress { width: 72px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); flex-shrink: 0; overflow: hidden; }
+.autopilot-progress i { display: block; height: 100%; background: #38bdf8; transition: width .4s; }
+.autopilot-bar button { flex-shrink: 0; white-space: nowrap; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600;
+  background: #0ea5e9; color: #fff; }
+.autopilot-bar button:hover { background: #38bdf8; }
+.autopilot-bar button.autopilot-quiet { background: rgba(255,255,255,.1); color: #cbd5e1; }
+.autopilot-bar button.autopilot-quiet:hover { background: rgba(255,255,255,.18); }
+@media (prefers-reduced-motion: reduce) { .autopilot-dot[data-state="running"], .autopilot-ripple-go { animation: none; } }
