@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { Attempt, AttemptScenario, ReferenceConfig } from "@/lib/types";
 import { useToast } from "@/components/toast";
@@ -311,6 +311,9 @@ const Autopilot = dynamic(() => import("@/components/autopilot/Autopilot").then(
 export default function ExamDesktopPage() {
   const params = useParams<{ attemptId: string }>();
   const attemptId = params.attemptId;
+  // 들어온 주소의 ?quick=1·?auto=1 은 window.location 이 아니라 여기서 읽는다. 앱 라우터는 다른 화면에서 넘어올 때
+  // 새 화면을 먼저 그리고 주소를 나중에 바꾸므로, 첫 그림 때 window.location 은 아직 앞 화면(로그인)의 주소다.
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { toast, confirm } = useToast();
   const { user } = useUser(["candidate", "admin", "evaluator", "guest"]);
@@ -338,16 +341,12 @@ export default function ExamDesktopPage() {
    *  그렇게 들어왔으면 시작 브리핑(시네마틱·카드)과 부팅을 건너뛰고 데스크톱(메신저)부터 연다. 브리핑은 작업 표시줄의
    *  [브리핑]에서 그대로 다시 볼 수 있다. */
   const quickRef = useRef<boolean | null>(null);
-  if (quickRef.current === null && typeof window !== "undefined") {
-    quickRef.current = new URLSearchParams(window.location.search).get("quick") === "1";
-  }
+  if (quickRef.current === null) quickRef.current = searchParams.get("quick") === "1";
   const [quickEnter, setQuickEnter] = useState(false);
   /** 자동 진행(로그인의 [응시 (자동 진행)]) — 주소의 ?auto=1 로 들어와 이 탭의 sessionStorage 에 진행 단계를 남긴다.
    *  새로 고침하면 저장된 단계에서 멈춘 채 다시 뜬다(이어서 할지는 사람이 정한다). 게스트 계정에서만 돈다. */
   const autoRef = useRef<boolean | null>(null);
-  if (autoRef.current === null && typeof window !== "undefined") {
-    autoRef.current = new URLSearchParams(window.location.search).get("auto") === "1";
-  }
+  if (autoRef.current === null) autoRef.current = searchParams.get("auto") === "1";
   const [autopilot, setAutopilot] = useState<{ step: number; resumed: boolean } | null>(null);
   const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
   // 참고 자료 앱(GitHub)은 관리자 설정으로 끌 수 있다 — 꺼졌으면 아이콘부터 없앤다
