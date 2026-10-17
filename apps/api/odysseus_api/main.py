@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import check_startup_security, https_only_enabled, settings
 from .db import Base, SessionLocal, engine
-from .account_sweep import account_sweep_loop
+from .grading import grade_backlog_loop
 from .migrations import run_schema_migrations
 from .queue_recovery import recovery_loop
 from .secrets import install_encrypted_types, migrate_encrypted_storage, report_unreadable_secrets
@@ -63,11 +63,11 @@ async def lifespan(app: FastAPI):
         await sync_presets(db)
 
     queue_recovery_task = asyncio.create_task(recovery_loop(), name="execution-queue-recovery")
-    account_sweep_task = asyncio.create_task(account_sweep_loop(), name="visitor-account-sweep")
+    grade_backlog_task = asyncio.create_task(grade_backlog_loop(), name="grade-backlog")
     try:
         yield
     finally:
-        for task in (queue_recovery_task, account_sweep_task):
+        for task in (queue_recovery_task, grade_backlog_task):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task

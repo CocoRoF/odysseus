@@ -19,7 +19,6 @@ from ..config import settings
 from ..db import SessionLocal, get_db
 from ..definitions import agent_turn_limit, definition_for_attempt, resolve_attempt_ai
 from ..deps import get_current_user
-from ..guests import guest_chat_budget, guest_chat_gate
 from ..locks import acquire_lease
 from ..models import AgentMessage, Attempt, Event, User
 from ..ratelimit import enforce
@@ -114,19 +113,12 @@ async def agent_usage(
     used = await _used_turns(db, attempt_id)
     refunded = await refunded_agent(db, attempt_id)
     res = await resolve_attempt_ai(db, definition, "agent")
-    # 게스트에게는 **실제로 부딪히는** 한도를 보여 준다 — 메신저와 합쳐 세는 총량이다.
-    shared = False
-    budget = await guest_chat_budget(db, user, attempt)
-    if budget is not None:
-        used, max_turns = budget
-        shared = True
     return AgentUsageOut(
         enabled=max_turns > 0,
         used=used,
         max=max_turns,
         remaining=max(0, max_turns - used),
         refunded=refunded,
-        shared=shared,
         configured=bool(res and res.configured),
         model=res.model if res else None,
         tools_available=bool(res and ai_provider.agent_tools_available(res)),
@@ -172,7 +164,6 @@ async def send_agent_message(
     if not scenario.agent_enabled:
         raise HTTPException(403, "이 시나리오에서는 AI 에이전트를 사용할 수 없습니다")
     enforce(f"agent:{attempt_id}", per_min=12, burst=6, what="에이전트 요청")
-    await guest_chat_gate(db, user, attempt_id, what="에이전트 요청")
 
     definition = await definition_for_attempt(db, attempt)
     max_turns = agent_turn_limit(definition, attempt)

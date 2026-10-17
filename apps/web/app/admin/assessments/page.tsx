@@ -107,7 +107,7 @@ export default function AssessmentsPage() {
               <IconButton title="결과 보기" href={`/review?assessment_id=${a.id}`}>
                 <IconResults />
               </IconButton>
-              <IconButton title="삭제" tone="danger" write onClick={() => remove(a)}>
+              <IconButton title="삭제" tone="danger" onClick={() => remove(a)}>
                 <IconDelete />
               </IconButton>
             </>

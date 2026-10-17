@@ -1,87 +1,31 @@
-"""접속 관리 — 게스트 정책과 주소 차단 (관리자 전용).
+"""접속 관리: 주소 차단 (관리자 전용).
 
-화면은 [설정] 페이지의 '게스트 접속' 카드 하나다. 경로를 /admin/settings 아래로
-옮기지 않은 것은 이 라우터가 도메인(접속 통제)으로 묶여 있기 때문이며, 설정
-페이지가 어떤 API 를 부르는지는 화면 구성의 문제다.
-
-계정 정지만으로는 게스트를 막을 수 없다: 정지당한 사람이 새 게스트 계정을
-만들어 1초 뒤 돌아온다. 그래서 '누구'(계정 정지, /admin/users)와
-'어디서'(주소 차단, 여기)가 함께 있어야 조치가 성립한다.
+차단은 '어디서'를 막는다. '누구'는 계정 정지(/admin/users)가 막는다. 판정은 :mod:`odysseus_api.ip_blocks`.
 """
 
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..demo import is_demo_admin, mask_ip
 from ..deps import require_admin
-from ..guests import (
-    GUEST_ROLE,
-    GuestPolicy,
-    blocked_entries,
-    invalidate_cache,
-    is_blocked,
-    load_policy,
-    normalize_cidr,
-    save_policy,
-)
+from ..ip_blocks import blocked_entries, invalidate_cache, is_blocked, normalize_cidr
 from ..models import BlockedIp, Session, User, utcnow
-from ..schemas import BlockedIpIn, BlockedIpOut, GuestPolicyIn, GuestPolicyOut
+from ..schemas import BlockedIpIn, BlockedIpOut
 
 router = APIRouter(prefix="/admin/access", tags=["access"], dependencies=[Depends(require_admin)])
-
-
-# ── 게스트 정책 ───────────────────────────────────────────────
-
-
-@router.get("/guest", response_model=GuestPolicyOut)
-async def get_guest_policy(db: AsyncSession = Depends(get_db)):
-    return GuestPolicyOut(**(await load_policy(db)).to_value())
-
-
-@router.put("/guest", response_model=GuestPolicyOut)
-async def put_guest_policy(body: GuestPolicyIn, db: AsyncSession = Depends(get_db)):
-    policy = await save_policy(db, GuestPolicy(**body.model_dump()))
-    return GuestPolicyOut(**policy.to_value())
-
-
-@router.get("/guest/stats")
-async def guest_stats(db: AsyncSession = Depends(get_db)):
-    """게스트 계정 현황 — 정책 화면에서 한도가 실제로 어떻게 쓰이는지 보이게."""
-
-    async def count(*where) -> int:
-        return int(
-            (await db.execute(select(func.count()).select_from(User).where(*where))).scalar_one() or 0
-        )
-
-    from datetime import timedelta
-
-    day_ago = utcnow() - timedelta(days=1)
-    return {
-        "total": await count(User.role == GUEST_ROLE),
-        "active": await count(User.role == GUEST_ROLE, User.is_active.is_(True)),
-        "last_24h": await count(User.role == GUEST_ROLE, User.created_at > day_ago),
-        "blocked_entries": len(await blocked_entries(db)),
-    }
 
 
 # ── 주소 차단 ─────────────────────────────────────────────────
 
 
 @router.get("/ip-blocks", response_model=list[BlockedIpOut])
-async def list_ip_blocks(db: AsyncSession = Depends(get_db), viewer=Depends(require_admin)):
-    rows = (
+async def list_ip_blocks(db: AsyncSession = Depends(get_db)):
+    return (
         (await db.execute(select(BlockedIp).order_by(BlockedIp.created_at.desc()))).scalars().all()
     )
-    if not is_demo_admin(viewer):
-        return rows
-    # 둘러보기 계정에게는 주소의 마지막 마디를 가린다 — 차단 목록도 사람을 가리킨다 (demo.py)
-    return [
-        BlockedIpOut.model_validate(r).model_copy(update={"cidr": mask_ip(r.cidr)}) for r in rows
-    ]
 
 
 @router.post("/ip-blocks", response_model=BlockedIpOut)

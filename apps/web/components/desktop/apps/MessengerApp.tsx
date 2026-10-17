@@ -316,19 +316,13 @@ export function MessengerApp({ onActivity }: { onActivity?: () => void }) {
                         ? "bg-amber-100 text-amber-700"
                         : "bg-slate-100 text-slate-500"
                   }`}
-                  title={[
-                    session.usage.shared
-                      ? "메신저와 AI 에이전트를 합쳐 셉니다"
-                      : "",
+                  title={
                     (session.usage.refunded ?? 0) > 0
                       ? `AI 오류로 답을 받지 못한 질문 ${session.usage.refunded}회는 남은 횟수에서 빼지 않았습니다`
-                      : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || undefined}
+                      : undefined
+                  }
                 >
                   남은 질문 {session.usage.remaining}/{session.usage.max}
-                  {session.usage.shared && <span className="ml-1 font-normal opacity-70">(합산)</span>}
                 </span>
               )}
             </div>

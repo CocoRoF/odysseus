@@ -371,6 +371,24 @@ MIGRATIONS: tuple[Migration, ...] = (
             "UPDATE assessments SET description = '사흘 동안 환불 규정을 잘못 안내한 챗봇 — 영향 범위·보상·재발 방지를 정한다' WHERE title = '챗봇이 환불 규정을 잘못 안내했다 — 사흘치 사고 수습'",
         ),
     ),
+    Migration(
+        21,
+        "remove guest and demo admin access",
+        (
+            # 게스트 응시와 관리 화면 둘러보기(demo_admin)를 없앤다. 남아 있는 그 계정들은 세션을 끊고
+            # 정지한다. 응시 기록은 지우지 않는다. 지울지는 관리자가 [사용자] 화면에서 정한다.
+            """
+            UPDATE sessions SET revoked_at = now(), revoked_reason = 'guest_removed'
+             WHERE revoked_at IS NULL
+               AND user_id IN (SELECT id FROM users WHERE role IN ('guest', 'demo_admin'))
+            """,
+            "UPDATE users SET is_active = false WHERE role IN ('guest', 'demo_admin')",
+            "DELETE FROM app_settings WHERE key = 'guest_access'",
+            "DROP TABLE IF EXISTS guest_arrivals",
+            "ALTER TABLE users DROP COLUMN IF EXISTS guest_category",
+            "ALTER TABLE users DROP COLUMN IF EXISTS created_ip",
+        ),
+    ),
 )
 
 async def run_schema_migrations(conn: AsyncConnection, create_all=None) -> list[Migration]:

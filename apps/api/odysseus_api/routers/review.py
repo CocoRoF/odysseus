@@ -25,9 +25,8 @@ from ..definitions import (
     definition_summary,
     scenario_from_definition,
 )
-from ..demo import mask_email_for
 from ..grading import AlreadyGrading, grade
-from ..deps import get_current_user, is_staff, require_staff
+from ..deps import is_staff, require_staff
 from ..desktop import allowed_desktop_apps
 from ..models import AiProvider, Attempt, Evaluation, Event, User
 from ..schemas import AutoEvalIn, HumanEvalIn
@@ -36,7 +35,7 @@ router = APIRouter(prefix="/review", tags=["review"], dependencies=[Depends(requ
 
 
 @router.get("/attempts")
-async def list_attempts(db: AsyncSession = Depends(get_db), viewer=Depends(get_current_user)):
+async def list_attempts(db: AsyncSession = Depends(get_db)):
     rows = (
         await db.execute(
             select(Attempt)
@@ -65,7 +64,7 @@ async def list_attempts(db: AsyncSession = Depends(get_db), viewer=Depends(get_c
             {
                 "id": str(a.id),
                 "user": {"id": str(a.user.id), "name": a.user.name,
-                         "email": mask_email_for(viewer, a.user.email), "role": a.user.role},
+                         "email": a.user.email, "role": a.user.role},
                 "assessment_id": str(a.assessment_id),
                 "assessment_title": frozen_title or a.assessment.title,
                 "definition_hash": definition_hash,
@@ -101,7 +100,7 @@ def _require_final(attempt: Attempt) -> None:
 
 
 @router.get("/attempts/{attempt_id}")
-async def attempt_detail(attempt_id: uuid.UUID, db: AsyncSession = Depends(get_db), viewer=Depends(get_current_user)):
+async def attempt_detail(attempt_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     attempt = await _load_attempt(attempt_id, db)
     definition = await definition_for_attempt(db, attempt)
     evaluations = (
@@ -152,7 +151,7 @@ async def attempt_detail(attempt_id: uuid.UUID, db: AsyncSession = Depends(get_d
         "user": {
             "id": str(attempt.user.id),
             "name": attempt.user.name,
-            "email": mask_email_for(viewer, attempt.user.email),
+            "email": attempt.user.email,
             "role": attempt.user.role,
         },
         "assessment": {

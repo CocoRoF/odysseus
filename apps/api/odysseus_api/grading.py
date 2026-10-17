@@ -193,3 +193,21 @@ async def grade_backlog() -> int:
         if schedule(attempt_id):
             scheduled += 1
     return scheduled
+
+
+#: 채점이 빠진 응시를 훑는 간격
+BACKLOG_SWEEP_S = 60.0
+
+
+async def grade_backlog_loop() -> None:
+    """끝났는데 채점이 없는 응시를 주기적으로 다시 건다 (:func:`grade_backlog`)."""
+    while True:
+        try:
+            retried = await grade_backlog()
+            if retried:
+                log.info("채점이 빠진 응시 %d건을 다시 걸었습니다", retried)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 (한 번 실패해도 다음 바퀴는 돈다)
+            log.exception("채점이 빠진 응시를 다시 걸지 못했습니다")
+        await asyncio.sleep(BACKLOG_SWEEP_S)

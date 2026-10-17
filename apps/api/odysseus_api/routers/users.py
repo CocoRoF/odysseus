@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_db
 from ..deps import require_admin, require_staff
 from ..models import User
-from ..demo import is_demo_admin, mask_email, mask_ip
 from ..schemas import BulkUsersIn, UserCreate, UserOut, UserUpdate
 from ..security import hash_password
 
@@ -17,21 +16,12 @@ router = APIRouter(prefix="/admin/users", tags=["users"])
 
 @router.get("", response_model=list[UserOut])
 async def list_users(
-    role: str | None = None, db: AsyncSession = Depends(get_db), viewer=Depends(require_staff)
+    role: str | None = None, db: AsyncSession = Depends(get_db), _=Depends(require_staff)
 ):
     q = select(User).order_by(User.created_at.desc())
     if role:
         q = q.where(User.role == role)
-    rows = (await db.execute(q)).scalars().all()
-    if not is_demo_admin(viewer):
-        return rows
-    # 둘러보기 계정에게는 남의 주소를 가린다 — 데모에서 보여 줄 것이 아니다 (demo.py)
-    return [
-        UserOut.model_validate(u).model_copy(
-            update={"email": mask_email(u.email), "created_ip": mask_ip(u.created_ip or "") or None}
-        )
-        for u in rows
-    ]
+    return (await db.execute(q)).scalars().all()
 
 
 @router.post("", response_model=UserOut)

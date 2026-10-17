@@ -159,7 +159,7 @@ function ReviewList() {
                 <IconView />
               </IconButton>
               {user.role === "admin" && (
-                <IconButton title="삭제" tone="danger" write onClick={() => remove(r)}>
+                <IconButton title="삭제" tone="danger" onClick={() => remove(r)}>
                   <IconDelete />
                 </IconButton>
               )}

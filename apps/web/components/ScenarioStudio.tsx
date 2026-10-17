@@ -22,7 +22,6 @@ import { ScenarioAuthorChat } from "@/components/ScenarioAuthorChat";
 import { CodeEditor } from "@/components/CodeEditor";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/toast";
-import { useReadOnly, writeProps } from "@/components/readonly";
 import { Button, Card, Field, inputBaseCls, inputCls } from "@/components/ui";
 import { IconAdd, IconDelete } from "@/components/icons";
 
@@ -135,8 +134,6 @@ export function ScenarioStudio({
 }) {
   const router = useRouter();
   const { toast, confirm } = useToast();
-  /** 둘러보기 계정 — 내용은 다 만져 볼 수 있고 저장·삭제·AI 작성만 잠근다 (components/readonly.tsx) */
-  const readOnly = useReadOnly();
   /** 설계 대화 패널을 펼쳐 둘 것인가 — 긴 탭에서는 접어 두는 편이 편집 칸이 넓다 */
   const [chatOpen, setChatOpen] = useState(true);
   const [tab, setTab] = useState<TabKey>("basic");
@@ -339,7 +336,7 @@ export function ScenarioStudio({
           {/* 되돌릴 수 없는 버튼은 저장 옆에 붙이지 않는다 — 한 번의 오클릭이 시나리오 하나를 지운다 */}
           {scenarioId && (
             <>
-              <Button variant="danger" onClick={remove} write>
+              <Button variant="danger" onClick={remove}>
                 삭제
               </Button>
               <span className="mx-2 h-6 w-px bg-slate-200" aria-hidden="true" />
@@ -349,7 +346,7 @@ export function ScenarioStudio({
             취소
           </Button>
           <span title={aiBusy ? "AI 편집이 끝나면 저장할 수 있습니다" : undefined}>
-            <Button onClick={save} disabled={busy || aiBusy} write>
+            <Button onClick={save} disabled={busy || aiBusy}>
               {busy ? "저장 중..." : "저장"}
             </Button>
           </span>
@@ -529,7 +526,7 @@ export function ScenarioStudio({
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 px-4 py-3">
             <p className="text-xs text-slate-500">공개된 상황과 성격에 맞춰 감정이 드러나는 첫 대사·말투·대화 주제를 함께 작성합니다.</p>
-            <button type="button" className="shrink-0 whitespace-nowrap rounded-lg border border-sky-200 bg-white px-2.5 py-1 text-xs font-medium text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40" {...writeProps(readOnly, officeAuthorBusy || !characters.length)}
+            <button type="button" className="shrink-0 whitespace-nowrap rounded-lg border border-sky-200 bg-white px-2.5 py-1 text-xs font-medium text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={officeAuthorBusy || !characters.length}
               onClick={async () => {
                 setOfficeAuthorBusy(true);
                 try {

@@ -3,26 +3,23 @@
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import { homeFor, useLogout, useUser } from "@/components/useUser";
+import { homeFor, useUser } from "@/components/useUser";
 import { Button, Spinner } from "@/components/ui";
 import { IconCheck, IconClock } from "@/components/icons";
 import type { AttemptResult, AttemptResultScenario } from "@/lib/types";
 
 /** 시험을 마친 사람이 받아 가는 화면.
  *
- *  게스트에게는 이 화면이 **마지막 화면**이다 — 나가면 그 계정으로 다시 들어올 수 없다. 지금까지는
- *  제출하면 "평가자에게 전달되었습니다" 한 줄이 전부였고, 180분을 쓴 사람이 점수도 총평도 못 본 채
- *  나갔다. 이제 제출과 동시에 자동 채점이 걸리고(api: guest_result), 그 결과가 여기 나온다.
+ *  제출과 동시에 자동 채점이 걸리고(api: grading), 그 결과가 여기 나온다.
  *
- *  여기 나오는 것은 **응시자가 한 일에 대한 평가**뿐이다. 무엇을 했어야 했는지 — 자동 체크의 항목
- *  이름, 총평, 아쉬운 점 — 는 나오지 않는다. 그건 정답지이고, 같은 시나리오가 실제 채용 시험으로
- *  쓰인다. 서버가 그렇게 깎아서 준다 (api: guest_result).
+ *  여기 나오는 것은 **응시자가 한 일에 대한 평가**뿐이다. 무엇을 했어야 했는지(자동 체크의 항목
+ *  이름, 총평, 아쉬운 점)는 나오지 않는다. 그건 정답지이고, 같은 시나리오가 다른 응시자에게도
+ *  나간다. 서버가 그렇게 깎아서 준다 (api: result_view).
  */
 export default function ResultPage({ params }: { params: Promise<{ attemptId: string }> }) {
   const { attemptId } = use(params);
-  const { user } = useUser(["candidate", "admin", "evaluator", "guest"]);
+  const { user } = useUser(["candidate", "admin", "evaluator"]);
   const router = useRouter();
-  const leave = useLogout();
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [error, setError] = useState("");
 
@@ -123,21 +120,9 @@ export default function ResultPage({ params }: { params: Promise<{ attemptId: st
             className="flex-1"
             onClick={() => router.replace(homeFor(user?.role ?? "candidate"))}
           >
-            {user?.role === "guest" ? "사무실로" : "대시보드로"}
+            대시보드로
           </Button>
-          {/* 게스트에게는 이 화면이 마지막 화면이다. "로그아웃하면 다시 못 들어온다" 고 적어 두고 정작
-              나가는 문을 두지 않으면, 사람은 탭을 닫아 버리고 계정은 10분 뒤 세션이 식을 때까지 남는다. */}
-          {user?.role === "guest" && (
-            <Button variant="secondary" className="flex-1" onClick={() => leave(user)}>
-              로그아웃
-            </Button>
-          )}
         </div>
-        {user?.role === "guest" && (
-          <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
-            게스트 계정은 로그아웃하면 다시 들어올 수 없습니다. 이 결과를 남기고 싶다면 지금 갈무리해 두세요.
-          </p>
-        )}
       </div>
     </Shell>
   );

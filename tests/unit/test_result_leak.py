@@ -1,9 +1,9 @@
-"""게스트 결과 화면은 정답지를 옮겨 적은 문장을 내보내지 않는다."""
+"""응시자 결과 화면은 정답지를 옮겨 적은 문장을 내보내지 않는다."""
 
 import unittest
 from types import SimpleNamespace
 
-from odysseus_api.guest_result import _answer_corpus, _scenario_view, _shares_answer
+from odysseus_api.result_view import _answer_corpus, _scenario_view, _shares_answer
 
 OBJECTIVES = """
 - 박준영이 실제로 원하는 것: 10:00~16:00 응답 가능 + **화·목 동기화 회의**.

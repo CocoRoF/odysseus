@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAutoGrow } from "@/components/useAutoGrow";
 import { api, streamScenarioAuthor } from "@/lib/api";
-import { READ_ONLY_REASON, useReadOnly, writeProps } from "@/components/readonly";
 import type { AiSettingsMeta, AuthorOp, ScenarioDraft } from "@/lib/types";
 import { useToast } from "@/components/toast";
 import { IconAgent, IconSend } from "@/components/icons";
@@ -53,8 +52,6 @@ export function ScenarioAuthorChat({
   onStreaming: (streaming: boolean) => void;
 }) {
   const { toast } = useToast();
-  /** 둘러보기 계정 — 설계자 대화도 시나리오를 바꾸는 일이라 잠근다 (components/readonly.tsx) */
-  const readOnly = useReadOnly();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -182,7 +179,7 @@ export function ScenarioAuthorChat({
                 <button
                   key={p}
                   onClick={() => send(p)}
-                  {...writeProps(readOnly, streaming || providerName === null)}
+                  disabled={streaming || providerName === null}
                   className="block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-[12px] leading-snug text-slate-600 transition hover:border-violet-300 hover:bg-violet-50/40 disabled:opacity-50"
                 >
                   {p}
@@ -258,15 +255,9 @@ export function ScenarioAuthorChat({
                 send(input);
               }
             }}
-            {...writeProps(readOnly, providerName === null)}
+            disabled={providerName === null}
             rows={1}
-            placeholder={
-              readOnly
-                ? READ_ONLY_REASON
-                : turns.length === 0
-                  ? "어떤 상황인가요? (Enter 로 보내기)"
-                  : "이어서 다듬을 점을 말해 주세요"
-            }
+            placeholder={turns.length === 0 ? "어떤 상황인가요? (Enter 로 보내기)" : "이어서 다듬을 점을 말해 주세요"}
             className="thin-scroll max-h-[120px] min-h-[42px] flex-1 resize-none rounded-xl border border-slate-300 px-3.5 py-2.5 text-[13px] focus:border-violet-500 focus:outline-none disabled:bg-slate-50"
           />
           {streaming ? (
@@ -280,8 +271,8 @@ export function ScenarioAuthorChat({
           ) : (
             <button
               onClick={() => send(input)}
-              {...writeProps(readOnly, !input.trim() || providerName === null)}
-              title={readOnly ? READ_ONLY_REASON : "보내기"}
+              disabled={!input.trim() || providerName === null}
+              title="보내기"
               className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white transition hover:bg-violet-500 disabled:bg-slate-200 disabled:text-slate-400"
             >
               <IconSend size={16} />

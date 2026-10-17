@@ -14,7 +14,7 @@ import { categoryLabel } from "@/lib/categories";
 import { DIFFICULTY_LABEL } from "@/lib/format";
 
 export default function DashboardPage() {
-  const { user, loading } = useUser(["candidate", "admin", "evaluator", "guest"]);
+  const { user, loading } = useUser(["candidate", "admin", "evaluator"]);
   const [assignments, setAssignments] = useState<MyAssignment[] | null>(null);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -25,7 +25,6 @@ export default function DashboardPage() {
   const leave = useLogout();
 
   const isStaff = user?.role === "admin" || user?.role === "evaluator";
-  const isGuest = user?.role === "guest";
 
   const load = useCallback(() => {
     api.get<MyAssignment[]>("/my/assignments").then(setAssignments).catch((e) => setError(String(e.message)));
@@ -94,7 +93,7 @@ export default function DashboardPage() {
             Odysseus<span className="text-sky-500">.</span>
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            {user.name}님, {isGuest ? "둘러볼 수 있는 시험 목록입니다." : "응시할 시험 목록입니다."}
+            {user.name}님, 응시할 시험 목록입니다.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -112,18 +111,11 @@ export default function DashboardPage() {
               관리자 콘솔로
             </Link>
           )}
-          <Button variant="ghost" onClick={() => leave(user)}>
+          <Button variant="ghost" onClick={leave}>
             로그아웃
           </Button>
         </div>
       </div>
-
-      {isGuest && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <span className="font-semibold">게스트로 접속 중입니다.</span> 이 계정은 비밀번호가 없어
-          다시 로그인할 수 없습니다 — 로그아웃하거나 브라우저를 닫으면 진행 중이던 응시로 돌아올 수 없어요.
-        </div>
-      )}
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {assignments && assignments.length > 1 && (
@@ -134,7 +126,7 @@ export default function DashboardPage() {
       {!assignments ? (
         <Spinner />
       ) : assignments.length === 0 ? (
-        <EmptyState message={isGuest ? "지금 응시할 수 있는 시험이 없습니다." : "배정된 시험이 없습니다."} />
+        <EmptyState message="배정된 시험이 없습니다." />
       ) : visible.length === 0 ? (
         <EmptyState message={`${categoryLabel(category)} 분야의 시험이 없습니다.`} />
       ) : (
@@ -175,7 +167,7 @@ export default function DashboardPage() {
                       <Button onClick={() => router.push(`/exam/${a.attempt_id}`)}>이어서 응시</Button>
                     ) : finished ? (
                       // 끝난 시험은 결과가 있다. "응시 완료" 만 적어 두면 결과 화면을 한 번 벗어난 사람은
-                      // 다시 갈 길이 없다 — 게스트에게는 그 화면이 마지막이라 더 그렇다.
+                      // 다시 갈 길이 없다.
                       a.attempt_id ? (
                         <Button variant="secondary" onClick={() => router.push(`/result/${a.attempt_id}`)}>
                           결과 보기

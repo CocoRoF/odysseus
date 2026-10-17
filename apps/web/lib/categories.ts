@@ -1,6 +1,6 @@
 /** 시험의 분야 — API 의 `categories.ASSESSMENT_CATEGORIES` 와 **같은 순서, 같은 키, 같은 라벨**.
  *
- *  두 벌을 두는 이유는 응시자 화면(게스트 포함)이 목록을 받으러 한 번 더 오가지 않게
+ *  두 벌을 두는 이유는 응시자 화면이 목록을 받으러 한 번 더 오가지 않게
  *  하기 위해서다. 어긋나면 `tests/unit/test_assessment_categories.py` 가 멈춘다.
  */
 export const CATEGORIES = [

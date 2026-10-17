@@ -543,7 +543,7 @@ export default function ReviewAttemptPage({ params }: { params: Promise<{ id: st
                     </option>
                   ))}
                 </select>
-                <Button onClick={runAutoEval} disabled={evaluating} write>
+                <Button onClick={runAutoEval} disabled={evaluating}>
                   {evaluating ? "평가 중... (체크 실행 포함)" : autoEvals.length ? "다시 평가" : "자동평가 실행"}
                 </Button>
               </div>
@@ -581,7 +581,7 @@ export default function ReviewAttemptPage({ params }: { params: Promise<{ id: st
                 value={humanSummary}
                 onChange={(e) => setHumanSummary(e.target.value)}
               />
-              <Button variant="secondary" onClick={saveHumanEval} disabled={!humanScore && !humanSummary.trim()} write>
+              <Button variant="secondary" onClick={saveHumanEval} disabled={!humanScore && !humanSummary.trim()}>
                 저장
               </Button>
             </div>
