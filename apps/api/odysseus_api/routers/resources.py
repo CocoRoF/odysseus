@@ -360,19 +360,24 @@ async def grant_attempt(
 
 @router.post("/admin/resources/cleanup", dependencies=[Depends(require_admin)])
 async def cleanup(db: AsyncSession = Depends(get_db)):
-    """고아 정리 — 마감이 지난 세션을 닫고, 유실된 실행을 종료 상태로 확정한다."""
+    """고아 정리 — 마감이 지난 세션을 닫고, 유실된 실행을 종료 상태로 확정한다.
+
+    닫는 일은 다른 종료와 같은 길(lifecycle.finalize_attempt)로 한다. 여기서 상태만 바꾸면 열린 실행이
+    취소되지 않고, 제출 스냅샷이 남지 않고, 채점도 걸리지 않는다(예전에 그랬다).
+    """
+    from ..lifecycle import finalize_attempt
+
     now = utcnow()
     closed = 0
     expired = (
         await db.execute(
-            select(Attempt).where(Attempt.status == "in_progress", Attempt.deadline_at < now)
+            select(Attempt.id).where(Attempt.status == "in_progress", Attempt.deadline_at < now)
         )
     ).scalars().all()
-    for a in expired:
-        a.status = "expired"
-        a.submitted_at = now
-        db.add(Event(attempt_id=a.id, type="attempt_expired", payload={"actor": "cleanup"}))
-        closed += 1
+    for attempt_id in expired:
+        done = await finalize_attempt(db, attempt_id, "expired", actor="cleanup")
+        if done is not None and done.status == "expired":
+            closed += 1
 
     snap = await _snapshot()
     live_ids = {r.get("execution_id") for r in (snap or {}).get("active", [])}

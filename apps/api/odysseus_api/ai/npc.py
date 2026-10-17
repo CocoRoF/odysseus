@@ -5,7 +5,9 @@
 순간 이 시험의 존재 이유가 사라지기 때문이다. 정답은 평가기(autoeval)만 본다.
 
 보조 방어로, 응답에 objectives 의 문장이 그대로 들어 있으면 내보내기 전에 막는다
-(leak_guard). 모델에 비밀이 없으니 평소엔 걸릴 일이 없고, 걸리면 회귀 신호다.
+(leak_guard). 모델에 비밀이 없으니 평소엔 걸릴 일이 없고, 걸리면 회귀 신호다. 단, 그 인물이 이미
+아는 사실(카드의 knowledge·persona)로 설명되는 문장은 누출이 아니다. 숨은 목표와 인물의 지식은
+같은 값(옵션 이름, 수치, 날짜)을 말하는 일이 많아, 이것까지 막으면 인물이 자기 일을 말하지 못한다.
 
 두 번째 가드(meta_guard)는 **프롬프트 자체의 누출**을 막는다. 약한 모델이나 추론 모델은
 "규칙 4에 따라 …", "Disrespect compounds …" 처럼 판단 과정이나 규칙 원문을 답장 본문으로
@@ -51,11 +53,17 @@ log = logging.getLogger("odysseus.npc")
 
 # 조각으로 삼을 최소 길이 — 이보다 짧은 어구는 knowledge 와 겹치기 쉬워 오탐이 난다
 _FRAGMENT_MIN = 18
-_SPLIT = re.compile(r"[\n.。!?;:]+|\s[-•*]\s")
+#: 문장을 끊는 자리. 마침표는 뒤가 공백이거나 끝일 때만 끊는다. 숫자·파일 이름 안의 점(0.90,
+#: docker-compose.yml)에서 끊으면 "--gpu-memory-utilization 0" 같은 반쪽 조각이 생기고, 인물이
+#: 아는 값을 말하기만 해도 걸렸다(2026-10 운영: NPC 답장 949건 중 8건이 이렇게 얼버무려졌다).
+_SPLIT = re.compile(r"[\n。!?;:]+|\.(?=\s|$)|\s[-•*]\s")
+#: 말투가 아니라 표기만 다른 것 — 코드 따옴표·강조·인용 부호는 비교에서 뺀다
+_MARKUP = re.compile(r"[`*~\"'“”‘’]")
+_WORD = re.compile(r"[0-9a-z가-힣]+")
 
 
 def _norm(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().lower()
+    return re.sub(r"\s+", " ", _MARKUP.sub("", text)).strip().lower()
 
 
 def secret_fragments(objectives: str) -> list[str]:
@@ -71,13 +79,39 @@ def secret_fragments(objectives: str) -> list[str]:
 DEFLECTION = "그건 제가 말씀드릴 수 있는 부분이 아니에요. 필요한 건 담당자에게 직접 확인해 주세요."
 
 
-def leak_guard(reply: str, objectives: str) -> tuple[str, bool]:
-    """응답에 숨은 목표의 문장이 그대로 들어 있으면 (얼버무리는 문장, True) 를 돌려준다."""
+def _known_word(word: str, known: str) -> bool:
+    """낱말이 인물의 지식에 있는가. 한국어 조사(이·가·은·는·을·를·로…)가 붙어 달라진 꼴도 같은 낱말로 본다."""
+    for cut in range(0, 3):
+        stem = word[: len(word) - cut] if cut else word
+        if len(stem) < 2:
+            break
+        if stem in known:
+            return True
+    return False
+
+
+def explained_by(frag: str, known: str) -> bool:
+    """이 조각을 인물이 아는 것으로 설명할 수 있는가. 낱말의 8할 이상이 지식에 있으면 그렇다고 본다."""
+    if not known:
+        return False
+    if frag in known:
+        return True
+    words = [w for w in _WORD.findall(frag) if len(w) >= 2 or w.isdigit()]
+    if not words:
+        return False
+    return sum(1 for w in words if _known_word(w, known)) / len(words) >= 0.8
+
+
+def leak_guard(reply: str, objectives: str, known: str = "") -> tuple[str, bool]:
+    """응답에 숨은 목표의 문장이 그대로 들어 있으면 (얼버무리는 문장, True) 를 돌려준다.
+
+    known: 이 인물이 이미 아는 것(카드의 knowledge·persona). 그것으로 설명되는 조각은 누출로 치지 않는다."""
     if not reply or not objectives:
         return reply, False
     hay = _norm(reply)
+    knows = _norm(known)
     for frag in secret_fragments(objectives):
-        if frag in hay:
+        if frag in hay and not explained_by(frag, knows):
             return DEFLECTION, True
     return reply, False
 
@@ -263,7 +297,8 @@ async def generate_reply(
             )
 
     reply = (reply or "").strip()
-    reply, leaked = leak_guard(reply, str(scenario.objectives_md or ""))
+    known = f"{character.get('knowledge') or ''}\n{character.get('persona') or ''}"
+    reply, leaked = leak_guard(reply, str(scenario.objectives_md or ""), known)
     if leaked:
         meta["guard"] = "objective_leak"
         log.warning("npc leak guard tripped scenario=%s character=%s", getattr(scenario, "id", "?"), character.get("key"))
