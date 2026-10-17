@@ -9,7 +9,6 @@ from sqlalchemy import select
 
 from ..avatar_alloc import allocate
 from ..definitions import canonical_hash
-from ..demo import NO_EXAM_MESSAGE, is_demo_admin
 from ..deps import is_staff
 from ..models import Assessment, AssessmentScenario, Assignment, Scenario, User
 from ..office import MAX_COLLEAGUES
@@ -20,13 +19,7 @@ async def assessment_access(db, user: User, assessment_id: uuid.UUID):
     assessment = await db.get(Assessment, assessment_id)
     if assessment is None:
         raise HTTPException(404, "시험을 찾을 수 없습니다")
-    # 둘러보기 계정은 사무실에 들어가지 않는다 — 관리 화면만 본다 (demo.py)
-    if is_demo_admin(user):
-        raise HTTPException(403, NO_EXAM_MESSAGE)
-    if user.role == "guest":
-        if user.guest_category and assessment.category != user.guest_category:
-            raise HTTPException(403, "이 사무실에 접근할 수 없습니다")
-    elif not is_staff(user):
+    if not is_staff(user):
         assignment = await db.scalar(select(Assignment.id).where(
             Assignment.user_id == user.id, Assignment.assessment_id == assessment_id))
         if assignment is None:

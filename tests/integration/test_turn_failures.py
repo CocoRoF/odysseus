@@ -2,8 +2,8 @@
 
 ODYSSEUS_OFFICE_INTEGRATION=1 DATABASE_URL=... python -m unittest discover -s tests/integration -p 'test_turn_failures.py'
 
-유닛 테스트는 환불 **결정**을 본다. 여기서는 그 결정이 실제 라우터를 지나 행으로 남고, 한도·게스트
-총량·평가자 집계가 JSONB 플래그를 같은 방식으로 세는지를 본다. 저장의 조건부 쓰기는 행 잠금이
+유닛 테스트는 환불 **결정**을 본다. 여기서는 그 결정이 실제 라우터를 지나 행으로 남고, 한도·평가자
+집계가 JSONB 플래그를 같은 방식으로 세는지를 본다. 저장의 조건부 쓰기는 행 잠금이
 걸린 비교라 진짜 트랜잭션 두 개로만 확인할 수 있다.
 """
 
@@ -30,7 +30,6 @@ from odysseus_api.config import settings
 from odysseus_api.db import Base, SessionLocal, engine
 from odysseus_api.definitions import bind_definition, build_assessment_definition
 from odysseus_api.deps import get_current_user
-from odysseus_api.guests import GuestPolicy, assert_chat_quota
 from odysseus_api.main import app
 from odysseus_api.migrations import run_schema_migrations
 from odysseus_api.models import (
@@ -162,11 +161,6 @@ class TurnFailureTests(unittest.IsolatedAsyncioTestCase):
 
         async with SessionLocal() as db:
             self.assertEqual(await refunded_messenger(db, self.attempt.id), 2)
-            # 게스트 총량도 같은 플래그를 뺀다: 보낸 3 - 환불 2 = 1
-            await assert_chat_quota(db, attempt_id=self.attempt.id, policy=GuestPolicy(chat_total_per_attempt=2))
-            with self.assertRaises(Exception) as over:
-                await assert_chat_quota(db, attempt_id=self.attempt.id, policy=GuestPolicy(chat_total_per_attempt=1))
-            self.assertEqual(getattr(over.exception, "status_code", None), 429)
             summary = await incidents(db, self.attempt.id)
         self.assertEqual(summary["messenger"], 2)
         self.assertEqual(summary["refunded"], 2)

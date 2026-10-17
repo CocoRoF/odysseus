@@ -26,7 +26,7 @@ export function DataTable<T>({
 }) {
   return (
     <Card>
-      {/* 액션 버튼이 많은 행(예: 게스트: 정지·주소 차단·편집·삭제)은 좁은 화면에서 표 너비를 넘긴다.
+      {/* 액션 버튼이 많은 행(예: 사용자: 정지·편집·삭제)은 좁은 화면에서 표 너비를 넘긴다.
           카드 밖으로 삐져나가 "표가 뚫리는" 대신, 넘칠 때만 이 안에서 가로로 스크롤된다. */}
       <div className="overflow-x-auto">
       <table className="w-full text-sm">

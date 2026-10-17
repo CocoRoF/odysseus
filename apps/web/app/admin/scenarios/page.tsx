@@ -99,7 +99,7 @@ export default function ScenariosPage() {
               <IconButton title="편집" href={`/admin/scenarios/${s.id}`}>
                 <IconEdit />
               </IconButton>
-              <IconButton title="삭제" tone="danger" write onClick={() => remove(s)}>
+              <IconButton title="삭제" tone="danger" onClick={() => remove(s)}>
                 <IconDelete />
               </IconButton>
             </>

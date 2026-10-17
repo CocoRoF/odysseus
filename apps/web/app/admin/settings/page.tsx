@@ -4,8 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
   BlockedIp,
-  GuestPolicy,
-  GuestStats,
   ReferenceSettings,
   UiSettings,
   AiModelInfo,
@@ -17,7 +15,6 @@ import type {
 import { useUser } from "@/components/useUser";
 import { Shell } from "@/components/Shell";
 import { Button, Card, EmptyState, Field, IconButton, inputCls, Modal, Spinner } from "@/components/ui";
-import { useReadOnly, writeProps } from "@/components/readonly";
 import { DataTable } from "@/components/DataTable";
 import { IconDelete } from "@/components/icons";
 import { fmtDateTime } from "@/lib/format";
@@ -111,7 +108,6 @@ function AiHealthBanner({ health }: { health: AiHealth | null }) {
 }
 
 export default function SettingsPage() {
-  const readOnly = useReadOnly();
   const { user, loading } = useUser(["admin"]);
   const [meta, setMeta] = useState<AiSettingsMeta | null>(null);
   const [rows, setRows] = useState<AiProviderRow[] | null>(null);
@@ -195,12 +191,11 @@ export default function SettingsPage() {
         <h1 className="text-xl font-bold">설정</h1>
         <Button onClick={() => setEditing({ row: null })}>+ 공급자 추가</Button>
       </div>
-      {/* 한 화면에 다섯 묶음이 들어 있다 — 제목만으로는 어디에 무엇이 있는지 알 수 없어 바로 가기를 둔다 */}
+      {/* 한 화면에 네 묶음이 들어 있다. 제목만으로는 어디에 무엇이 있는지 알 수 없어 바로 가기를 둔다 */}
       <nav className="mb-5 flex flex-wrap gap-1.5 text-xs">
         {[
           ["#ai", "LLM 공급자"],
           ["#exam", "응시 환경"],
-          ["#guest", "게스트 접속"],
           ["#ip", "주소 차단"],
           ["#reference", "참고 자료"],
         ].map(([href, label]) => (
@@ -315,7 +310,7 @@ export default function SettingsPage() {
                     {!row.is_chat_default && (
                       <button
                         onClick={() => setDefault(row, "chat")}
-                        {...writeProps(readOnly, busyId !== "" || !row.enabled)}
+                        disabled={busyId !== "" || !row.enabled}
                         className="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:border-violet-300 hover:text-violet-600 disabled:opacity-40"
                       >
                         채팅 기본
@@ -324,7 +319,7 @@ export default function SettingsPage() {
                     {!row.is_eval_default && (
                       <button
                         onClick={() => setDefault(row, "eval")}
-                        {...writeProps(readOnly, busyId !== "" || !row.enabled)}
+                        disabled={busyId !== "" || !row.enabled}
                         className="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:border-emerald-300 hover:text-emerald-600 disabled:opacity-40"
                       >
                         평가 기본
@@ -332,14 +327,13 @@ export default function SettingsPage() {
                     )}
                     <button
                       onClick={() => testProvider(row)}
-                      {...writeProps(readOnly, busyId !== "")}
+                      disabled={busyId !== ""}
                       className="whitespace-nowrap rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                     >
                       {busyId === `test:${row.id}` ? "테스트 중..." : "연결 테스트"}
                     </button>
                     <button
                       onClick={() => toggleEnabled(row)}
-                      {...writeProps(readOnly)}
                       className="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {row.enabled ? "비활성화" : "활성화"}
@@ -353,7 +347,6 @@ export default function SettingsPage() {
                     <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
                     <button
                       onClick={() => remove(row)}
-                      {...writeProps(readOnly)}
                       title="이 공급자 삭제"
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-300"
                     >
@@ -390,8 +383,6 @@ export default function SettingsPage() {
 
       <div id="exam" className="scroll-mt-20" />
       <ExamExperienceCard />
-      <div id="guest" className="scroll-mt-20" />
-      <GuestAccessCard />
       <div id="ip" className="scroll-mt-20" />
       <IpBlockSection />
       <div id="reference" className="scroll-mt-20" />
@@ -424,7 +415,6 @@ function ProviderModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const readOnly = useReadOnly();
   const { toast } = useToast();
   const [form, setForm] = useState<ProviderForm>(
     row
@@ -611,7 +601,7 @@ function ProviderModal({
             />
             <button
               onClick={loadModels}
-              {...writeProps(readOnly, busy !== "")}
+              disabled={busy !== ""}
               className="shrink-0 whitespace-nowrap rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
             >
               {busy === "models" ? "조회 중..." : "모델 목록"}
@@ -700,10 +690,10 @@ function ProviderModal({
           <Button variant="ghost" onClick={onClose}>
             취소
           </Button>
-          <Button variant="secondary" onClick={test} disabled={busy !== ""} write>
+          <Button variant="secondary" onClick={test} disabled={busy !== ""}>
             {busy === "test" ? "테스트 중..." : "연결 테스트"}
           </Button>
-          <Button onClick={save} disabled={busy !== ""} write>
+          <Button onClick={save} disabled={busy !== ""}>
             {busy === "save" ? "저장 중..." : "저장"}
           </Button>
         </div>
@@ -832,7 +822,7 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
           </p>
         </div>
         {(phase === "idle" || phase === "error") && (
-          <Button variant="secondary" onClick={start} write>
+          <Button variant="secondary" onClick={start}>
             {phase === "error" ? "다시 시도" : "로그인 시작"}
           </Button>
         )}
@@ -864,7 +854,7 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
               }}
               disabled={phase === "verifying"}
             />
-            <Button className="shrink-0 whitespace-nowrap" onClick={submitCode} disabled={!code.trim() || phase === "verifying"} write>
+            <Button className="shrink-0 whitespace-nowrap" onClick={submitCode} disabled={!code.trim() || phase === "verifying"}>
               {phase === "verifying" ? "확인 중…" : "코드 제출"}
             </Button>
           </div>
@@ -898,7 +888,6 @@ function ClaudeLoginBox({ onToken }: { onToken: (token: string) => void }) {
 
 /** 참고 자료 — 시험장 안에서 열리는 GitHub 앱의 가용 범위와 자격증명 */
 function ReferenceCard() {
-  const readOnly = useReadOnly();
   const [ref, setRef] = useState<ReferenceSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [token, setToken] = useState("");
@@ -943,7 +932,7 @@ function ReferenceCard() {
           type="checkbox"
           className="mt-0.5"
           checked={Boolean(ref?.github_enabled)}
-          {...writeProps(readOnly, !ref || busy)}
+          disabled={!ref || busy}
           onChange={(e) => save({ github_enabled: e.target.checked })}
         />
         <span className="min-w-0">
@@ -975,13 +964,12 @@ function ReferenceCard() {
             <Button
               variant="secondary"
               disabled={busy || !token}
-              write
               onClick={() => save({}, { github_token: token })}
             >
               저장
             </Button>
             {ref?.has_github_token && (
-              <Button variant="ghost" disabled={busy} write onClick={() => save({}, { github_token: "" })}>
+              <Button variant="ghost" disabled={busy} onClick={() => save({}, { github_token: "" })}>
                 삭제
               </Button>
             )}
@@ -992,192 +980,7 @@ function ReferenceCard() {
   );
 }
 
-// ── 게스트 접속 ───────────────────────────────────────────────
-
-/** 게스트 접속 — 열고 닫는 스위치, 남용 한도, 주소 차단.
- *
- *  스위치와 한도가 한 카드에 있는 이유: "켜기"와 "얼마나 허용할지"는 같은
- *  결정의 두 면이다. 켜는 화면과 한도를 정하는 화면이 떨어져 있으면 한도를
- *  보지 않은 채 켜게 된다.
- *
- *  저장 방식은 이 페이지의 관례를 따른다 — 체크박스는 즉시 저장(끄고 켜는 것은
- *  되돌리기 쉽다), 숫자는 다 입력한 뒤 [한도 저장](입력 중간값이 저장되면 안 된다).
- */
-function GuestAccessCard() {
-  const readOnly = useReadOnly();
-  const [saved, setSaved] = useState<GuestPolicy | null>(null); // 서버에 저장된 값
-  const [draft, setDraft] = useState<GuestPolicy | null>(null); // 편집 중인 값
-  const [stats, setStats] = useState<GuestStats | null>(null);
-  const [busy, setBusy] = useState(false);
-  const { toast } = useToast();
-
-  const loadStats = useCallback(() => {
-    api.get<GuestStats>("/admin/access/guest/stats").then(setStats).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    api
-      .get<GuestPolicy>("/admin/access/guest")
-      .then((p) => {
-        setSaved(p);
-        setDraft(p);
-      })
-      .catch(() => undefined);
-    loadStats();
-  }, [loadStats]);
-
-  const put = async (next: GuestPolicy, message: string) => {
-    setBusy(true);
-    const prev = saved;
-    setSaved(next);
-    setDraft(next);
-    try {
-      const applied = await api.put<GuestPolicy>("/admin/access/guest", next);
-      setSaved(applied);
-      setDraft(applied); // 서버가 잘라낸 값(범위 밖 입력)이 화면에 그대로 보이게
-      toast(message, "success");
-      loadStats();
-    } catch (e) {
-      setSaved(prev);
-      setDraft(prev);
-      toast(e instanceof ApiError ? e.message : "저장 실패", "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const limitsDirty =
-    !!saved &&
-    !!draft &&
-    (saved.max_new_per_hour_per_ip !== draft.max_new_per_hour_per_ip ||
-      saved.chat_per_min !== draft.chat_per_min ||
-      saved.chat_total_per_attempt !== draft.chat_total_per_attempt);
-
-  // 범위는 입력하는 동안이 아니라 손을 뗄 때 맞춘다. 타이핑 중에 고치면
-  // "120" 을 넣으려고 "1" 을 친 순간 최솟값으로 튀어 글자를 못 이어 붙인다.
-  // (min/max 속성은 브라우저가 강제하지 않는다 — 서버는 범위 밖을 422 로 거절하므로
-  //  화면에서 먼저 맞춰 두지 않으면 사용자는 원인 모를 저장 실패만 본다.)
-  const clamp = (key: keyof GuestPolicy, min: number, max: number) => {
-    if (!draft) return;
-    const raw = Number(draft[key]);
-    const fixed = Number.isFinite(raw) ? Math.min(max, Math.max(min, Math.round(raw))) : min;
-    if (fixed !== draft[key]) setDraft({ ...draft, [key]: fixed });
-  };
-
-  const num = (key: keyof GuestPolicy, label: string, hint: string, min: number, max: number) => (
-    <Field label={label} hint={hint}>
-      <input
-        className={inputCls}
-        type="number"
-        min={min}
-        max={max}
-        disabled={!draft || busy}
-        value={draft ? String(draft[key]) : ""}
-        onChange={(e) => draft && setDraft({ ...draft, [key]: Number(e.target.value) })}
-        onBlur={() => clamp(key, min, max)}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter") return;
-          clamp(key, min, max);
-          if (draft && limitsDirty) put(draft, "게스트 한도를 저장했습니다");
-        }}
-      />
-    </Field>
-  );
-
-  return (
-    <Card className="mt-8 p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="font-bold">게스트 접속</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            계정 없이 로그인 화면에서 바로 응시하게 합니다. 게스트는 관리자 메뉴에 들어올 수 없고, 열려 있는
-            모든 시험에 응시할 수 있습니다.
-          </p>
-        </div>
-        {stats && (
-          <p className="shrink-0 pt-1 text-xs text-slate-400">
-            전체 {stats.total} · 활성 {stats.active} · 최근 24시간 {stats.last_24h}
-          </p>
-        )}
-      </div>
-
-      <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-slate-300">
-        <input
-          type="checkbox"
-          className="mt-0.5"
-          checked={Boolean(saved?.enabled)}
-          {...writeProps(readOnly, !saved || busy)}
-          onChange={(e) =>
-            saved && put({ ...saved, enabled: e.target.checked }, e.target.checked ? "게스트 접속을 켰습니다" : "게스트 접속을 껐습니다")
-          }
-        />
-        <span className="min-w-0">
-          <span className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-800">게스트 로그인 허용</span>
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-              계정 없이 응시
-            </span>
-          </span>
-          <span className="mt-1 block text-xs text-slate-500">
-            켜면 로그인 화면에 [게스트로 둘러보기] 버튼이 나타납니다. 끄면 버튼이 사라지고 새 게스트도 받지
-            않지만, 이미 들어온 게스트의 세션은 유지됩니다 — 즉시 끊으려면 [사용자] 화면에서 그 계정을
-            정지하세요. (기본: 꺼짐)
-          </span>
-        </span>
-      </label>
-
-      <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-slate-300">
-        <input
-          type="checkbox"
-          className="mt-0.5"
-          checked={Boolean(saved?.admin_demo_enabled)}
-          {...writeProps(readOnly, !saved || busy)}
-          onChange={(e) =>
-            saved &&
-            put(
-              { ...saved, admin_demo_enabled: e.target.checked },
-              e.target.checked ? "관리 화면 둘러보기를 켰습니다" : "관리 화면 둘러보기를 껐습니다",
-            )
-          }
-        />
-        <span className="min-w-0">
-          <span className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-800">관리 화면 둘러보기 허용</span>
-            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
-              읽기 전용
-            </span>
-          </span>
-          <span className="mt-1 block text-xs text-slate-500">
-            켜면 로그인 화면에 [관리자 기능 살펴보기] 버튼이 나타납니다. 들어온 사람은 관리 화면을 관리자와
-            같은 모습으로 보지만 아무것도 바꿀 수 없고, 응시자 화면과 사무실에는 들어가지 못하며, 다른
-            사람의 이메일은 가려집니다. (기본: 꺼짐)
-          </span>
-        </span>
-      </label>
-
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
-        {num("max_new_per_hour_per_ip", "주소당 시간당 생성", "0 이면 새 게스트를 받지 않습니다", 0, 1000)}
-        {num("chat_per_min", "분당 대화 수", "순간적인 폭주를 막습니다", 1, 120)}
-        {num("chat_total_per_attempt", "응시당 대화 총량", "0 이면 총량 제한 없음", 0, 100000)}
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-4">
-        <p className="text-xs text-slate-400">
-          대화 한도는 메신저(NPC)와 AI 에이전트를 합쳐서 셉니다 — 한쪽만 막으면 다른 쪽으로 흘러갑니다.
-          응시자 화면에도 이 합산 값이 남은 수로 보입니다. 시간당 생성은 한 인터넷 회선에서 동시에 들어올 수
-          있는 인원이기도 합니다 — 한 자리에 여럿이 모여 쓴다면 인원만큼 올리세요.
-        </p>
-        {/* 라벨은 고정한다 — 비활성 상태가 이미 '저장할 것이 없다'를 말한다.
-            버튼 글자가 상태에 따라 바뀌면 누를 것을 찾는 눈이 한 번 더 멈춘다. */}
-        <Button onClick={() => draft && put(draft, "게스트 한도를 저장했습니다")} disabled={!limitsDirty || busy} write>
-          {busy ? "저장 중..." : "한도 저장"}
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
-/** 주소 차단 — 계정 정지의 짝. 정지시킨 게스트가 새 계정으로 돌아오는 것을 막는다. */
+/** 주소 차단: 계정 정지의 짝. 계정이 아니라 접속한 곳을 막는다 (api: ip_blocks). */
 function IpBlockSection() {
   const [rows, setRows] = useState<BlockedIp[] | null>(null);
   const [cidr, setCidr] = useState("");
@@ -1222,7 +1025,7 @@ function IpBlockSection() {
         )}
       </div>
       <Collapsible summary="차단하면 어떻게 되는지">
-        차단된 주소에서는 로그인도 게스트 접속도 되지 않고, 그 주소에서 열려 있던 세션은 차단하는 즉시
+        차단된 주소에서는 로그인이 되지 않고, 그 주소에서 열려 있던 세션은 차단하는 즉시
         끊깁니다. 관리자 계정은 차단의 영향을 받지 않습니다 — 자기 대역을 잘못 넣어도 들어와서 풀 수 있게.
       </Collapsible>
 
@@ -1246,12 +1049,12 @@ function IpBlockSection() {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
-              placeholder="예: 게스트 계정 반복 생성"
+              placeholder="예: 비정상 접속 반복"
             />
           </Field>
         </div>
         <div className="pb-[22px]">
-          <Button onClick={add} disabled={busy || !cidr.trim()} write>
+          <Button onClick={add} disabled={busy || !cidr.trim()}>
             {busy ? "차단 중..." : "차단"}
           </Button>
         </div>
@@ -1278,7 +1081,7 @@ function IpBlockSection() {
               },
             ]}
             actions={(b) => (
-              <IconButton title="차단 해제" tone="danger" write onClick={() => remove(b)}>
+              <IconButton title="차단 해제" tone="danger" onClick={() => remove(b)}>
                 <IconDelete />
               </IconButton>
             )}
@@ -1290,7 +1093,6 @@ function IpBlockSection() {
 }
 
 function ExamExperienceCard() {
-  const readOnly = useReadOnly();
   const [ui, setUi] = useState<UiSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
@@ -1324,7 +1126,7 @@ function ExamExperienceCard() {
           type="checkbox"
           className="mt-0.5"
           checked={Boolean(ui?.gamified_intro)}
-          {...writeProps(readOnly, !ui || busy)}
+          disabled={!ui || busy}
           onChange={(e) => ui && update({ ...ui, gamified_intro: e.target.checked })}
         />
         <span className="min-w-0">

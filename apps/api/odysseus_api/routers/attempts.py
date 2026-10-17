@@ -27,10 +27,8 @@ from ..definitions import (
 from ..deps import get_current_user, is_staff
 from ..desktop import allowed_desktop_apps
 from ..avatar_alloc import allocate
-from ..demo import NO_EXAM_MESSAGE, is_demo_admin
 from ..grading import schedule, should_retry
-from ..guest_result import view as result_view
-from ..guests import GUEST_ROLE
+from ..result_view import view as result_view
 from ..models import (
     Assessment,
     AssessmentScenario,
@@ -276,33 +274,19 @@ async def _attempt_out(attempt: Attempt, db: AsyncSession) -> AttemptOut:
 
 @router.get("/my/assignments", response_model=list[MyAssignmentOut])
 async def my_assignments(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    # 둘러보기 계정은 관리 화면만 본다. 응시 목록을 주면 거기서 시험이 시작되고, 데모를 보러 온
-    # 사람이 실제 응시 자원(모델 호출·러너)을 쓰게 된다 (demo.py).
-    if is_demo_admin(user):
-        raise HTTPException(403, NO_EXAM_MESSAGE)
-    # 게스트는 배정을 받지 않는다 — 배정할 상대가 미리 존재하지 않기 때문이다.
-    # 대신 열려 있는 시험을 전부 본다. 스태프와 같은 목록을 보지만 이유는 다르고
-    # (권한이 아니라 배정의 부재), 권한은 아무것도 따라오지 않는다.
     assigned_ids: set[uuid.UUID] = {
         r
         for r in (
             await db.execute(select(Assignment.assessment_id).where(Assignment.user_id == user.id))
         ).scalars()
     }
-    # 시험 하나를 골라 들어온 게스트는 배정을 받는다(auth.guest_login) — 그러면 그 하나만 본다.
-    # 분야만 고르고 들어온 옛 흐름의 게스트는 분야 전체를 본다.
-    sees_all = is_staff(user) or (user.role == GUEST_ROLE and not assigned_ids)
-    if sees_all:
+    if is_staff(user):
         q = (
             select(Assessment)
             # 난이도는 시나리오의 것이다 — 비동기 세션에서 뒤늦게 lazy load 하면 MissingGreenlet 로 죽는다
             .options(selectinload(Assessment.scenarios).selectinload(AssessmentScenario.scenario))
             .order_by(Assessment.created_at.desc())
         )
-        # 게스트가 들어올 때 분야를 골랐으면 **그 분야만** 본다. 전부 보여 주는 것은
-        # 너무 쉽고, 고른 뒤에 다른 분야가 섞여 나오면 고른 의미가 없다.
-        if user.role == GUEST_ROLE and (user.guest_category or ""):
-            q = q.where(Assessment.category == user.guest_category)
         assessments = (await db.execute(q)).scalars().all()
     else:
         assessments = [
@@ -392,7 +376,7 @@ async def my_office_builtins(user: User = Depends(get_current_user), db: AsyncSe
     """관리자가 고친 템플릿 — 템플릿 id → 장면 JSON. 고치지 않은 템플릿은 없다(웹이 코드의 기본값을 쓴다).
 
     장면을 정하지 않은 방은 웹이 템플릿 중에서 고르므로(층 안에서 겹치지 않게), 고친 모양을 여기서 받아야 그 방도
-    고친 모양으로 선다. 방의 모양뿐이라 응시자·게스트에게 보여도 된다.
+    고친 모양으로 선다. 방의 모양뿐이라 응시자에게 보여도 된다.
     """
     return await builtin_overrides(db)
 
@@ -454,15 +438,7 @@ async def start_attempt(
         )
     ).scalar_one_or_none()
     if not assignment and not is_staff(user):
-        # 게스트는 배정 없이 들어올 수 있었다(분야만 고른 옛 흐름). 시험 하나를 골라 배정을 받은 게스트는
-        # 그 하나만 — 사무실에 방 하나만 선 사람이 주소로 다른 시험을 시작하는 길을 막는다.
-        if user.role != GUEST_ROLE:
-            raise HTTPException(403, "이 시험에 배정되지 않았습니다")
-        has_any = (
-            await db.execute(select(Assignment.id).where(Assignment.user_id == user.id).limit(1))
-        ).scalar_one_or_none()
-        if has_any is not None:
-            raise HTTPException(403, "고른 시험만 응시할 수 있습니다")
+        raise HTTPException(403, "이 시험에 배정되지 않았습니다")
 
     assessment = await db.get(Assessment, assessment_id)
     if not assessment:
@@ -609,10 +585,10 @@ async def post_events(
 async def attempt_result(
     attempt_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    """끝난 시험의 결과 — 응시자 본인이 본다 (guest_result.view).
+    """끝난 시험의 결과. 응시자 본인이 본다 (result_view.view).
 
-    자동 체크의 항목 이름(=정답지)은 돌려주지 않는다. 같은 시험이 실제 채용에 쓰이는데 게스트로
-    한 번 들어와 정답 목록을 받아 갈 수 있으면 안 된다.
+    자동 체크의 항목 이름(=정답지)은 돌려주지 않는다. 같은 시험이 다른 응시자에게도 나가므로
+    정답 목록을 받아 갈 수 있으면 안 된다.
     """
     attempt = await db.get(Attempt, attempt_id)
     if attempt is None or attempt.user_id != user.id:

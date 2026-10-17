@@ -31,30 +31,16 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     password_hash: Mapped[str] = mapped_column(String(255))
-    # admin | evaluator | candidate | guest
-    #
-    # guest 도 진짜 행이다 — 인증 계층의 예외가 아니라. 그래야 다른 역할과 똑같은
-    # 도구로 목록에 뜨고, 정지되고, 삭제된다. 절반만 존재하는 계정은 손댈 수가 없다.
+    # admin | evaluator | candidate
     role: Mapped[str] = mapped_column(String(20), default="candidate")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    #: 이 계정이 처음 나타난 주소. 세션에도 ip 가 있지만 세션은 폐기되고 정리된다 —
-    #: 게스트에게는 '어디서 만들어졌나' 가 세션이 사라진 뒤에도 필요한 정보다.
-    created_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     #: 사무실에서 내 아바타로 쓸 프리셋 id (people_presets). 비어 있으면 계정 id 에서 정한다.
     avatar_preset: Mapped[str] = mapped_column(String(40), default="")
-    #: 게스트가 들어올 때 고른 분야. 비어 있지 않으면 **그 분야의 시험만** 본다.
-    #: 일반 계정은 배정으로 범위가 정해지므로 쓰지 않는다.
-    guest_category: Mapped[str] = mapped_column(String(40), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class BlockedIp(Base):
-    """차단된 접속 주소 — 단일 IP 또는 CIDR 대역.
-
-    게스트 로그인은 이메일도 초대도 없이 계정을 만들어 준다. 그래서 남용의
-    단위는 '계정'이 아니라 '어디서 왔는가'가 된다: 정지시킨 게스트가 1초 뒤
-    새 계정으로 돌아오면 정지는 아무것도 막지 못한다. 주소를 막을 수 있어야
-    게스트 정지가 실제 조치가 된다.
+    """차단된 접속 주소. 단일 IP 또는 CIDR 대역 (ip_blocks.py).
 
     ``cidr`` 로 저장하면 단일 IP(``/32``)와 대역을 한 컬럼으로 다룰 수 있고,
     포함 여부 판정을 DB 가 아니라 파이썬에서 하더라도 표현이 하나로 남는다.
@@ -90,25 +76,6 @@ class Session(Base):
     revoked_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(200), nullable=True)
-
-
-class GuestArrival(Base):
-    """손님 계정이 만들어진 기록 — **계정이 지워져도 남는다.**
-
-    시간당 상한을 ``users`` 행으로 세면, 계정을 지우는 순간 그 자리가 빈다. 손님 계정은 나가면
-    지워지므로(account_sweep), 나갔다 들어오기를 반복하는 것만으로 상한이 사실상 없어졌다
-    (2026-09-19 운영 데이터로 확인: 6개를 만들었는데 카운트는 5). 그래서 "몇 개를 만들었는가" 는
-    계정이 아니라 이 원장에서 센다. 한 시간이 지난 행은 청소가 지운다.
-    """
-
-    __tablename__ = "guest_arrivals"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    #: 계정을 만든 주소. 개인을 특정하려는 것이 아니라 한 회선의 총량을 세기 위한 값이다.
-    ip: Mapped[str] = mapped_column(String(64), index=True)
-    #: guest | demo_admin — 상한이 역할마다 따로 있다.
-    role: Mapped[str] = mapped_column(String(20), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class Scenario(Base):

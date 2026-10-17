@@ -358,7 +358,7 @@ export default function ResourcesPage() {
                             {row.elapsed_s}s
                           </td>
                           <td className="py-2 text-right">
-                            <Button variant="secondary" onClick={() => killExecution(row)} disabled={busy} write>
+                            <Button variant="secondary" onClick={() => killExecution(row)} disabled={busy}>
                               종료
                             </Button>
                           </td>
@@ -386,7 +386,7 @@ export default function ResourcesPage() {
                     </label>
                   )}
                   {(orphans.length > 0 || data.stuck_executions.length > 0) && (
-                    <Button variant="secondary" onClick={cleanup} disabled={busy} write>
+                    <Button variant="secondary" onClick={cleanup} disabled={busy}>
                       <span className="flex items-center gap-1.5">
                         <IconWarn size={13} /> 고아 정리
                       </span>
@@ -467,10 +467,10 @@ export default function ResourcesPage() {
                             )}
                           </td>
                           <td className="whitespace-nowrap py-2 text-right">
-                            <Button variant="secondary" onClick={() => grantSession(s)} disabled={busy} write>
+                            <Button variant="secondary" onClick={() => grantSession(s)} disabled={busy}>
                               보정
                             </Button>
-                            <Button variant="secondary" onClick={() => terminateSession(s)} disabled={busy} write>
+                            <Button variant="secondary" onClick={() => terminateSession(s)} disabled={busy}>
                               세션 종료
                             </Button>
                           </td>

@@ -1,8 +1,7 @@
 """생성 파일 — 직접 고치지 말 것. `node tools/tileset/characters-import.mjs` 가 만든다.
 
 apps/web/lib/people.ts 와 같은 목록이다. 서버는 그림을 모르지만 프리셋의 id 와 성별은
-알아야 한다 — 빈 자리를 겹치지 않게 채우는 할당기(avatar_alloc)와 게스트가 고른
-프리셋의 검증이 여기서 본다.
+알아야 한다. 빈 자리를 겹치지 않게 채우는 할당기(avatar_alloc)가 여기서 본다.
 """
 
 PRESETS: tuple[dict, ...] = (

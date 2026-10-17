@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..db import get_db
-from ..demo import mask_email_for
 from ..deps import require_admin, require_staff
 from ..models import (
     AiProvider,
@@ -64,7 +63,7 @@ async def _attempt_count(assessment_id: uuid.UUID, db: AsyncSession) -> int:
     )
 
 
-def _to_out(a: Assessment, viewer=None) -> AssessmentOut:
+def _to_out(a: Assessment) -> AssessmentOut:
     return AssessmentOut(
         id=a.id,
         title=a.title,
@@ -91,7 +90,7 @@ def _to_out(a: Assessment, viewer=None) -> AssessmentOut:
             for link in a.scenarios
         ],
         assignments=[
-            AssignmentOut(user_id=asg.user_id, name=asg.user.name, email=mask_email_for(viewer, asg.user.email))
+            AssignmentOut(user_id=asg.user_id, name=asg.user.name, email=asg.user.email)
             for asg in a.assignments
         ],
     )
@@ -204,8 +203,8 @@ async def create_assessment(
 
 
 @router.get("/{assessment_id}", response_model=AssessmentOut)
-async def get_assessment(assessment_id: uuid.UUID, db: AsyncSession = Depends(get_db), viewer=Depends(require_staff)):
-    return _to_out(await _load(assessment_id, db), viewer)
+async def get_assessment(assessment_id: uuid.UUID, db: AsyncSession = Depends(get_db), _=Depends(require_staff)):
+    return _to_out(await _load(assessment_id, db))
 
 
 @router.put("/{assessment_id}", response_model=AssessmentOut)

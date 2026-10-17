@@ -12,10 +12,7 @@ export function Shell({ user, children, wide = false }: { user: User; children: 
   const router = useRouter();
   const leave = useLogout();
 
-  // 둘러보기 계정은 관리자와 같은 메뉴를 본다. 다른 것은 바꿀 수 없다는 것과, 응시자 화면으로
-  // 넘어갈 수 없다는 것뿐이다 (서버 demo.py 가 막는다).
-  const readOnly = user.role === "demo_admin";
-  const adminMenu = user.role === "admin" || readOnly;
+  const adminMenu = user.role === "admin";
 
   const links = [
     ...(adminMenu
@@ -60,20 +57,18 @@ export function Shell({ user, children, wide = false }: { user: User; children: 
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {!readOnly && (
-              <Link
-                href="/dashboard"
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-violet-400 hover:text-violet-600"
-              >
-                응시자 화면
-              </Link>
-            )}
+            <Link
+              href="/dashboard"
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-violet-400 hover:text-violet-600"
+            >
+              응시자 화면
+            </Link>
             <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
               <span className="text-sm font-medium text-slate-700">{user.name}</span>
-              <Badge value={user.role} label={readOnly ? "둘러보기" : undefined} />
+              <Badge value={user.role} />
             </div>
             <button
-              onClick={() => leave(user)}
+              onClick={leave}
               className="text-sm text-slate-400 hover:text-slate-600"
             >
               로그아웃
@@ -81,15 +76,6 @@ export function Shell({ user, children, wide = false }: { user: User; children: 
           </div>
         </div>
       </nav>
-      {readOnly && (
-        <div className="border-b border-sky-200 bg-sky-50">
-          <p className="mx-auto max-w-6xl px-4 py-2 text-[13px] text-sky-900">
-            <b>둘러보기 모드</b>입니다. 관리자가 보는 화면을 그대로 볼 수 있고, 저장·삭제 같은 바꾸는 일은
-            할 수 없습니다. 응시자 화면과 사무실도 열리지 않습니다. 나가거나 10분 동안 아무 동작이 없으면
-            이 계정은 사라집니다.
-          </p>
-        </div>
-      )}
       {/* 스튜디오처럼 두 칸(편집기 | 대화)을 쓰는 화면은 넓게 — 나머지는 읽기 좋은 폭을 유지 */}
       <main className={`mx-auto px-4 py-8 ${wide ? "max-w-[1720px] px-6" : "max-w-6xl"}`}>{children}</main>
     </div>

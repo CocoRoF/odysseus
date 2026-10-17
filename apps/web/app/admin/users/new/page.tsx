@@ -324,7 +324,7 @@ function parseCsv(text: string): string[][] {
           <span className="h-5 w-px shrink-0 bg-slate-200" />
           <h1 className="text-xl font-bold">사용자 추가</h1>
         </div>
-        <Button onClick={submit} disabled={busy || validRows.length === 0} write>
+        <Button onClick={submit} disabled={busy || validRows.length === 0}>
           {busy ? "등록 중..." : `${validRows.length}명 등록`}
         </Button>
       </div>

@@ -18,7 +18,6 @@ from ..config import settings
 from ..db import get_db
 from ..definitions import definition_for_attempt, messenger_turn_limit, resolve_attempt_ai
 from ..deps import get_current_user
-from ..guests import guest_chat_budget, guest_chat_gate
 from ..locks import acquire_lease
 from ..models import Attempt, Event, MessengerMessage, User
 from ..ratelimit import enforce
@@ -98,14 +97,6 @@ async def messenger_usage(
     ).scalar() or 0
     refunded = await refunded_messenger(db, attempt_id)
     used = max(0, int(sent) - refunded)
-    # 게스트에게는 **실제로 부딪히는** 한도를 보여 준다. 시험 정의의 한도를 그대로 내보내면
-    # 300건이 남았다고 읽고 계획하다가 합산 60에서 끊긴다 (guests.guest_chat_budget).
-    budget = await guest_chat_budget(db, user, attempt)
-    if budget is not None:
-        used, cap = budget
-        return MessengerUsageOut(
-            used=used, max=cap, remaining=max(0, cap - used), refunded=refunded, shared=True
-        )
     return MessengerUsageOut(used=used, max=cap, remaining=max(0, cap - used), refunded=refunded)
 
 
@@ -125,7 +116,6 @@ async def send_message(
     scenario = await scenario_in_attempt(attempt, scenario_id, db, user, mutate=True)
     character = _find_character(scenario, character_key)
     enforce(f"messenger:{attempt_id}", per_min=12, burst=6, what="메시지 전송")
-    await guest_chat_gate(db, user, attempt_id, what="메시지 전송")
 
     # NPC 한 응답은 공급자 타임아웃(300s)까지 걸릴 수 있다 — lease 는 도는 동안 갱신되므로 같은 방에
     # 두 번째 전송이 끼어들지 않고, 프로세스가 사라지면 1분 안에 풀린다. 7분은 해제가 끝내 불리지 않을 때의 상한이다.

@@ -26,7 +26,6 @@ import { OfficeStage } from "../OfficeStage";
 import { FACE, TILE, WALL } from "../floorplan";
 import { SCENE_LIMITS, doorColsOf, type SceneSpec } from "../scenes";
 import { validateScene, type SceneProblem } from "../scene-check";
-import { READ_ONLY_REASON, useReadOnly, writeProps } from "@/components/readonly";
 import { DECOR_ITEMS, FLOOR_ITEMS, FLOOR_LABELS, KNOWN_KINDS, PROP_GROUPS, WALL_ITEMS, footOf, labelOf } from "./catalog";
 import { ROOM_VIEW_PAD, ROOM_VIEW_TAIL, RoomView, type Ghost, type Selection } from "./RoomView";
 import {
@@ -69,8 +68,6 @@ export function OfficeEditor({
   onDirty?: (dirty: boolean) => void;
   saving?: boolean;
 }) {
-  /** 둘러보기 계정 — 장면은 마음껏 만져 보되 저장·되돌리기만 잠근다 (components/readonly.tsx) */
-  const demoLocked = useReadOnly();
   const [state, dispatch] = useReducer(reduce, initial, initialState);
   const spec = state.spec;
   const [mode, setModeRaw] = useState<EditorMode>(readOnly ? "browse" : "assets");
@@ -496,8 +493,8 @@ export function OfficeEditor({
               className="oe-btn"
               data-reset
               onClick={template.onReset}
-              {...writeProps(demoLocked, saving || (!template.modified && !state.dirty))}
-              title={demoLocked ? READ_ONLY_REASON : "코드에 있는 처음 모양으로 돌아갑니다"}
+              disabled={saving || (!template.modified && !state.dirty)}
+              title="코드에 있는 처음 모양으로 돌아갑니다"
             >
               기본값으로 되돌리기
             </button>
@@ -506,10 +503,10 @@ export function OfficeEditor({
             <button
               type="button"
               className="oe-save"
-              {...writeProps(demoLocked, errors.length > 0 || saving || !state.dirty)}
+              disabled={errors.length > 0 || saving || !state.dirty}
               onClick={() => onSave(compact(spec))}
             >
-              {demoLocked ? "저장 잠김" : saving ? "저장 중…" : errors.length ? `오류 ${errors.length}` : state.dirty ? "저장" : "저장됨"}
+              {saving ? "저장 중…" : errors.length ? `오류 ${errors.length}` : state.dirty ? "저장" : "저장됨"}
             </button>
           )}
         </div>

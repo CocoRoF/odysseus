@@ -21,14 +21,13 @@ function noteReachability(res: Response): void {
  *
  *  연결 배너는 502·503·504 만 본다. 그래서 세션이 만료되거나 계정이 사라지면 저장이 **조용히**
  *  실패하는 화면을 계속 보게 됐다 — 타이머는 돌고 창은 멀쩡하니 응시자는 저장되고 있다고 믿는다.
- *  손님 계정에서는 그 사이 계정 자체가 정리될 수 있어 되돌릴 방법도 없다. 그래서 한 번이라도
- *  401 이 오면 화면 전체가 알도록 여기서 신호를 낸다.
+ *  그래서 한 번이라도 401 이 오면 화면 전체가 알도록 여기서 신호를 낸다.
  *
- *  로그인·게스트 시작처럼 **아직 세션이 없는 것이 정상인 길**은 세지 않는다.
+ *  로그인처럼 **아직 세션이 없는 것이 정상인 길**은 세지 않는다.
  */
 let sessionLost = false;
 const sessionWatchers = new Set<(lost: boolean) => void>();
-const NO_SESSION_PATHS = ["/auth/login", "/auth/guest", "/auth/resume", "/auth/logout", "/auth/me"];
+const NO_SESSION_PATHS = ["/auth/login", "/auth/resume", "/auth/logout", "/auth/me"];
 
 export function isSessionLost(): boolean {
   return sessionLost;
@@ -51,11 +50,9 @@ export function clearSessionLost(): void {
 /** 이 브라우저에 남은 **신분에 딸린 상태**를 지운다 — 로그아웃·로그인 화면 진입에서 부른다.
  *
  *  화면 이동은 대개 클라이언트 라우팅이라 페이지가 새로 뜨지 않는다. 그래서 모듈에 들고 있는
- *  값은 계정이 바뀌어도 그대로 살아남는다. 둘러보기로 보던 사람이 나가서 게스트로 응시하려 하면
- *  지워지지 않은 잠금이 요청을 막았다(2026-09-19). 신분이 바뀌는 자리에서는 전부 되돌린다.
+ *  값은 계정이 바뀌어도 그대로 살아남는다. 신분이 바뀌는 자리에서는 전부 되돌린다.
  */
 export function resetIdentityState(): void {
-  setReadOnly(false);
   clearSessionLost();
 }
 
@@ -67,42 +64,7 @@ function noteSession(res: Response, path: string): void {
   sessionWatchers.forEach((fn) => fn(true));
 }
 
-/** 둘러보기 계정(demo_admin)으로 보고 있는가 — useUser 가 /auth/me 를 읽고 알려 준다.
- *
- *  서버가 이미 바꾸는 요청을 거절하지만(demo.py), 요청을 보내 놓고 403 을 받아 오면 화면마다
- *  다른 말로 실패한다. 여기서 한 번에 같은 말을 하고, 쓸데없는 왕복도 없앤다. */
-let readOnly = false;
-const readOnlyWatchers = new Set<(value: boolean) => void>();
-export function setReadOnly(value: boolean): void {
-  if (value === readOnly) return;
-  readOnly = value;
-  readOnlyWatchers.forEach((fn) => fn(value));
-}
-export function isReadOnly(): boolean {
-  return readOnly;
-}
-/** 화면이 이 상태를 따라 바뀐다 (components/readonly.tsx) */
-export function onReadOnlyChange(fn: (value: boolean) => void): () => void {
-  readOnlyWatchers.add(fn);
-  return () => {
-    readOnlyWatchers.delete(fn);
-  };
-}
-export const READ_ONLY_MESSAGE = "둘러보기 모드입니다. 보기만 할 수 있어요";
-
-/** 세션 자체를 만들거나 끝내는 길 — **둘러보기 잠금의 대상이 아니다.**
- *
- *  둘러보기 잠금은 "이 계정은 아무것도 바꾸지 못한다" 는 뜻이지, "이 브라우저는 다른 사람으로
- *  들어갈 수 없다" 는 뜻이 아니다. 둘을 섞었더니 둘러보기로 보다가 나간 사람이 게스트로 응시할 때
- *  "둘러보기 모드입니다" 를 맞았다 — 서버는 멀쩡히 받아 주는 요청이었다.
- */
-const SESSION_PATHS = ["/auth/login", "/auth/logout", "/auth/guest"];
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const method = (init?.method || "GET").toUpperCase();
-  if (readOnly && method !== "GET" && !SESSION_PATHS.some((p) => path === p || path.startsWith(`${p}/`))) {
-    throw new ApiError(403, READ_ONLY_MESSAGE, "READ_ONLY");
-  }
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
@@ -177,8 +139,6 @@ const UNREACHABLE = "서버에 연결할 수 없습니다. 연결을 확인하�
  *  어떤 실패든 onError 로 끝난다. 예전에는 네트워크 오류가 예외로 튀어나가 호출자의 '응답 대기'
  *  표시가 영영 풀리지 않았다. `signal` 로 멈춘 경우만 예외다 — 오류가 아니므로 아무것도 알리지
  *  않고 끝나며, 무엇이 기록됐는지는 호출부가 서버에서 다시 읽는다. */
-/** 에이전트 스트림도 같은 규칙을 따른다 — 둘러보기 계정은 응시 화면 자체에 들어가지 못하지만,
- *  경로가 하나만 열려 있어도 규칙이 갈라진다. */
 export async function streamAgentChat(
   attemptId: string,
   scenarioId: string,
@@ -192,10 +152,6 @@ export async function streamAgentChat(
   /** [중단] 을 누르면 이 신호로 스트림을 끊는다. 응답 헤더가 오기 전이어도 같다. */
   signal?: AbortSignal,
 ): Promise<void> {
-  if (readOnly) {
-    handlers.onError(READ_ONLY_MESSAGE);
-    return;
-  }
   let res: Response;
   try {
     res = await fetch(`/api/attempts/${attemptId}/scenarios/${scenarioId}/agent/messages`, {
@@ -281,10 +237,6 @@ export async function streamScenarioAuthor(
   },
   signal?: AbortSignal,
 ): Promise<void> {
-  if (readOnly) {
-    handlers.onError(READ_ONLY_MESSAGE);
-    return;
-  }
   const res = await fetch(`/api/scenarios/author/stream`, {
     method: "POST",
     credentials: "include",

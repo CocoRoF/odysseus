@@ -883,9 +883,8 @@ body {
 .sprite-lab-stage .o-person-sprite { position: absolute; }
 .sprite-lab-sheet {  background-repeat: no-repeat; outline: 1px solid rgba(255,80,80,.55); }
 
-/* ── 로고 전환막 — 게스트 로그인 → 사무실 ─────────────────────
-   시험 시작의 부팅 연출 끝에 뜨는 로고(.boot-logo)와 같은 움직임. enter 의 마지막
-   프레임과 hold 가 같아야 페이지가 바뀌어도 로고가 다시 떠오르지 않는다. */
+/* ── 로고 전환막: 사무실 입장 (components/LogoSplash) ─────────────
+   시험 시작의 부팅 연출 끝에 뜨는 로고(.boot-logo)와 같은 모습. hold 로 섰다가 leave 로 걷힌다. */
 .logo-splash {
   position: fixed;
   inset: 0;
@@ -896,14 +895,6 @@ body {
   background: #000;
 }
 .logo-splash img { width: min(60vw, 720px); }
-.logo-splash[data-logo="false"][data-mode="enter"] { animation: logo-splash-veil 0.25s ease-out both; }
-.logo-splash[data-mode="enter"] { animation: logo-splash-veil 0.4s ease-out both; }
-.logo-splash[data-mode="enter"] img { animation: logo-splash-in 0.9s ease-out both; }
-@keyframes logo-splash-veil { from { opacity: 0; } to { opacity: 1; } }
-@keyframes logo-splash-in {
-  0% { opacity: 0; transform: scale(0.965); filter: blur(6px) brightness(0.4); }
-  100% { opacity: 1; transform: scale(1); filter: blur(0) brightness(1); }
-}
 /* 아래에 이미 있는 사무실이 밝아 보인다 — 로고가 먼저 가라앉고 막이 걷힌다 */
 .logo-splash[data-mode="leave"] { animation: logo-splash-out 1.05s ease-out forwards; pointer-events: none; }
 .logo-splash[data-mode="leave"] img { animation: logo-splash-fade 0.7s ease-in forwards; }
@@ -935,100 +926,6 @@ body {
   font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569;
 }
 .office-filterbar { @apply shrink-0 border-b border-white/10 px-5 py-2.5; }
-
-/* ── 게스트 온보딩 (/welcome) — 검은 바탕, 캐릭터 만들듯이 ─────────
-   시네마틱 인트로(.intro-*)와 같은 재질: 검정, 비네트, 하늘색 한 줄, 얇은 구분선. */
-.welcome { position: fixed; inset: 0; z-index: 9400; overflow: hidden; background: #000; color: #e2e8f0; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.welcome-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 0%, rgba(56,189,248,.10), transparent 60%); }
-.welcome-panel { position: relative; width: 100%; max-width: 760px; }
-.welcome-brand { font-size: 11px; font-weight: 700; letter-spacing: .4em; text-transform: uppercase; color: rgba(56,189,248,.8); text-align: center; }
-.welcome-steps { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
-.welcome-steps i { width: 28px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.12); }
-.welcome-steps i[data-on] { background: #38bdf8; }
-.welcome-q { margin: 22px 0 6px; text-align: center; font-size: 26px; font-weight: 700; letter-spacing: -.01em; color: #f1f5f9; }
-.welcome-empty { text-align: center; font-size: 13px; color: #94a3b8; }
-/* 빠른 시작 — 무엇을 건너뛰는지 한 줄로 */
-.welcome-note { margin: 0; text-align: center; font-size: 13px; color: #94a3b8; }
-.welcome-rule { margin: 22px auto 0; height: 1px; width: 96px; background: linear-gradient(to right, transparent, rgba(56,189,248,.5), transparent); }
-.welcome-body { margin-top: 26px; }
-.welcome-body input[type="text"] {
-  width: 100%; background: transparent; border: 0; border-bottom: 2px solid rgba(255,255,255,.18);
-  padding: 12px 4px; text-align: center; font-size: 28px; font-weight: 600; color: #fff; outline: none; caret-color: #38bdf8;
-}
-.welcome-body input[type="text"]:focus { border-bottom-color: #38bdf8; }
-.welcome-body input::placeholder { color: rgba(255,255,255,.22); font-weight: 400; }
-.welcome-avatars { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
-.welcome-avatar {
-  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 8px 10px;
-  border-radius: 14px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); color: #cbd5e1;
-  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
-}
-.welcome-avatar:hover { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.06); }
-.welcome-avatar[aria-pressed="true"] { border-color: #38bdf8; background: rgba(56,189,248,.12); color: #fff; box-shadow: 0 0 0 1px rgba(56,189,248,.5); }
-.welcome-avatar-stage { width: 48px; height: 48px; position: relative; }
-.welcome-avatar-stage > div { transform: scale(1); transform-origin: 0 0; width: 100%; height: 100%; position: relative; }
-.welcome-avatar-name { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; }
-.welcome-preview { margin-top: 18px; display: flex; align-items: flex-end; justify-content: center; gap: 18px; min-height: 180px; }
-.welcome-preview img { height: 180px; width: auto; image-rendering: auto; filter: drop-shadow(0 8px 24px rgba(0,0,0,.6)); }
-.welcome-preview p { color: #94a3b8; font-size: 13px; padding-bottom: 12px; max-width: 260px; }
-/* 임무 고르기 — 분야 이름이 구분선처럼 서고, 그 아래 시험이 가로로 긴 카드로 한 줄씩 선다.
-   [꼬리표] 제목 + 한 줄 ........ 난이도 · 시간.  꼬리표는 색 없는 네모 하나 — 난이도는 글자로만 말한다. */
-.welcome-list { display: flex; flex-direction: column; gap: 22px; max-height: min(58vh, 560px); overflow-y: auto; padding: 2px 6px 2px 2px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
-.welcome-section { display: flex; flex-direction: column; gap: 8px; }
-.welcome-section h2 { display: flex; align-items: center; gap: 12px; margin: 0 0 2px; font-size: 13px; font-weight: 700; letter-spacing: .12em; color: #94a3b8; text-transform: uppercase; }
-.welcome-section h2 i { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,.22), rgba(255,255,255,.04)); }
-.welcome-section h2 small { font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0; }
-.welcome-exam {
-  display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 16px; width: 100%; text-align: left;
-  padding: 13px 18px 13px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); color: #e2e8f0;
-  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
-}
-.welcome-exam:hover { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.06); }
-.welcome-exam[aria-pressed="true"] { border-color: #38bdf8; background: rgba(56,189,248,.12); box-shadow: 0 0 0 1px rgba(56,189,248,.5); }
-.welcome-exam-label {
-  display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 4px 8px; border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); font-size: 12px; font-weight: 700; color: #cbd5e1; line-height: 1.2; text-align: center;
-}
-.welcome-exam-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.welcome-exam-text b { font-size: 15px; font-weight: 700; line-height: 1.3; }
-.welcome-exam-text small { font-size: 12.5px; color: #94a3b8; line-height: 1.4; }
-.welcome-exam-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; color: #94a3b8; white-space: nowrap; }
-.welcome-exam-meta em { font-style: normal; font-weight: 700; color: #cbd5e1; }
-.welcome-exam[aria-pressed="true"] .welcome-exam-label { border-color: rgba(56,189,248,.35); background: rgba(56,189,248,.10); }
-@media (max-width: 640px) {
-  .welcome-exam { grid-template-columns: 1fr auto; }
-  .welcome-exam-label { grid-column: 1 / -1; justify-self: start; }
-}
-.welcome-actions { margin-top: 28px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-/* 아이콘과 글자가 한 줄에 나란히 서도록 — 그림문자를 아이콘으로 바꾸며 필요해졌다 */
-.welcome-back { display: inline-flex; align-items: center; gap: 4px; color: #94a3b8; font-size: 13px; padding: 8px 4px; }
-.welcome-back:hover { color: #e2e8f0; }
-.welcome-next {
-  min-width: 160px; padding: 13px 22px; border-radius: 12px; font-size: 14px; font-weight: 700; letter-spacing: .02em;
-  border: 1px solid rgba(56,189,248,.3); background: rgba(14,165,233,.10); color: #bae6fd; transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
-}
-.welcome-next:hover:not(:disabled) { border-color: rgba(56,189,248,.6); background: rgba(14,165,233,.2); color: #fff; }
-.welcome-next:disabled { opacity: .35; cursor: default; }
-.welcome-error { margin-top: 12px; text-align: center; font-size: 13px; color: #fca5a5; }
-.welcome-step { animation: intro-rise-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
-@media (prefers-reduced-motion: reduce) { .welcome-step { animation: none; } }
-
-/* 온보딩 2단계 — 초상 먼저, 고르면 도트 */
-.welcome-portraits { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
-@media (max-width: 720px) { .welcome-portraits { grid-template-columns: repeat(3, 1fr); } }
-.welcome-portrait {
-  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px 8px;
-  border-radius: 14px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); color: #cbd5e1;
-  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
-}
-.welcome-portrait:hover { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.06); transform: translateY(-2px); }
-.welcome-portrait[aria-pressed="true"] { border-color: #38bdf8; background: rgba(56,189,248,.12); color: #fff; box-shadow: 0 0 0 1px rgba(56,189,248,.5); }
-.welcome-portrait img { height: 96px; width: auto; max-width: 100%; object-fit: contain; filter: drop-shadow(0 6px 14px rgba(0,0,0,.55)); }
-.welcome-portrait-blank { height: 96px; width: 60px; border-radius: 8px; background: rgba(255,255,255,.06); }
-.welcome-portrait-name { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; }
-.welcome-dot { margin-top: 18px; min-height: 150px; display: flex; justify-content: center; }
-/* 크기·그림은 인라인(personSpriteAt, 원본 정수 2배). 여기서 크기를 박아 두면 그림과 어긋난다. */
-.welcome-dot-stage { position: relative; display: block; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.55)); }
 
 /* ── 사무실 커스텀 편집기 (관리자) ───────────────────────────── */
 /* 밝은 관리자 화면 안의 어두운 작업대. 방 그림은 사무실과 같은 클래스(o-*)로 그려 화면과 한 픽셀도
@@ -1480,31 +1377,3 @@ body {
 
 /* 막대 안의 글자는 어떤 깊이에 있든 쪼개지지 않는다 */
 .app-bar :where(button, span, a, label, select, div) { white-space: nowrap; }
-
-/* ── 자동 진행(components/autopilot) — 보이는 커서·누름 물결·진행 막대·입력 막 ─────────────── */
-.autopilot-shield { position: fixed; inset: 0; z-index: 2147483000; cursor: default; background: transparent; }
-.autopilot-cursor { position: fixed; left: 0; top: 0; z-index: 2147483646; pointer-events: none; margin: -2px 0 0 -3px;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); transition: opacity .2s; will-change: transform; }
-.autopilot-ripple { position: fixed; left: 0; top: 0; z-index: 2147483645; width: 36px; height: 36px; border-radius: 50%;
-  border: 2px solid rgba(56,189,248,.9); pointer-events: none; opacity: 0; }
-.autopilot-ripple-go { animation: autopilot-ripple .45s ease-out; }
-@keyframes autopilot-ripple { from { opacity: 1; scale: .6; } to { opacity: 0; scale: 1.8; } }
-.autopilot-bar { position: fixed; top: 10px; left: 50%; translate: -50% 0; z-index: 2147483647; display: flex; align-items: center; gap: 10px;
-  max-width: min(860px, calc(100vw - 24px)); padding: 7px 8px 7px 14px; border-radius: 999px; background: rgba(9,13,20,.88);
-  border: 1px solid rgba(56,189,248,.35); box-shadow: 0 8px 30px rgba(0,0,0,.35); color: #e2e8f0; font-size: 13px; backdrop-filter: blur(6px); }
-.autopilot-tag { font-weight: 700; color: #7dd3fc; white-space: nowrap; }
-.autopilot-say { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.autopilot-dot { width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; flex-shrink: 0; }
-.autopilot-dot[data-state="running"] { animation: autopilot-pulse 1.2s ease-in-out infinite; }
-.autopilot-dot[data-state="paused"] { background: #fbbf24; }
-.autopilot-dot[data-state="error"] { background: #f87171; }
-.autopilot-dot[data-state="done"] { background: #4ade80; }
-@keyframes autopilot-pulse { 50% { opacity: .35; } }
-.autopilot-progress { width: 72px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); flex-shrink: 0; overflow: hidden; }
-.autopilot-progress i { display: block; height: 100%; background: #38bdf8; transition: width .4s; }
-.autopilot-bar button { flex-shrink: 0; white-space: nowrap; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600;
-  background: #0ea5e9; color: #fff; }
-.autopilot-bar button:hover { background: #38bdf8; }
-.autopilot-bar button.autopilot-quiet { background: rgba(255,255,255,.1); color: #cbd5e1; }
-.autopilot-bar button.autopilot-quiet:hover { background: rgba(255,255,255,.18); }
-@media (prefers-reduced-motion: reduce) { .autopilot-dot[data-state="running"], .autopilot-ripple-go { animation: none; } }

@@ -1,10 +1,6 @@
 // ── 공통 ─────────────────────────────────────────────────────
 
-/** demo_admin = 관리 화면을 읽기만 하는 둘러보기 계정 (서버 demo.py). 배정·응시가 없다. */
-export type Role = "admin" | "evaluator" | "candidate" | "guest" | "demo_admin";
-
-/** 관리자가 직접 부여할 수 있는 역할 — guest 는 게스트 로그인만이 만든다 */
-export type AssignableRole = Exclude<Role, "guest" | "demo_admin">;
+export type Role = "admin" | "evaluator" | "candidate";
 
 export interface User {
   id: string;
@@ -12,30 +8,9 @@ export interface User {
   name: string;
   role: Role;
   is_active: boolean;
-  /** 게스트 계정이 만들어진 주소 (일반 계정은 null) */
-  created_ip?: string | null;
   /** 사무실의 내 아바타 프리셋 id. 비어 있으면 계정 id 에서 정한다. */
   avatar_preset?: string;
   created_at: string;
-}
-
-/** GET /auth/guest — 게스트 버튼을 띄울지, 고를 수 있는 분야가 무엇인지 */
-export interface GuestExam {
-  assessment_id: string;
-  /** 분야 안에서 이 시험을 가르는 꼬리표 */
-  label: string;
-  title: string;
-  /** 상황을 말하는 한 줄 — 숨은 요구는 담지 않는다 */
-  pitch: string;
-  difficulty: string;
-  duration_min: number;
-}
-
-export interface GuestAvailability {
-  enabled: boolean;
-  categories: { key: string; label: string; count: number; exams: GuestExam[] }[];
-  /** 관리 화면 둘러보기(읽기 전용) 버튼을 띄울지 */
-  admin_demo: boolean;
 }
 
 /** 이 브라우저가 이어 할 것 — 로그인 화면이 [이어하기] 를 먼저 내놓을지 정한다 (api: /auth/resume) */
@@ -48,24 +23,7 @@ export interface Resume {
   deadline_at: string | null;
 }
 
-// ── 게스트 접속 ──────────────────────────────────────────────
-
-export interface GuestPolicy {
-  enabled: boolean;
-  /** 로그인 화면의 [관리자 기능 살펴보기] — 게스트 응시와 별개 스위치 */
-  admin_demo_enabled: boolean;
-  max_new_per_hour_per_ip: number;
-  chat_per_min: number;
-  chat_total_per_attempt: number;
-  /** 게스트가 제출하면 자동 채점을 걸어 결과를 보여 줄지 */
-}
-
-export interface GuestStats {
-  total: number;
-  active: number;
-  last_24h: number;
-  blocked_entries: number;
-}
+// ── 접속 관리 ────────────────────────────────────────────────
 
 export interface BlockedIp {
   id: string;
@@ -395,8 +353,6 @@ export interface MessengerUsage {
   max: number;
   remaining: number;
   refunded?: number;
-  /** 이 수가 메신저와 에이전트를 합쳐 센 값인가 (게스트 총량) — 화면이 그렇게 적어야 한다 */
-  shared?: boolean;
 }
 
 export interface AgentStep {
@@ -424,11 +380,9 @@ export interface AgentUsage {
   model?: string | null;
   tools_available: boolean;
   provider_name?: string | null;
-  /** 이 수가 메신저와 에이전트를 합쳐 센 값인가 (게스트 총량) */
-  shared?: boolean;
 }
 
-/** 시험을 마친 사람이 보는 결과 (api: /attempts/{id}/result → guest_result.view).
+/** 시험을 마친 사람이 보는 결과 (api: /attempts/{id}/result → result_view.view).
  *
  *  자동 체크의 항목 이름은 여기 없다 — 정답지이기 때문에 서버가 통과 개수만 준다.
  */

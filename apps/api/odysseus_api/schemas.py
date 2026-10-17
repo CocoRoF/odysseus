@@ -5,63 +5,13 @@ from typing import Any, Literal
 from .categories import normalize_category
 from .config import MAX_RUN_TIMEOUT_S
 from .office import SCENE_LIMITS, is_valid_ref as is_valid_office_ref
-from .people_presets import PRESET_IDS
 from pydantic import model_validator, ConfigDict, BaseModel, EmailStr, Field, field_validator
 
 from .desktop import normalize_desktop_apps
 from .npc.contracts import OfficePublic
 
-#: 관리자가 직접 부여할 수 있는 역할. guest 는 여기 없다 — 게스트 계정은
-#: 게스트 로그인만이 만든다. 사람을 게스트로 "강등"하는 조작은 의미가 없고,
-#: 반대 방향(게스트 → candidate 승격)은 UserUpdate 로 가능하다.
+#: 관리자가 직접 부여할 수 있는 역할
 Role = Literal["admin", "evaluator", "candidate"]
-
-
-class GuestStartIn(BaseModel):
-    #: 화면에 보일 이름. 비우면 서버가 붙인다.
-    name: str = Field(default="", max_length=40)
-    #: 고른 아바타 프리셋 id. 비우면 계정 id 에서 정한다.
-    avatar_preset: str = Field(default="", max_length=40)
-    #: 임무를 수행할 분야. 비우면 전부 본다(옛 흐름). 정하면 그 분야의 시험만 본다.
-    category: str = Field(default="", max_length=40)
-    #: 고른 시험 하나. 주면 그 시험만 배정된다 — 사무실에는 그 방 하나만 선다.
-    assessment_id: uuid.UUID | None = None
-    #: 진행 중인 시험을 버리고 새 계정으로 시작한다고 화면에서 확인받았는가.
-    #: 기본은 False — 실수로 누른 한 번이 시험을 지우지 않게, 서버가 먼저 막는다.
-    replace: bool = False
-
-    @field_validator("avatar_preset")
-    @classmethod
-    def _preset_known(cls, v: str) -> str:
-        v = (v or "").strip()
-        if v and v not in PRESET_IDS:
-            raise ValueError("알 수 없는 아바타 프리셋입니다")
-        return v
-
-    @field_validator("category")
-    @classmethod
-    def _category_known(cls, v: str) -> str:
-        return normalize_category(v)
-
-
-class GuestExamOut(BaseModel):
-    assessment_id: uuid.UUID
-    #: 분야 안에서 이 시험을 가르는 꼬리표 ("초급", "갈등 중재")
-    label: str
-    title: str
-    #: 상황을 말하는 한 줄 — 숨은 요구는 담지 않는다
-    pitch: str = ""
-    difficulty: str
-    duration_min: int
-
-
-class GuestCategoryOut(BaseModel):
-    key: str
-    label: str
-    #: 지금 열려 있는 시험 수 — 고를 수 있는 분야만 보여 준다
-    count: int
-    #: 그 분야의 시험들 — 꼬리표·난이도·시간만. 제목과 내용은 로그인 뒤에 본다.
-    exams: list[GuestExamOut] = []
 
 
 class ResumeOut(BaseModel):
@@ -76,31 +26,6 @@ class ResumeOut(BaseModel):
     attempt_id: str | None = None
     assessment_title: str = ""
     deadline_at: datetime | None = None
-
-
-class GuestAvailabilityOut(BaseModel):
-    enabled: bool
-    #: 게스트가 고를 수 있는 분야(시험이 하나 이상 있는 것만). 꺼져 있으면 빈 목록.
-    categories: list[GuestCategoryOut] = []
-    #: 로그인 화면에 [관리자 기능 살펴보기] 를 띄울지 — 게스트 응시와 별개 스위치다(demo.py)
-    admin_demo: bool = False
-
-
-class GuestPolicyOut(BaseModel):
-    enabled: bool
-    max_new_per_hour_per_ip: int
-    chat_per_min: int
-    chat_total_per_attempt: int
-    admin_demo_enabled: bool = False
-
-
-class GuestPolicyIn(BaseModel):
-    enabled: bool
-    max_new_per_hour_per_ip: int = Field(ge=0, le=1000)
-    chat_per_min: int = Field(ge=1, le=120)
-    chat_total_per_attempt: int = Field(ge=0, le=100000)
-    #: 관리 화면 둘러보기(읽기 전용) 허용 — 게스트 응시와 따로 켠다
-    admin_demo_enabled: bool = False
 
 
 class BlockedIpIn(BaseModel):
@@ -132,8 +57,6 @@ class UserOut(BaseModel):
     name: str
     role: str
     is_active: bool
-    #: 게스트 계정이 어느 주소에서 만들어졌는지 (일반 계정은 비어 있다)
-    created_ip: str | None = None
     #: 사무실의 내 아바타 프리셋. 비어 있으면 화면이 계정 id 에서 정한다.
     avatar_preset: str = ""
     created_at: datetime
@@ -570,8 +493,6 @@ class MessengerUsageOut(BaseModel):
     remaining: int
     #: 공급자 장애로 되돌려 준 질문 수
     refunded: int = 0
-    #: 이 숫자가 메신저·에이전트를 합쳐 센 값인가 (게스트 총량). 화면이 그렇게 적어야 한다.
-    shared: bool = False
 
 
 class AgentUsageOut(BaseModel):
@@ -586,8 +507,6 @@ class AgentUsageOut(BaseModel):
     # 이 공급자가 워크스페이스 조작 도구를 받을 수 있는가 (Claude Code CLI 등은 대화 전용)
     tools_available: bool = True
     provider_name: str | None = None
-    #: 이 숫자가 메신저·에이전트를 합쳐 센 값인가 (게스트 총량)
-    shared: bool = False
 
 
 # ── workspace ────────────────────────────────────────────────

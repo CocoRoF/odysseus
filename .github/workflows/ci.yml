@@ -47,7 +47,7 @@ jobs:
                          'apps/api/odysseus_api/models*', 'apps/api/odysseus_api/database*',
                          'apps/api/odysseus_api/security*', 'apps/api/odysseus_api/auth*',
                          'apps/api/odysseus_api/ai/*', 'apps/api/odysseus_api/ai_incidents*',
-                         'apps/api/odysseus_api/guests*', 'apps/api/odysseus_api/workspace*',
+                         'apps/api/odysseus_api/workspace*',
                          'apps/api/odysseus_api/routers/agent*', 'apps/api/odysseus_api/routers/messenger*',
                          'apps/api/odysseus_api/routers/files*',
                          'apps/api/requirements*', 'tests/integration/*'],
@@ -131,7 +131,7 @@ jobs:
       - name: Office isolation, recovery and memory bridge
         run: python -m unittest discover -s tests/integration -p 'test_office_runtime.py' -v
       - name: AI failure refunds and conditional file saves
-        # 환불 플래그를 한도·게스트 총량·평가자 집계가 같은 SQL 로 세는가, 편집기 저장이 행 잠금 아래에서
+        # 환불 플래그를 한도·평가자 집계가 같은 SQL 로 세는가, 편집기 저장이 행 잠금 아래에서
         # 새 서버 변경을 덮지 않는가 — JSONB 식과 잠금은 진짜 PostgreSQL 에서만 확인된다.
         run: python -m unittest discover -s tests/integration -p 'test_turn_failures.py' -v
 

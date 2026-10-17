@@ -166,10 +166,8 @@ export function AgentChat({
               className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                 exhausted ? skin.badgeDanger : skin.badge
               }`}
-              title={usage.shared ? "메신저와 AI 에이전트를 합쳐 셉니다" : undefined}
             >
               남은 질문 {usage.remaining}/{usage.max}
-              {usage.shared && <span className="ml-1 font-normal opacity-70">(합산)</span>}
             </span>
           )}
           {/* 돌려받은 횟수는 밝혀 둔다 — 남은 수가 왜 줄지 않았는지 설명한다. 공급자 장애만이 아니라

@@ -490,7 +490,7 @@ export function personSpriteStyle(row: number, dir: Dir, pose: Pose = "idle"): C
 
   // ── 서버용 프리셋 목록 ──
   // 서버는 그림이 필요 없지만 **어떤 프리셋이 있고 성별이 무엇인지**는 알아야 한다:
-  // 빈 자리를 겹치지 않게 채우는 할당기와, 게스트가 고른 프리셋의 검증이 이 목록을 쓴다.
+  // 빈 자리를 겹치지 않게 채우는 할당기가 이 목록을 쓴다.
   // 웹 매니페스트와 같은 원천에서 같은 순간에 나오므로 어긋날 수 없다
   // (tests/unit/test_avatar_alloc.py 가 둘을 맞대 본다).
   writeFileSync(
@@ -498,8 +498,7 @@ export function personSpriteStyle(row: number, dir: Dir, pose: Pose = "idle"): C
     `"""생성 파일 — 직접 고치지 말 것. \`node tools/tileset/characters-import.mjs\` 가 만든다.
 
 apps/web/lib/people.ts 와 같은 목록이다. 서버는 그림을 모르지만 프리셋의 id 와 성별은
-알아야 한다 — 빈 자리를 겹치지 않게 채우는 할당기(avatar_alloc)와 게스트가 고른
-프리셋의 검증이 여기서 본다.
+알아야 한다. 빈 자리를 겹치지 않게 채우는 할당기(avatar_alloc)가 여기서 본다.
 """
 
 PRESETS: tuple[dict, ...] = (

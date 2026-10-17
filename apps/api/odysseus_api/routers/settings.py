@@ -13,8 +13,7 @@ from ..config import settings as env
 from ..ai.errors import redact
 from ..ai_incidents import recent_failures
 from ..db import get_db
-from ..demo import is_demo_admin
-from ..deps import get_current_user, require_admin
+from ..deps import require_admin
 from ..models import AiProvider, AppSetting
 from ..schemas import AiDefaultsIn, AiProviderIn, AiProviderOut, AiTestIn
 
@@ -31,7 +30,7 @@ def _key_hint(key: str) -> str | None:
     return f"…{key[-4:]}" if len(key) >= 8 else "설정됨"
 
 
-def _out(row: AiProvider, viewer=None) -> AiProviderOut:
+def _out(row: AiProvider) -> AiProviderOut:
     return AiProviderOut(
         id=row.id,
         name=row.name,
@@ -44,8 +43,7 @@ def _out(row: AiProvider, viewer=None) -> AiProviderOut:
         is_chat_default=row.is_chat_default,
         is_eval_default=row.is_eval_default,
         has_key=bool(row.api_key),
-        # 둘러보기 계정에게는 힌트도 주지 않는다 — 끝 네 글자도 열쇠의 일부다 (demo.py)
-        key_hint=("설정됨" if row.api_key else None) if is_demo_admin(viewer) else _key_hint(row.api_key),
+        key_hint=_key_hint(row.api_key),
         supports_host_tools=ai.provider_supports_host_tools(row.provider),
         created_at=row.created_at,
     )
@@ -106,8 +104,8 @@ async def ai_meta(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/ai/providers", response_model=list[AiProviderOut])
-async def list_providers(db: AsyncSession = Depends(get_db), viewer=Depends(get_current_user)):
-    return [_out(r, viewer) for r in await _all_rows(db)]
+async def list_providers(db: AsyncSession = Depends(get_db)):
+    return [_out(r) for r in await _all_rows(db)]
 
 
 @router.post("/ai/providers", response_model=AiProviderOut)
@@ -305,16 +303,14 @@ def _key_hint_of(value: str) -> str | None:
 
 
 @router.get("/reference")
-async def read_reference_settings(db: AsyncSession = Depends(get_db), viewer=Depends(get_current_user)):
+async def read_reference_settings(db: AsyncSession = Depends(get_db)):
     from .reference import get_reference_settings
 
     s = await get_reference_settings(db)
     return {
         "github_enabled": s["github_enabled"],
         "has_github_token": bool(s["github_token"]),
-        "github_token_hint": ("설정됨" if s["github_token"] else None)
-        if is_demo_admin(viewer)
-        else _key_hint_of(s["github_token"]),
+        "github_token_hint": _key_hint_of(s["github_token"]),
     }
 
 

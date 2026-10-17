@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { IconClose, IconLock } from "./icons";
-import { READ_ONLY_REASON, useReadOnly } from "./readonly";
+import { IconClose } from "./icons";
 import { ReactNode, useEffect, useRef } from "react";
 import { IconSearch } from "./icons";
 
@@ -44,8 +43,6 @@ const badgeColors: Record<string, string> = {
   admin: "bg-red-100 text-red-700",
   evaluator: "bg-blue-100 text-blue-700",
   candidate: "bg-slate-100 text-slate-700",
-  guest: "bg-amber-100 text-amber-800",
-  demo_admin: "bg-sky-100 text-sky-800",
 };
 
 export function Badge({ value, label }: { value: string; label?: string }) {
@@ -66,7 +63,6 @@ export function Button({
   disabled,
   type = "button",
   className = "",
-  write = false,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -74,12 +70,7 @@ export function Button({
   disabled?: boolean;
   type?: "button" | "submit";
   className?: string;
-  /** 무언가를 바꾸는 버튼인가 — 둘러보기 계정에서는 잠기고 자물쇠와 이유가 붙는다 (readonly.tsx) */
-  write?: boolean;
 }) {
-  // 훅은 조건 없이 부른다 — write 가 바뀌는 자리에서 호출 순서가 달라지면 React 가 깨진다.
-  const readOnly = useReadOnly();
-  const locked = write && readOnly;
   const styles = {
     primary: "bg-slate-900 text-white hover:bg-slate-700 disabled:bg-slate-400",
     secondary: "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:text-slate-400",
@@ -90,18 +81,10 @@ export function Button({
     <button
       type={type}
       onClick={onClick}
-      disabled={disabled || locked}
-      title={locked ? READ_ONLY_REASON : undefined}
+      disabled={disabled}
       className={`shrink-0 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed ${styles} ${className}`}
     >
-      {locked ? (
-        <span className="inline-flex items-center gap-1.5">
-          <IconLock size={13} />
-          {children}
-        </span>
-      ) : (
-        children
-      )}
+      {children}
     </button>
   );
 }
@@ -139,7 +122,6 @@ export function IconButton({
   href,
   tone = "default",
   children,
-  write = false,
   disabled = false,
 }: {
   title: string;
@@ -147,27 +129,22 @@ export function IconButton({
   href?: string;
   tone?: "default" | "danger";
   children: ReactNode;
-  /** 무언가를 바꾸는 조작인가 — 둘러보기 계정에서는 잠긴다 (readonly.tsx) */
-  write?: boolean;
   disabled?: boolean;
 }) {
-  const readOnly = useReadOnly();
-  const locked = write && readOnly;
   const cls = `inline-flex h-8 w-8 items-center justify-center rounded-lg text-[15px] transition ${
-    locked || disabled
+    disabled
       ? "cursor-not-allowed text-slate-300"
       : tone === "danger"
         ? "text-slate-400 hover:bg-red-50 hover:text-red-600"
         : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
   }`;
-  if (locked || disabled) {
-    // 자리는 남긴다 — 관리자 화면에 무엇이 있는지 보여 주는 것이 둘러보기의 목적이다.
+  if (disabled) {
     return (
       <button
         type="button"
         disabled
         aria-disabled
-        title={locked ? `${title} — ${READ_ONLY_REASON}` : title}
+        title={title}
         aria-label={title}
         className={cls}
       >

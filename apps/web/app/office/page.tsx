@@ -8,7 +8,7 @@ import type { Attempt, MyAssignment } from "@/lib/types";
 import { useUser, useLogout } from "@/components/useUser";
 import { useToast } from "@/components/toast";
 import { Spinner } from "@/components/ui";
-import { LogoSplash, takeArrival, type ArriveKind } from "@/components/LogoSplash";
+import { LogoSplash, takeArrival } from "@/components/LogoSplash";
 import { CategoryFilter, readCategoryFilter, writeCategoryFilter } from "@/components/CategoryFilter";
 import { categoryLabel } from "@/lib/categories";
 import { rowFor } from "@/lib/avatars";
@@ -25,16 +25,15 @@ const COMMUTE_KEY = "odysseus:commuted";
 const ARRIVED_TEXT = "사무실에 출근했습니다. 방향키로 움직이고, 노트북이 놓인 스탠딩 데스크 앞에 서면 시험이 시작됩니다.";
 
 export default function OfficePage() {
-  const { user, loading } = useUser(["candidate", "admin", "evaluator", "guest"]);
+  const { user, loading } = useUser(["candidate", "admin", "evaluator"]);
   const [assignments, setAssignments] = useState<MyAssignment[] | null>(null);
   /** 관리자가 고친 템플릿 — 방의 모양만 담긴다 */
   const [builtins, setBuiltins] = useState<BuiltinOverrides>({});
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  /** 로그인에서 로고 막을 두르고 건너온 경우 — 사무실이 준비될 때까지 막을 잡고 있다가 걷는다. */
+  /** 출근길 대신 로고 막으로 들어온 경우(움직임을 줄임). 사무실이 준비될 때까지 막을 잡고 있다가 걷는다. */
   const [arrival, setArrival] = useState<"hold" | "leave" | null>(null);
-  const arrivalKind = useRef<ArriveKind | null>(null);
   /** 고른 분야. null = 전체. 층은 고른 분야의 방만으로 다시 지어진다. */
   const [category, setCategory] = useState<string | null>(null);
   const arrivedAt = useRef(0);
@@ -46,8 +45,6 @@ export default function OfficePage() {
   const { toast } = useToast();
   const router = useRouter();
   const leave = useLogout();
-  /** 지금 치르는 중인 시험이 있는가 — 나가기 확인창의 말이 달라진다 */
-  const hasRunningExam = (assignments ?? []).some((a) => a.attempt_status === "in_progress");
 
   const isStaff = user?.role === "admin" || user?.role === "evaluator";
 
@@ -74,7 +71,6 @@ export default function OfficePage() {
       return;
     }
     if (!kind) return;
-    arrivalKind.current = kind;
     arrivedAt.current = performance.now();
     setArrival("hold");
   }, []);
@@ -99,9 +95,7 @@ export default function OfficePage() {
     if (arrival !== "hold") return;
     const ready = assignments || error;
     if (!ready) return;
-    // 온보딩에서 건너온 검은 막은 로고가 없으니 오래 잡아 둘 이유가 없다
-    const hold = arrivalKind.current === "welcome" ? 350 : ARRIVAL_HOLD_MS;
-    const wait = Math.max(0, hold - (performance.now() - arrivedAt.current));
+    const wait = Math.max(0, ARRIVAL_HOLD_MS - (performance.now() - arrivedAt.current));
     const t = setTimeout(() => {
       setArrival("leave");
       setAnnouncement("사무실에 출근했습니다. 방향키로 움직이고, 노트북이 놓인 스탠딩 데스크 앞에 서면 시험이 시작됩니다.");
@@ -150,7 +144,7 @@ export default function OfficePage() {
         router.push(`/exam/${assignment.attempt_id}`);
         return;
       }
-      // 끝난 자리는 결과로 간다 — 결과 화면을 벗어난 게스트가 점수를 다시 볼 수 있는 유일한 길이다.
+      // 끝난 자리는 결과로 간다.
       if (assignment.attempt_status && assignment.attempt_id) {
         router.push(`/result/${assignment.attempt_id}`);
         return;
@@ -168,7 +162,7 @@ export default function OfficePage() {
   );
 
   const splash = arrival && (
-    <LogoSplash mode={arrival} label="사무실로 이동합니다" onDone={endArrival} logo={arrivalKind.current !== "welcome"} />
+    <LogoSplash mode={arrival} label="사무실로 이동합니다" onDone={endArrival} />
   );
   const walk = commute && (
     <Commute
@@ -214,7 +208,7 @@ export default function OfficePage() {
               관리자 콘솔
             </Link>
           )}
-          <button type="button" className="office-ghostbtn" onClick={() => leave(user, { examInProgress: hasRunningExam })}>
+          <button type="button" className="office-ghostbtn" onClick={leave}>
             로그아웃
           </button>
         </div>

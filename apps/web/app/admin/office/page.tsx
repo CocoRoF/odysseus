@@ -19,7 +19,6 @@ import { CATEGORIES, UNCATEGORIZED_LABEL } from "@/lib/categories";
 import { useUser } from "@/components/useUser";
 import { Shell } from "@/components/Shell";
 import { Button, Spinner } from "@/components/ui";
-import { useReadOnly, writeProps } from "@/components/readonly";
 import { useToast } from "@/components/toast";
 import { OfficeEditor } from "@/components/office/editor/OfficeEditor";
 import { blankScene, compact, normalize, sameDesign } from "@/components/office/editor/state";
@@ -29,7 +28,6 @@ import { SCENES, SCENE_IDS, type BuiltinSceneId, type SceneSpec } from "@/compon
 type Pick = { kind: "builtin"; id: BuiltinSceneId } | { kind: "custom"; id: string } | { kind: "new" };
 
 export default function OfficeAdminPage() {
-  const readOnly = useReadOnly();
   const { user, loading } = useUser(["admin"]);
   const [presets, setPresets] = useState<OfficePreset[] | null>(null);
   /** 고친 템플릿 — 여기 없는 템플릿은 코드의 기본값 */
@@ -192,8 +190,8 @@ export default function OfficeAdminPage() {
           <p className="mt-1 text-sm text-slate-500">방 하나의 설계도를 타일과 에셋으로 만듭니다. 응시자의 시작 지점과 NPC 자리를 정할 수 있습니다.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => startNew()} write>빈 방에서 새로 만들기</Button>
-          {current && pick.kind !== "new" && <Button onClick={() => startNew(current)} write>이 장면 복제</Button>}
+          <Button variant="secondary" onClick={() => startNew()}>빈 방에서 새로 만들기</Button>
+          {current && pick.kind !== "new" && <Button onClick={() => startNew(current)}>이 장면 복제</Button>}
         </div>
       </div>
 
@@ -231,7 +229,7 @@ export default function OfficeAdminPage() {
                     <span>{p.name}</span>
                     <small>{(p.spec as { cols?: number }).cols}×{(p.spec as { rows?: number }).rows}{spec ? "" : " · 오류"}{dirty && pick.kind === "custom" && pick.id === p.id ? " · 수정됨" : ""}</small>
                   </button>
-                  <button type="button" className="oe-list-del" onClick={() => remove(p)} {...writeProps(readOnly)} title="삭제">×</button>
+                  <button type="button" className="oe-list-del" onClick={() => remove(p)} title="삭제">×</button>
                 </li>
               );
             })}
@@ -278,7 +276,7 @@ function DefaultsTable({ defaults, options, onSave }: { defaults: Record<string,
           </select>
         </label>
       ))}
-      <Button disabled={!changed} write onClick={() => onSave(Object.fromEntries(Object.entries(draft).filter(([, v]) => v)))}>기본 장면 저장</Button>
+      <Button disabled={!changed} onClick={() => onSave(Object.fromEntries(Object.entries(draft).filter(([, v]) => v)))}>기본 장면 저장</Button>
     </div>
   );
 }

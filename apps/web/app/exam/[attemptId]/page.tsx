@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { Attempt, AttemptScenario, ReferenceConfig } from "@/lib/types";
 import { useToast } from "@/components/toast";
@@ -32,8 +32,6 @@ import { MessengerSessionProvider, useMessengerSessionOptional } from "@/compone
 import { IntroCinematic } from "@/components/desktop/IntroCinematic";
 import { BootSequence } from "@/components/desktop/BootSequence";
 import { BriefingModal } from "@/components/desktop/BriefingModal";
-import dynamic from "next/dynamic";
-import { autopilotKey } from "@/components/autopilot/catalog";
 import { ConnectionBanner } from "@/components/desktop/ConnectionBanner";
 import { DuplicateTabBanner } from "@/components/desktop/DuplicateTabBanner";
 import { SessionLostBanner } from "@/components/desktop/SessionLostBanner";
@@ -263,7 +261,7 @@ function useActivityTracker(attemptId: string, active: boolean, scenarioId: stri
 }
 
 function FinishedScreen({ attempt, router }: { attempt: Attempt; router: ReturnType<typeof useRouter> }) {
-  // 끝난 시험은 결과 화면이 이어받는다 — 게스트에게는 그 화면이 마지막 화면이다 (app/result).
+  // 끝난 시험은 결과 화면이 이어받는다 (app/result).
   useEffect(() => {
     router.replace(`/result/${attempt.id}`);
   }, [attempt.id, router]);
@@ -305,18 +303,12 @@ const SUBMIT_FLUSH_TIMEOUT_MS = 8_000;
 /** PC 시계 오차가 이만큼 넘게 바뀌면 남은 시간을 다시 센다 */
 const CLOCK_RESYNC_MS = 2_000;
 
-/** 자동 진행 — 켰을 때만 불러온다(계획에 매니페스트 전문과 대사가 들어 있어 무겁다) */
-const Autopilot = dynamic(() => import("@/components/autopilot/Autopilot").then((m) => m.Autopilot), { ssr: false });
-
 export default function ExamDesktopPage() {
   const params = useParams<{ attemptId: string }>();
   const attemptId = params.attemptId;
-  // 들어온 주소의 ?quick=1·?auto=1 은 window.location 이 아니라 여기서 읽는다. 앱 라우터는 다른 화면에서 넘어올 때
-  // 새 화면을 먼저 그리고 주소를 나중에 바꾸므로, 첫 그림 때 window.location 은 아직 앞 화면(로그인)의 주소다.
-  const searchParams = useSearchParams();
   const router = useRouter();
   const { toast, confirm } = useToast();
-  const { user } = useUser(["candidate", "admin", "evaluator", "guest"]);
+  const { user } = useUser(["candidate", "admin", "evaluator"]);
 
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   /** 서버 시각 - PC 시각 (ms). 마감은 서버가 판정하므로 남은 시간도 서버 시계로 센다 */
@@ -337,17 +329,6 @@ export default function ExamDesktopPage() {
   const [briefingReview, setBriefingReview] = useState(false);
   // 시네마틱 모드: [임무 시작] → 부팅 연출 → 데스크톱
   const [booting, setBooting] = useState(false);
-  /** 빠른 시작(로그인의 [응시 (빠른 시작)])으로 들어왔는가 — 주소의 ?quick=1. 처음 그릴 때 한 번 읽고 주소에서 걷는다.
-   *  그렇게 들어왔으면 시작 브리핑(시네마틱·카드)과 부팅을 건너뛰고 데스크톱(메신저)부터 연다. 브리핑은 작업 표시줄의
-   *  [브리핑]에서 그대로 다시 볼 수 있다. */
-  const quickRef = useRef<boolean | null>(null);
-  if (quickRef.current === null) quickRef.current = searchParams.get("quick") === "1";
-  const [quickEnter, setQuickEnter] = useState(false);
-  /** 자동 진행(로그인의 [응시 (자동 진행)]) — 주소의 ?auto=1 로 들어와 이 탭의 sessionStorage 에 진행 단계를 남긴다.
-   *  새로 고침하면 저장된 단계에서 멈춘 채 다시 뜬다(이어서 할지는 사람이 정한다). 게스트 계정에서만 돈다. */
-  const autoRef = useRef<boolean | null>(null);
-  if (autoRef.current === null) autoRef.current = searchParams.get("auto") === "1";
-  const [autopilot, setAutopilot] = useState<{ step: number; resumed: boolean } | null>(null);
   const [selectedIcon, setSelectedIcon] = useState<AppId | null>(null);
   // 참고 자료 앱(GitHub)은 관리자 설정으로 끌 수 있다 — 꺼졌으면 아이콘부터 없앤다
   const [reference, setReference] = useState<ReferenceConfig | null>(null);
@@ -424,12 +405,6 @@ export default function ExamDesktopPage() {
           <>
             아직 <b>응시 중</b>입니다. 나가도 시간은 계속 흐르고, 지금까지의 작업은 저장되어
             있습니다. 이 창을 닫지 않으면 다시 들어와 이어서 진행할 수 있습니다.
-            {user?.role === "guest" && (
-              <>
-                {" "}
-                다만 <b>로그아웃하면 이 계정으로는 다시 들어올 수 없습니다.</b>
-              </>
-            )}
           </>
         ),
         confirmLabel: "나가기",
@@ -439,7 +414,6 @@ export default function ExamDesktopPage() {
         .then((ok) => {
           if (ok) {
             pushEvent("exam_leave", { via: "back" });
-            // 게스트의 집은 사무실이다 — /dashboard 로 보내면 한 번 더 튕긴다 (useUser.homeFor)
             router.replace(homeFor(user?.role ?? "candidate"));
           }
         })
@@ -466,30 +440,6 @@ export default function ExamDesktopPage() {
         syncClock(a);
         setAttempt(a);
         const current = a.scenarios.find((s) => s.ordinal === a.current_ordinal);
-        if (a.status === "in_progress") {
-          try {
-            const k = autopilotKey(a.id);
-            if (autoRef.current) {
-              sessionStorage.setItem(k, JSON.stringify({ step: 0 }));
-              window.history.replaceState(null, "", window.location.pathname);
-              setAutopilot({ step: 0, resumed: false });
-            } else {
-              const saved = sessionStorage.getItem(k);
-              if (saved) setAutopilot({ step: Number(JSON.parse(saved).step) || 0, resumed: true });
-            }
-          } catch {
-            // 저장소를 못 쓰면 자동 진행 없이 보통 시험으로 둔다
-          }
-        }
-        autoRef.current = false;
-        if (quickRef.current) {
-          quickRef.current = false;
-          window.history.replaceState(null, "", window.location.pathname);
-          if (a.status === "in_progress" && current) {
-            setQuickEnter(true);
-            return;
-          }
-        }
         if (a.status === "in_progress" && current) {
           const seenKey = `odysseus:briefing:${a.id}:${current.scenario_id}`;
           if (!localStorage.getItem(seenKey)) setShowBriefing(true);
@@ -518,13 +468,6 @@ export default function ExamDesktopPage() {
     setShowBriefing(false);
     wm.activate("messenger");
   }, [attempt, scenario, wm]);
-
-  // 빠른 시작 — 브리핑을 본 것으로 적고(새로 고침에 다시 뜨지 않게) 메신저부터 연다. 시작 버튼을 누른 것과 같은 자리다.
-  useEffect(() => {
-    if (!quickEnter || !attempt || !scenario) return;
-    setQuickEnter(false);
-    startWork();
-  }, [quickEnter, attempt, scenario, startWork]);
 
   const introNotes = useMemo(
     () => [
@@ -1148,24 +1091,6 @@ export default function ExamDesktopPage() {
               }}
             />
           ))}
-
-        {/* 자동 진행 — 게스트가 [응시 (자동 진행)] 으로 들어온 응시에서만 */}
-        {autopilot && inProgress && scenario && user?.role === "guest" && (
-          <Autopilot
-            attemptId={attempt.id}
-            title={attempt.assessment_title}
-            initialStep={autopilot.step}
-            startPaused={autopilot.resumed}
-            onExit={() => {
-              try {
-                sessionStorage.removeItem(autopilotKey(attempt.id));
-              } catch {
-                /* 무시 */
-              }
-              setAutopilot(null);
-            }}
-          />
-        )}
       </div>
       </AgentSessionProvider>
       </TerminalSessionProvider>

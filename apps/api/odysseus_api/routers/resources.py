@@ -23,7 +23,6 @@ from ..definitions import (
     granted_minutes,
     grants_of,
 )
-from ..demo import mask_email_for
 from ..deps import get_current_user, is_staff, require_admin
 from ..ai_incidents import incident_counts
 from ..models import Attempt, Event, Execution, User, WorkspaceFile, utcnow
@@ -116,7 +115,7 @@ async def my_resources(
 
 
 @router.get("/admin/resources")
-async def admin_resources(db: AsyncSession = Depends(get_db), viewer=Depends(require_admin)):
+async def admin_resources(db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
     snap = await _snapshot()
     now = utcnow()
 
@@ -167,7 +166,7 @@ async def admin_resources(db: AsyncSession = Depends(get_db), viewer=Depends(req
             {
                 "attempt_id": str(a.id),
                 "user_name": a.user.name if a.user else "—",
-                "user_email": mask_email_for(viewer, a.user.email) if a.user else "",
+                "user_email": a.user.email if a.user else "",
                 "assessment_title": a.assessment.title if a.assessment else "—",
                 "started_at": a.started_at,
                 "deadline_at": a.deadline_at,

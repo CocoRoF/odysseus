@@ -10,7 +10,6 @@ import { DIFFICULTY_LABEL, fmtDateTime } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import { Badge, Button, Card, Field, inputCls, SearchInput } from "@/components/ui";
 import { CATEGORIES, UNCATEGORIZED_LABEL } from "@/lib/categories";
-import { useReadOnly, writeProps } from "@/components/readonly";
 
 interface ScenarioPick {
   scenario_id: string;
@@ -33,7 +32,6 @@ function toLocalInput(iso: string | null | undefined): string {
 export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment; assessmentId?: string }) {
   const router = useRouter();
   const { toast, confirm } = useToast();
-  const readOnly = useReadOnly();
 
   const [title, setTitle] = useState(initial?.title ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -153,7 +151,7 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
           {/* 되돌릴 수 없는 버튼은 저장 옆에 붙이지 않는다 */}
           {assessmentId && (
             <>
-              <Button variant="danger" onClick={remove} write>
+              <Button variant="danger" onClick={remove}>
                 삭제
               </Button>
               <span className="mx-2 h-6 w-px bg-slate-200" aria-hidden="true" />
@@ -162,7 +160,7 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
           <Button variant="secondary" onClick={() => router.push("/admin/assessments")}>
             취소
           </Button>
-          <Button onClick={save} disabled={busy} write>
+          <Button onClick={save} disabled={busy}>
             {busy ? "저장 중..." : "저장"}
           </Button>
         </div>
@@ -293,7 +291,6 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
                   </label>
                   <button
                     onClick={() => setPicked((arr) => arr.filter((x) => x.scenario_id !== p.scenario_id))}
-                    {...writeProps(readOnly)}
                     className="shrink-0 whitespace-nowrap rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500 transition hover:border-red-300 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     제거
@@ -310,7 +307,6 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
                 key={s.id}
                 // 시험은 시나리오 하나 — 고르면 앞의 것을 바꾼다
                 onClick={() => setPicked([{ scenario_id: s.id, title: s.title, difficulty: s.difficulty, points: 100 }])}
-                {...writeProps(readOnly)}
                 className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span className="shrink-0 text-slate-300 transition group-hover:text-slate-600">+</span>
@@ -334,7 +330,6 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
               <label key={u.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm hover:bg-slate-50">
                 <input
                   type="checkbox"
-                  {...writeProps(readOnly)}
                   checked={assignees.has(u.id)}
                   onChange={(e) =>
                     setAssignees((s) => {
@@ -353,7 +348,7 @@ export function AssessmentForm({ initial, assessmentId }: { initial?: Assessment
           </div>
           {assignees.size === 0 && (
             <p className="text-xs text-slate-400">
-              아무도 배정하지 않으면 이 시험은 배정 목록에 뜨지 않습니다. 게스트에게는 열려 있는 모든 시험이 보입니다.
+              아무도 배정하지 않으면 이 시험은 배정 목록에 뜨지 않습니다.
             </p>
           )}
         </Card>
